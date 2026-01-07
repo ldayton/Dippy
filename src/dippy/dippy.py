@@ -598,7 +598,20 @@ CLI_CONFIGS = {
     },
     "terraform": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"fmt", "graph", "output", "plan", "providers", "state", "validate"},
+        | {
+            "console",
+            "fmt",
+            "get",
+            "graph",
+            "metadata",
+            "modules",
+            "output",
+            "plan",
+            "providers",
+            "refresh",
+            "test",
+            "validate",
+        },
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -1022,12 +1035,36 @@ def check_az_devops_configure(tokens: list[str]) -> bool:
     return False
 
 
+def check_terraform_state(tokens: list[str]) -> bool:
+    """Approve terraform state only for read-only subcommands."""
+    # tokens: ['terraform', 'state', 'list'] or ['terraform', 'state', 'show', 'resource']
+    if len(tokens) < 3:
+        return False
+    subcommand = tokens[2]
+    # Safe subcommands: list, show, pull
+    # Unsafe: mv, rm, push, replace-provider
+    return subcommand in {"list", "show", "pull"}
+
+
+def check_terraform_workspace(tokens: list[str]) -> bool:
+    """Approve terraform workspace only for read-only subcommands."""
+    # tokens: ['terraform', 'workspace', 'list'] or ['terraform', 'workspace', 'select', 'dev']
+    if len(tokens) < 3:
+        return False
+    subcommand = tokens[2]
+    # Safe subcommands: list, show, select
+    # Unsafe: new, delete
+    return subcommand in {"list", "show", "select"}
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
     ("aws", "secretsmanager"): check_aws_secretsmanager,
     ("aws", "ssm"): check_aws_ssm,
     ("az", "devops", "configure"): check_az_devops_configure,
     ("gh", "api"): check_gh_api,
+    ("terraform", "state"): check_terraform_state,
+    ("terraform", "workspace"): check_terraform_workspace,
     ("uv", "pip"): check_uv_pip,
 }
 
@@ -1259,7 +1296,7 @@ def is_command_safe(tokens: list[str]) -> bool:
     if not tokens:
         return False
 
-    if "--help" in tokens or "--version" in tokens:
+    if "--help" in tokens or "-help" in tokens or "--version" in tokens:
         return True
 
     # Allow dippy to run itself (self-executing via uv run)
