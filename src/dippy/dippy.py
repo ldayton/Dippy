@@ -651,9 +651,45 @@ CLI_CONFIGS = {
     },
     "docker": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"events", "history", "images", "inspect", "port", "ps", "stats", "top"},
+        | {
+            "config",  # docker compose config
+            "df",  # docker system df
+            "events",
+            "export",  # outputs tar to stdout (redirects caught separately)
+            "history",
+            "images",
+            "inspect",
+            "ls",  # docker container/image/volume/network ls
+            "port",
+            "ps",
+            "save",  # outputs tar to stdout (redirects caught separately)
+            "stats",
+            "top",
+        },
         "safe_prefixes": (),
-        "parser": "first_token",
+        "parser": "variable_depth",
+        "action_depth": 0,  # Default: docker ps, docker images, etc.
+        "service_depths": {
+            # Management commands have action at depth 1
+            "buildx": 1,
+            "compose": 1,
+            "container": 1,
+            "context": 1,
+            "image": 1,
+            "manifest": 1,
+            "network": 1,
+            "plugin": 1,
+            "system": 1,
+            "trust": 1,
+            "volume": 1,
+            # Swarm commands
+            "config": 1,
+            "node": 1,
+            "secret": 1,
+            "service": 1,
+            "stack": 1,
+            "swarm": 1,
+        },
         "flags_with_arg": {
             "-c",
             "--config",
@@ -1172,6 +1208,64 @@ def check_uv_pip(tokens: list[str]) -> bool:
     return action in {"list", "show", "tree", "check"}
 
 
+# docker compose flags that take an argument
+DOCKER_COMPOSE_FLAGS_WITH_ARG = {
+    "-f",
+    "--file",
+    "-p",
+    "--project-name",
+    "--project-directory",
+    "--profile",
+    "--env-file",
+    "--progress",
+    "--ansi",
+    "--parallel",
+}
+
+# docker compose safe actions (read-only inspection)
+DOCKER_COMPOSE_SAFE_ACTIONS = {
+    "config",
+    "events",
+    "images",
+    "logs",
+    "ls",
+    "port",
+    "ps",
+    "stats",
+    "top",
+    "version",
+    "volumes",
+}
+
+
+def check_docker_compose(tokens: list[str]) -> bool:
+    """Approve docker compose if action is read-only."""
+    # tokens: ['docker', 'compose', ...flags..., 'action', ...]
+    # Skip 'docker' and 'compose'
+    args = tokens[2:]
+    # Skip flags to find action
+    i = skip_flags(args, DOCKER_COMPOSE_FLAGS_WITH_ARG)
+    if i >= len(args):
+        return False
+    action = args[i]
+    return action in DOCKER_COMPOSE_SAFE_ACTIONS
+
+
+def check_docker_save(tokens: list[str]) -> bool:
+    """Approve docker save only if not writing to a file (-o/--output)."""
+    # tokens: ['docker', 'save', ...] or ['docker', 'image', 'save', ...]
+    # -o/--output means writing to a file (filesystem modification)
+    for t in tokens:
+        if t in {"-o", "--output"} or t.startswith("-o=") or t.startswith("--output="):
+            return False
+    return True
+
+
+def check_docker_image_save(tokens: list[str]) -> bool:
+    """Approve docker image save only if not writing to a file."""
+    return check_docker_save(tokens)
+
+
 def _check_aws_action(tokens: list[str]) -> bool:
     """Check if an AWS command is safe using CLI_CONFIGS."""
     config = CLI_CONFIGS["aws"]
@@ -1525,6 +1619,9 @@ COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("aws", "ssm"): check_aws_ssm,
     ("az", "devops", "configure"): check_az_devops_configure,
     ("cdk", "context"): check_cdk_context,
+    ("docker", "compose"): check_docker_compose,
+    ("docker", "image", "save"): check_docker_image_save,
+    ("docker", "save"): check_docker_save,
     ("gh", "api"): check_gh_api,
     ("git", "branch"): check_git_branch,
     ("git", "config"): check_git_config,
