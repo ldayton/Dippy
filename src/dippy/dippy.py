@@ -990,6 +990,7 @@ XARGS_FLAGS_WITH_ARG = {
     "-e",
     "--eof",
     "-I",
+    "-J",  # BSD: replacement string (like -I but different placement)
     "--replace",
     "-L",
     "-l",
@@ -998,13 +999,15 @@ XARGS_FLAGS_WITH_ARG = {
     "--max-args",
     "-P",
     "--max-procs",
+    "-R",  # BSD: max replacements with -I
     "-s",
+    "-S",  # BSD: replacement size limit
     "--max-chars",
     "--process-slot-var",
 }
 
 # Flags that make xargs interactive/unsafe regardless of command
-XARGS_UNSAFE_FLAGS = {"-p", "--interactive"}
+XARGS_UNSAFE_FLAGS = {"-p", "--interactive", "-o", "--open-tty"}
 
 
 def check_xargs(tokens: list[str]) -> bool:
@@ -1015,7 +1018,7 @@ def check_xargs(tokens: list[str]) -> bool:
             break
         if token in XARGS_UNSAFE_FLAGS:
             return False
-        if token.startswith("--interactive"):
+        if token.startswith(("--interactive", "--open-tty")):
             return False
     i = 1 + skip_flags(tokens[1:], XARGS_FLAGS_WITH_ARG, stop_at_double_dash=True)
     if i >= len(tokens):

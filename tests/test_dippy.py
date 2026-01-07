@@ -3505,6 +3505,12 @@ TESTS = [
     ("xargs --max-chars=2048 grep pattern", True),
     # xargs with --process-slot-var
     ("xargs --process-slot-var=SLOT cat", True),
+    # xargs BSD-specific flags
+    ("xargs -J % cp -Rp % destdir", False),  # cp is unsafe
+    ("xargs -J % cat %", True),
+    ("xargs -I {} -R 5 cat {}", True),  # -R limits replacements
+    ("xargs -I {} -S 255 cat {}", True),  # -S limits replacement size
+    ("xargs -I {} -R 5 -S 255 head {}", True),
     # xargs with multiple flags combined
     ("xargs -0 -n 1 -P 4 cat", True),
     ("xargs --null --max-args=1 --max-procs=4 grep pattern", True),
@@ -3610,6 +3616,8 @@ TESTS = [
     ("xargs --verbose cat", True),
     ("xargs -p cat", False),  # -p is --interactive, prompts user
     ("xargs --interactive cat", False),
+    ("xargs -o cat", False),  # -o is --open-tty, allows interactive input
+    ("xargs --open-tty cat", False),
     ("xargs -x cat", True),  # -x is --exit
     ("xargs --exit cat", True),
     ("xargs -r -t cat", True),
