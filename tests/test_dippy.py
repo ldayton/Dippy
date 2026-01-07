@@ -16,7 +16,11 @@ _load_custom_configs()
 
 # (command, expected_approved_by_hook)
 TESTS = [
-    # CLI tools - safe
+    #
+    # ==========================================================================
+    # AWS CLI
+    # ==========================================================================
+    #
     ("aws help", True),
     ("aws s3 help", True),
     ("aws ec2 help", True),
@@ -658,40 +662,11 @@ TESTS = [
     ("aws ec2 describe-instances help", True),
     ("aws s3 help", True),
     ("aws iam help", True),
-    ("git status", True),
-    ("git log", True),
-    ("kubectl get pods", True),
-    ("gh pr list", True),
-    ("gh pr view 123 --repo foo/bar", True),
-    ("gh --repo foo/bar pr list", True),
-    ("gh -R foo/bar pr view 123", True),
-    ("docker ps", True),
-    ("docker --host tcp://localhost:2375 ps", True),
-    ("docker -H unix:///var/run/docker.sock images", True),
-    ("brew list", True),
-    # CLI tools - unsafe (should defer)
-    ("aws s3 rm s3://bucket/key", False),
-    ("aws ec2 terminate-instances --instance-ids i-123", False),
-    ("aws --profile prod ec2 terminate-instances --instance-ids i-123", False),
-    ("aws --region us-east-1 s3 rm s3://bucket/file", False),
-    ("git push", False),
-    ("git commit -m 'message'", False),
-    ("git commit -m 'multiline\n\nmessage'", False),
-    ('git commit -m "line1\n\nline2: 110 → 45"', False),
-    # Heredoc commit messages (bashlex can't parse, but pattern-matched as safe)
-    ("git commit -m \"$(cat <<'EOF'\nmessage\nEOF\n)\"", False),  # commit is unsafe
-    ("git -C /path commit -m \"$(cat <<'EOF'\nmessage\nEOF\n)\"", False),
-    ("git branch -D feature", False),
-    ("git stash drop", False),
-    ("git config --unset user.name", False),
-    ("git tag -d v1.0", False),
-    ("kubectl delete pod foo", False),
-    ("gh pr create", False),
-    ("gh -R foo/bar pr create", False),
-    ("docker run ubuntu", False),
-    ("docker --host tcp://localhost run ubuntu", False),
-    ("brew install foo", False),
-    # Custom checks
+    #
+    # ==========================================================================
+    # Unix utilities with custom checks
+    # ==========================================================================
+    #
     ("find . -name '*.py'", True),
     ("find . -exec rm {} \\;", False),
     ("find . -delete", False),
@@ -854,6 +829,11 @@ TESTS = [
     ("git push --help", True),
     ("unknown-command --help", True),
     ("./mystery-script.sh --help", True),
+    #
+    # ==========================================================================
+    # GitHub CLI (gh)
+    # ==========================================================================
+    #
     # gh api - safe (GET requests)
     ("gh api repos/owner/repo", True),
     ("gh api repos/{owner}/{repo}/pulls", True),
@@ -891,6 +871,11 @@ TESTS = [
     ("git -C /tmp push --force", False),
     ("git --git-dir=/some/.git status", True),
     ("git -c core.editor=vim log", True),
+    #
+    # ==========================================================================
+    # Google Cloud CLI (gcloud)
+    # ==========================================================================
+    #
     # Gcloud with global flags (values could match action names)
     ("gcloud --project delete compute instances list", True),
     ("gcloud --format delete compute instances list", True),
@@ -1182,6 +1167,11 @@ TESTS = [
     ("gcloud compute instances", False),  # incomplete - no action
     ("gcloud compute", False),  # incomplete - no resource or action
     ("gcloud", False),  # incomplete - no command at all
+    #
+    # ==========================================================================
+    # Azure CLI (az)
+    # ==========================================================================
+    #
     # Az with global flags (values could match action names)
     ("az --subscription delete vm list", True),
     ("az --query delete vm show", True),
@@ -1729,6 +1719,11 @@ TESTS = [
     ("az feedback", False),
     ("az configure", False),
     ("az configure --defaults group=mygroup", False),
+    #
+    # ==========================================================================
+    # Kubernetes CLI (kubectl)
+    # ==========================================================================
+    #
     # Kubectl with global flags (values could match action names)
     ("kubectl --context delete get pods", True),
     ("kubectl -n delete get pods", True),
@@ -1913,7 +1908,11 @@ TESTS = [
     # kubectl - unsafe (expose services)
     ("kubectl expose deployment nginx --port=80 --target-port=8080", False),
     ("kubectl expose pod nginx --port=80 --type=NodePort", False),
+    #
+    # ==========================================================================
     # Terraform
+    # ==========================================================================
+    #
     # terraform - safe (read-only commands)
     ("terraform plan", True),
     ("terraform plan -out=plan.tfplan", True),
@@ -2012,7 +2011,11 @@ TESTS = [
     ("terraform login app.terraform.io", False),
     ("terraform logout", False),
     ("terraform logout app.terraform.io", False),
-    # CDK (AWS Cloud Development Kit)
+    #
+    # ==========================================================================
+    # AWS CDK
+    # ==========================================================================
+    #
     # cdk - safe (read-only commands)
     ("cdk list", True),
     ("cdk ls", True),
@@ -2088,6 +2091,11 @@ TESTS = [
     # cdk - unsafe (refactoring)
     ("cdk refactor", False),
     ("cdk refactor --dry-run", False),
+    #
+    # ==========================================================================
+    # Archive tools (tar, unzip, 7z)
+    # ==========================================================================
+    #
     # tar - safe (list only)
     ("tar -tf archive.tar", True),
     ("tar -tvf archive.tar.gz", True),
@@ -2120,6 +2128,11 @@ TESTS = [
     ("7z x archive.7z", False),
     ("7z e archive.7z", False),
     ("7z d archive.7z file.txt", False),
+    #
+    # ==========================================================================
+    # Package managers (npm, pip, yarn, pnpm, brew)
+    # ==========================================================================
+    #
     # npm - safe (read-only)
     ("npm list", True),
     ("npm ls", True),
@@ -2219,6 +2232,11 @@ TESTS = [
     ("dmesg --clear", False),
     ("ping google.com", True),
     ("ping -c 4 google.com", True),
+    #
+    # ==========================================================================
+    # Auth0 CLI
+    # ==========================================================================
+    #
     # Auth0 CLI - safe (read-only actions)
     ("auth0 apps list", True),
     ("auth0 apps show app123", True),
@@ -2261,6 +2279,11 @@ TESTS = [
     ("auth0 api delete clients/123", False),
     ("auth0 api clients -d '{}'", False),
     ("auth0 api clients --data '{}'", False),
+    #
+    # ==========================================================================
+    # Shell wrappers and xargs
+    # ==========================================================================
+    #
     # Shell -c wrappers - safe inner commands
     ("bash -c 'echo hello'", True),
     ("bash -c 'ls -la'", True),
