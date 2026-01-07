@@ -990,7 +990,6 @@ XARGS_FLAGS_WITH_ARG = {
     "-e",
     "--eof",
     "-I",
-    "-i",
     "--replace",
     "-L",
     "-l",
@@ -1004,9 +1003,20 @@ XARGS_FLAGS_WITH_ARG = {
     "--process-slot-var",
 }
 
+# Flags that make xargs interactive/unsafe regardless of command
+XARGS_UNSAFE_FLAGS = {"-p", "--interactive"}
+
 
 def check_xargs(tokens: list[str]) -> bool:
     """Approve xargs if the command it runs is safe."""
+    # Check for interactive flags which require user input
+    for token in tokens[1:]:
+        if token == "--":
+            break
+        if token in XARGS_UNSAFE_FLAGS:
+            return False
+        if token.startswith("--interactive"):
+            return False
     i = 1 + skip_flags(tokens[1:], XARGS_FLAGS_WITH_ARG, stop_at_double_dash=True)
     if i >= len(tokens):
         return False
