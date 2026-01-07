@@ -188,7 +188,7 @@ WRAPPERS = {
     "nice": (["nice"], "nice", set()),
     "timeout": (["timeout"], 1, set()),
     "env": (["env"], None, set()),
-    "uv": (["uv", "run"], None, {"--project", "-p", "--package", "--with", "--python", "--no-project"}),
+    "uv": (["uv", "run"], None, {"--group", "--project", "-p", "--package", "--with", "--python", "--no-project"}),
 }
 
 # === Data: CLI configurations ===

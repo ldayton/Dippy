@@ -151,6 +151,8 @@ TESTS = [
     ("uv run ruff check --fix && uv run ruff format", True),
     ("uv run --project tools-base-mcp ruff check", True),
     ("uv run --project tools-base-mcp ruff format", True),
+    ("uv run --group cdk cdk synth", True),
+    ("uv run --group cdk cdk deploy", False),
     ("uv run pytest", True),
     ("uv run pytest -v tests/", True),
     ("pytest", True),
