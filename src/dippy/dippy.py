@@ -335,7 +335,8 @@ CLI_CONFIGS = {
         },
     },
     "gcloud": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"get-iam-policy", "get-value", "read"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"get-iam-policy", "get-value", "help", "info", "list-grantable-roles", "read", "topic", "version"},
         "safe_prefixes": ("get-", "list-", "describe-"),
         "parser": "variable_depth",
         "action_depth": 2,
@@ -350,15 +351,32 @@ CLI_CONFIGS = {
             "container": 2,  # gcloud container images list-tags
             "dns": 2,  # gcloud dns record-sets list
             "functions": 1,  # gcloud functions list
+            "help": 0,  # gcloud help (the command itself is safe)
             "iam": 2,  # gcloud iam service-accounts list
             "iap": 2,  # gcloud iap web get-iam-policy
+            "info": 0,  # gcloud info (the command itself is safe)
             "logging": 1,  # gcloud logging read
             "network-security": 2,  # gcloud network-security server-tls-policies describe
             "projects": 1,  # gcloud projects list/describe
             "run": 2,  # gcloud run services describe
             "secrets": 1,  # gcloud secrets list
             "storage": 2,  # gcloud storage buckets describe
-            "topic": 1,
+            "topic": 0,  # gcloud topic (the command itself is safe)
+            "version": 0,  # gcloud version (the command itself is safe)
+        },
+        "subservice_depths": {
+            ("app",): 1,  # gcloud app describe (top-level app commands)
+            ("app", "services"): 2,  # gcloud app services list
+            ("app", "versions"): 2,  # gcloud app versions list
+            ("artifacts", "repositories"): 2,  # gcloud artifacts repositories list
+            ("config", "configurations"): 2,  # gcloud config configurations list
+            ("iam",): 1,  # gcloud iam list-grantable-roles (top-level iam commands)
+            ("iam", "roles"): 2,  # gcloud iam roles list
+            ("iam", "service-accounts"): 2,  # gcloud iam service-accounts list
+            ("iam", "service-accounts", "keys"): 3,  # gcloud iam service-accounts keys list
+            ("iap", "tcp"): 3,  # gcloud iap tcp tunnels list
+            ("logging", "logs"): 2,  # gcloud logging logs list
+            ("secrets", "versions"): 2,  # gcloud secrets versions list
         },
         "flags_with_arg": {
             "--account",
@@ -953,18 +971,26 @@ def _get_variable_depth_action(tokens: list[str], config: dict[str, Any]) -> str
     service = tokens[i]
     depth = service_depths.get(service, default_depth)
 
-    # Check for subservice override (e.g., "boards iteration" -> depth 3)
-    if i + 1 < len(tokens):
-        subservice = tokens[i + 1]
-        subservice_key = (service, subservice)
-        if subservice_key in subservice_depths:
-            depth = subservice_depths[subservice_key]
-        # Check for sub-subservice override (e.g., "cognitiveservices account deployment" -> depth 4)
-        if i + 2 < len(tokens):
-            subsubservice = tokens[i + 2]
-            subsubservice_key = (service, subservice, subsubservice)
-            if subsubservice_key in subservice_depths:
-                depth = subservice_depths[subsubservice_key]
+    # Check for subservice overrides (most specific first)
+    # e.g., ("iam", "service-accounts", "keys") -> depth 3
+    if i + 2 < len(tokens):
+        key3 = (service, tokens[i + 1], tokens[i + 2])
+        if key3 in subservice_depths:
+            depth = subservice_depths[key3]
+        else:
+            key2 = (service, tokens[i + 1])
+            if key2 in subservice_depths:
+                depth = subservice_depths[key2]
+            elif (service,) in subservice_depths:
+                depth = subservice_depths[(service,)]
+    elif i + 1 < len(tokens):
+        key2 = (service, tokens[i + 1])
+        if key2 in subservice_depths:
+            depth = subservice_depths[key2]
+        elif (service,) in subservice_depths:
+            depth = subservice_depths[(service,)]
+    elif (service,) in subservice_depths:
+        depth = subservice_depths[(service,)]
 
     target_idx = i + depth
     if target_idx < len(tokens):
