@@ -1,0 +1,22 @@
+[project]
+name = "dippy"
+version = "0.1.0"
+description = "Claude Code permission hook - auto-approve safe bash commands"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "bashlex>=0.18",
+    "structlog>=25.5.0",
+]
+
+[project.scripts]
+dippy = "dippy.dippy:main"
+
+[build-system]
+requires = ["uv-build>=0.9.22"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest",
+]

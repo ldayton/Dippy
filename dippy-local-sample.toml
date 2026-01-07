@@ -1,0 +1,61 @@
+# Dippy local configuration
+# Copy to dippy-local.toml and customize. Changes take effect immediately.
+
+[safe_scripts]
+# Script basenames that are always safe to run (matched against basename only)
+# Example: scripts = ["my-safe-script.sh", "deploy-info.sh"]
+scripts = []
+
+[curl_wrappers]
+# Scripts that wrap curl - validated using curl's safety rules (GET only, no data flags)
+# Example: scripts = ["api-get.sh", "fetch-metrics.sh"]
+scripts = []
+
+[safe_patterns]
+# Regex patterns matched against full command path. Use ~ for home directory.
+# Example: patterns = ["~/tools/[^/]+/bin/safe\\.sh$"]
+patterns = []
+
+[safe_commands]
+# Additional commands to auto-approve (single-word commands only)
+# Example: commands = ["mkdir", "touch"]
+commands = []
+
+[prefix_commands]
+# Multi-token command prefixes that are always safe
+# Example: commands = ["git config --get-regexp", "npm run lint"]
+commands = []
+
+[cli_aliases]
+# Map command aliases to their base CLI tool (inherits that tool's rules)
+# Example: aliases = { k = "kubectl", g = "git" }
+aliases = {}
+
+# [cli_safe_actions]
+# Add safe actions to existing CLI tools (merged with defaults)
+# Example:
+# git = ["stash"]
+# kubectl = ["rollout"]
+
+# [cli_tools.TOOLNAME]
+# Define new CLI tools. Each tool needs a parser type:
+#   - "first_token": action is first non-flag arg (like git, docker)
+#   - "second_token": action is second non-flag arg (like gh pr, auth0 users)
+#   - "aws": action follows service name (like aws s3 ls)
+# Example:
+# [cli_tools.mycli]
+# safe_actions = ["status", "list", "show"]
+# safe_prefixes = ["get-", "list-"]
+# parser = "first_token"
+# flags_with_arg = ["-c", "--config"]
+
+# [wrappers.WRAPPERNAME]
+# Command wrappers that execute inner commands (like time, env, uv run)
+# - prefix: tokens that identify the wrapper (default: [name])
+# - skip: how to find inner command - integer (skip N args), "flags" (skip flags/env vars), "nice" (skip -n N)
+# - flags_with_arg: flags that consume the next token
+# Example:
+# [wrappers.myrunner]
+# prefix = ["myrunner", "exec"]
+# skip = "flags"
+# flags_with_arg = ["--config", "-c"]

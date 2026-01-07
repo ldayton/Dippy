@@ -1,0 +1,35 @@
+# Test config - exercises all configurable sections
+
+[safe_scripts]
+scripts = ["safe-test-script.sh"]
+
+[curl_wrappers]
+scripts = ["curl-wrapper.sh"]
+
+[safe_patterns]
+patterns = ["~/test-tools/[^/]+/bin/run\\.sh$"]
+
+[safe_commands]
+commands = ["testcmd"]
+
+[prefix_commands]
+commands = ["testprefix status"]
+
+[cli_aliases]
+aliases = { kubeat = "kubectl", kubeci = "kubectl", testalias = "git" }
+
+[cli_safe_actions]
+pre-commit = ["run"]
+ruff = ["format"]
+uv = ["sync"]
+
+[cli_tools.testcli]
+safe_actions = ["safecmd"]
+safe_prefixes = ["safe-"]
+parser = "first_token"
+flags_with_arg = ["-c", "--config"]
+
+[wrappers.testwrap]
+prefix = ["testwrap", "exec"]
+skip = "flags"
+flags_with_arg = ["--config"]
