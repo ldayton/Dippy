@@ -176,6 +176,11 @@ TESTS = [
     ("/path/to/safe-test-script.sh", True),
     ("./unknown-script.py", False),
 
+    # Python running dippy (allow dippy to run itself) - tested separately
+    ("python malicious.py", False),
+    ("python script.py", False),
+    ("python /tmp/fake/dippy.py", False),
+
     # Simple commands chained
     ("ls && cat foo", True),
     ("ls && rm foo", False),
@@ -346,6 +351,7 @@ TESTS = [
     ("az boards work-item list --project myproj", True),
     ("az boards work-item create --type Bug", False),
     ("az boards work-item update --id 12345", False),
+    ("az boards query --wiql 'SELECT [System.Id] FROM WorkItems'", True),
     ("az boards iteration team list --team MyTeam", True),
     ("az deployment group show --resource-group rg --name main", True),
     ("az deployment group list --resource-group rg", True),
@@ -638,13 +644,11 @@ import pytest
 @pytest.mark.parametrize("cmd,expected_safe", TESTS)
 def test_command(cmd, expected_safe):
     """Test a command directly using the module's functions."""
-    commands = parse_commands(cmd)
-    if commands is None:
-        is_safe = False
-    elif not commands:
+    result = parse_commands(cmd)
+    if result.error or not result.commands:
         is_safe = False
     else:
-        is_safe = all(is_command_safe(tokens) for tokens in commands)
+        is_safe = all(is_command_safe(tokens) for tokens in result.commands)
     assert is_safe == expected_safe
 
 
@@ -652,3 +656,78 @@ def test_command(cmd, expected_safe):
 def test_description(tokens, expected_desc):
     """Test command description extraction."""
     assert get_command_description(tokens) == expected_desc
+
+
+def test_python_dippy_self():
+    """Test that dippy allows running itself."""
+    import dippy.dippy as dippy_module
+    dippy_path = Path(dippy_module.__file__).resolve()
+    # Absolute path
+    assert is_command_safe(["python", str(dippy_path)]) is True
+    # Relative path from project root
+    assert is_command_safe(["python", "src/dippy/dippy.py"]) is True
+    # With flags
+    assert is_command_safe(["python", "-u", str(dippy_path)]) is True
+    # Wrong path should fail
+    assert is_command_safe(["python", "/tmp/dippy.py"]) is False
+
+
+def test_python_bashlex_oneliner():
+    """Test that dippy allows bashlex one-liners for debugging."""
+    # Bashlex import allowed
+    assert is_command_safe(["python", "-c", "import bashlex; print(bashlex.parse('ls'))"]) is True
+    # Other one-liners rejected
+    assert is_command_safe(["python", "-c", "import os; os.system('rm -rf /')"]) is False
+    assert is_command_safe(["python", "-c", "print('hello')"]) is False
+
+
+def test_heredoc_preprocessing():
+    """Test that heredocs in command substitution are handled."""
+    from dippy.dippy import preprocess_command
+    # Single quotes EOF
+    cmd = '''git commit -m "$(cat <<'EOF'
+message line 1
+message line 2
+EOF
+)"'''
+    assert 'HEREDOC_PLACEHOLDER' in preprocess_command(cmd)
+    # No quotes EOF
+    cmd2 = '''git commit -m "$(cat <<EOF
+message
+EOF
+)"'''
+    assert 'HEREDOC_PLACEHOLDER' in preprocess_command(cmd2)
+    # With -C flag
+    cmd3 = '''git -C /path commit -m "$(cat <<'EOF'
+msg
+EOF
+)"'''
+    assert 'HEREDOC_PLACEHOLDER' in preprocess_command(cmd3)
+    # Chained commands
+    cmd4 = '''git add -A && git commit -m "$(cat <<'EOF'
+msg
+EOF
+)"'''
+    assert 'HEREDOC_PLACEHOLDER' in preprocess_command(cmd4)
+
+
+def test_heredoc_commit_parses():
+    """Test that git commit with heredoc can be parsed and evaluated."""
+    # git commit should be unsafe (requires approval)
+    cmd = '''git commit -m "$(cat <<'EOF'
+message
+EOF
+)"'''
+    result = parse_commands(cmd)
+    assert result.error is None
+    assert result.commands is not None
+    assert not all(is_command_safe(tokens) for tokens in result.commands)
+    # git add && git commit - both parsed, commit unsafe
+    cmd2 = '''git add -A && git commit -m "$(cat <<'EOF'
+msg
+EOF
+)"'''
+    result2 = parse_commands(cmd2)
+    assert result2.error is None
+    assert result2.commands is not None
+    assert len(result2.commands) == 2

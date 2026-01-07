@@ -214,7 +214,6 @@ CLI_CONFIGS = {
         "parser": "variable_depth",
         "action_depth": 1,
         "service_depths": {
-            "boards": 2,          # az boards work-item show
             "cognitiveservices": 2,  # az cognitiveservices model list
             "deployment": 2,      # az deployment group show
             "devops": 2,          # az devops team list
@@ -228,7 +227,9 @@ CLI_CONFIGS = {
         # Subgroups that need different depths
         "subservice_depths": {
             ("acr", "repository"): 2,     # az acr repository list
+            ("boards", "area"): 3,        # az boards area project list
             ("boards", "iteration"): 3,   # az boards iteration team list
+            ("boards", "work-item"): 2,   # az boards work-item show
             ("cognitiveservices", "account", "deployment"): 3,  # az cognitiveservices account deployment list
             ("containerapp", "logs"): 2,  # az containerapp logs show
             ("containerapp", "revision"): 2,  # az containerapp revision list
@@ -460,12 +461,10 @@ def check_shell_c(tokens: list[str]) -> bool:
     if c_idx + 1 >= len(tokens):
         return False
     inner_cmd = tokens[c_idx + 1]
-    inner_commands = parse_commands(inner_cmd)
-    if inner_commands is None:
+    result = parse_commands(inner_cmd)
+    if result.error or not result.commands:
         return False
-    if not inner_commands:
-        return False
-    return all(is_command_safe(cmd) for cmd in inner_commands)
+    return all(is_command_safe(cmd) for cmd in result.commands)
 
 
 XARGS_FLAGS_WITH_ARG = {
@@ -552,6 +551,24 @@ def check_gh_api(tokens: list[str]) -> bool:
     return True
 
 
+def check_python(tokens: list[str]) -> bool:
+    """Approve python if running dippy.py or bashlex one-liners."""
+    i = 1
+    while i < len(tokens):
+        t = tokens[i]
+        if t == "-c" and i + 1 < len(tokens):
+            # Allow bashlex one-liners for debugging
+            return "import bashlex" in tokens[i + 1]
+        if t.startswith("-"):
+            i += 1
+            continue
+        try:
+            return Path(t).resolve() == Path(__file__).resolve()
+        except Exception:
+            return False
+    return False
+
+
 CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
     "awk": check_awk,
     "bash": check_shell_c,
@@ -562,6 +579,7 @@ CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
     "ip": check_ip,
     "journalctl": check_journalctl,
     "openssl": check_openssl,
+    "python": check_python,
     "sed": check_sed,
     "sh": check_shell_c,
     "sort": check_sort,
@@ -863,31 +881,29 @@ def get_command_nodes(node: Any) -> list[list[str]] | None:
 
 
 def preprocess_command(cmd_string: str) -> str:
-    """Strip bash reserved words that bashlex doesn't handle."""
-    return re.sub(r'\btime\s+(-p\s+)?', '', cmd_string)
+    """Strip bash constructs that bashlex doesn't handle."""
+    # Remove 'time' reserved word
+    cmd_string = re.sub(r'\btime\s+(-p\s+)?', '', cmd_string)
+    # Replace heredoc in command substitution with placeholder string
+    # Matches: "$(cat <<'EOF'...EOF)" or "$(cat <<EOF...EOF)"
+    cmd_string = re.sub(
+        r'"\$\(cat\s+<<\'?EOF\'?\n.*?\nEOF\n\)"',
+        '"HEREDOC_PLACEHOLDER"',
+        cmd_string,
+        flags=re.DOTALL
+    )
+    return cmd_string
 
 
-# Patterns that bashlex can't parse - extract command description for error message
-# Each pattern is (regex, command description)
-UNPARSEABLE_PATTERNS = [
-    # git commit with heredoc message - bashlex can't parse <<'EOF' inside $()
-    (re.compile(r"^git\s+(-C\s+\S+\s+)?commit\s+-m\s+\"\$\(cat\s+<<'?EOF'?"), "git commit"),
-]
+class ParseResult:
+    """Result of parsing a command string."""
+    def __init__(self, commands: list[list[str]] | None = None, error: str | None = None):
+        self.commands = commands
+        self.error = error
 
 
-def get_unparseable_command_desc(cmd_string: str) -> str | None:
-    """Extract command description from unparseable command. Returns None if no match."""
-    for pattern, desc in UNPARSEABLE_PATTERNS:
-        if pattern.search(cmd_string):
-            return desc
-    return None
-
-
-def parse_commands(cmd_string: str) -> list[list[str]] | None:
-    """Parse a bash command string and return list of commands.
-
-    Returns None if parsing fails or output redirects detected.
-    """
+def parse_commands(cmd_string: str) -> ParseResult:
+    """Parse a bash command string and return list of commands."""
     try:
         cmd_string = preprocess_command(cmd_string)
         parts = bashlex.parse(cmd_string)
@@ -895,11 +911,11 @@ def parse_commands(cmd_string: str) -> list[list[str]] | None:
         for part in parts:
             result = get_command_nodes(part)
             if result is None:
-                return None
+                return ParseResult(error="Output redirect")
             commands.extend(result)
-        return commands
+        return ParseResult(commands=commands)
     except Exception:
-        return None
+        return ParseResult(error="Parse failed")
 
 
 # === Entry point ===
@@ -929,17 +945,13 @@ def main() -> None:
         _log("info", event="deferred", command=command, reason="empty_command")
         defer_to_user("Empty command")
 
-    commands = parse_commands(command)
+    result = parse_commands(command)
 
-    if commands is None:
-        # Check if it matches a known unparseable pattern for better error message
-        desc = get_unparseable_command_desc(command)
-        if desc:
-            _log("info", event="deferred", command=command, reason="unparseable_known_pattern", desc=desc)
-            defer_to_user(f"Command requires approval: {desc}")
-        _log("info", event="deferred", command=command, reason="parse_failed_or_redirect")
-        defer_to_user("Could not parse command or contains output redirect")
+    if result.error:
+        _log("info", event="deferred", command=command, reason=result.error.lower().replace(" ", "_"))
+        defer_to_user(result.error)
 
+    commands = result.commands
     if not commands:
         _log("info", event="deferred", command=command, reason="no_commands")
         defer_to_user("No commands found")
