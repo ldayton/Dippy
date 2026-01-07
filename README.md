@@ -83,6 +83,18 @@ See `dippy-local-sample.toml` for all options including `prefix_commands`, `safe
 
 ---
 
+## Contributing
+
+I use Dippy all day and I'm constantly adding more patterns and programs as I encounter them. I'm a cloud infra engineer, so the supported CLI tools (aws, gcloud, az, kubectl, terraform, etc.) reflect that. PRs welcome to add support for tools you use - please include tests for any additions.
+
+---
+
+## Uninstall
+
+Remove the hook entry from `~/.claude/settings.json`.
+
+---
+
 <details>
 <summary><strong>Claude Instructions</strong></summary>
 
