@@ -576,7 +576,7 @@ CLI_CONFIGS = {
     },
     "cdk": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"doctor", "docs", "ls", "metadata", "notices", "synth"},
+        | {"acknowledge", "doctor", "docs", "ls", "metadata", "notices", "synth", "synthesize"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -1057,11 +1057,22 @@ def check_terraform_workspace(tokens: list[str]) -> bool:
     return subcommand in {"list", "show", "select"}
 
 
+def check_cdk_context(tokens: list[str]) -> bool:
+    """Approve cdk context only for read-only operations (no --reset/--clear)."""
+    # tokens: ['cdk', 'context'] or ['cdk', 'context', '--json']
+    # --reset and --clear modify context, so they're unsafe
+    for t in tokens:
+        if t in {"--reset", "--clear"}:
+            return False
+    return True
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
     ("aws", "secretsmanager"): check_aws_secretsmanager,
     ("aws", "ssm"): check_aws_ssm,
     ("az", "devops", "configure"): check_az_devops_configure,
+    ("cdk", "context"): check_cdk_context,
     ("gh", "api"): check_gh_api,
     ("terraform", "state"): check_terraform_state,
     ("terraform", "workspace"): check_terraform_workspace,
@@ -1296,7 +1307,7 @@ def is_command_safe(tokens: list[str]) -> bool:
     if not tokens:
         return False
 
-    if "--help" in tokens or "-help" in tokens or "--version" in tokens:
+    if "--help" in tokens or "-help" in tokens or "-h" in tokens or "--version" in tokens:
         return True
 
     # Allow dippy to run itself (self-executing via uv run)
