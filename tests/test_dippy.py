@@ -3622,6 +3622,45 @@ TESTS = [
     ("xargs --exit cat", True),
     ("xargs -r -t cat", True),
     ("xargs -rt cat", True),  # combined short flags
+    #
+    # ==========================================================================
+    # source / . (dot command)
+    # ==========================================================================
+    #
+    # source executes file contents in current shell - inherently unsafe
+    # since we cannot know what the file contains
+    ("source script.sh", False),
+    ("source ./script.sh", False),
+    ("source /path/to/script.sh", False),
+    ("source ~/.bashrc", False),
+    ("source ~/.bash_profile", False),
+    ("source ~/.profile", False),
+    ("source ~/.zshrc", False),
+    ("source /etc/profile", False),
+    ("source .env", False),
+    ("source .envrc", False),
+    # source with arguments passed to script
+    ("source script.sh arg1 arg2", False),
+    ("source ./setup.sh --install", False),
+    # Virtual environment activation (still unsafe - file could be modified)
+    ("source venv/bin/activate", False),
+    ("source .venv/bin/activate", False),
+    ("source ~/venvs/myenv/bin/activate", False),
+    # nvm, pyenv, etc.
+    ("source ~/.nvm/nvm.sh", False),
+    ("source ~/.pyenv/completions/pyenv.bash", False),
+    # Dot command (equivalent to source)
+    (". script.sh", False),
+    (". ./script.sh", False),
+    (". /path/to/script.sh", False),
+    (". ~/.bashrc", False),
+    (". ~/.profile", False),
+    (". .env", False),
+    (". venv/bin/activate", False),
+    (". .venv/bin/activate", False),
+    # Dot with arguments
+    (". script.sh arg1", False),
+    (". ./setup.sh --config", False),
     # Safe patterns (from tests/dippy-test.toml)
     (f"{Path.home()}/test-tools/foo/bin/run.sh", True),
     (f"{Path.home()}/test-tools/bar/bin/run.sh --test", True),
