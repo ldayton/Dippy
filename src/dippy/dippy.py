@@ -110,125 +110,47 @@ def _log(level: str, **kwargs) -> None:
 # === Data: What commands are safe ===
 
 SAFE_COMMANDS = {
-    "ack",
-    "arch",
-    "aws-azure-login",
-    "base32",
-    "base64",
-    "basenc",
-    "basename",
-    "cat",
-    "cd",
-    "cloc",
-    "col",
-    "comm",
-    "cut",
-    "date",
-    "df",
-    "diff",
-    "dig",
-    "dir",
-    "dirname",
-    "du",
-    "echo",
-    "env",
-    "false",
-    "fd",
-    "file",
-    "free",
-    "getent",
-    "grep",
-    "groups",
-    "head",
-    "host",
-    "hostid",
-    "hostname",
-    "id",
-    "join",
-    "jq",
-    "logname",
-    "ls",
-    "lsof",
-    "netstat",
-    "nproc",
-    "nslookup",
-    "paste",
-    "ping",
-    "pinky",
-    "printenv",
-    "printf",
-    "ps",
-    "pwd",
-    "pytest",
-    "readlink",
-    "realpath",
-    "rg",
-    "sleep",
-    "ss",
-    "stat",
-    "tail",
-    "traceroute",
-    "tr",
-    "tree",
-    "true",
-    "tsort",
-    "tty",
-    "type",
-    "uname",
-    "uniq",
-    "uptime",
-    "users",
-    "vdir",
-    "wc",
-    "which",
-    "who",
-    "whoami",
-    "yes",
-    # Text viewers & pagers
-    "bat",
-    "less",
-    "more",
-    # Documentation/help
-    "apropos",
-    "info",
-    "man",
-    "whatis",
-    "whereis",
-    # Checksums & hashing
-    "b2sum",
-    "cksum",
-    "md5sum",
-    "sha1sum",
-    "sha256sum",
-    "sha512sum",
-    # Binary/file inspection
-    "hexdump",
-    "od",
-    "strings",
-    # Network lookup
-    "whois",
-    # Process monitors
-    "htop",
+    # File viewing
+    "bat", "cat", "head", "less", "more", "tail", "tac",
+    # File info/metadata
+    "dir", "file", "ls", "lsof", "stat", "tree", "vdir",
+    # Path utilities
+    "basename", "dirname", "pwd", "readlink", "realpath", "which", "whereis",
     # Text processing
-    "expand",
-    "fmt",
-    "fold",
-    "nl",
-    "tac",
-    "unexpand",
-    # Math/calculators
-    "bc",
-    "cal",
-    "dc",
-    "expr",
-    "factor",
-    "seq",
-    "units",
+    "ack", "col", "comm", "cut", "diff", "expand", "fmt", "fold",
+    "grep", "join", "nl", "paste", "rg", "tr", "tsort", "unexpand", "uniq", "wc",
+    # Search
+    "fd",
+    # Checksums & hashing
+    "b2sum", "cksum", "md5sum", "sha1sum", "sha256sum", "sha512sum",
     # Encoding
-    "iconv",
-    # Archive inspection (read-only)
-    "lsar",
-    "zipinfo",
+    "base32", "base64", "basenc", "iconv",
+    # Binary inspection
+    "hexdump", "od", "strings",
+    # Archive inspection
+    "lsar", "zipinfo",
+    # Documentation
+    "apropos", "info", "man", "whatis",
+    # System info
+    "arch", "date", "df", "du", "free", "hostname", "hostid", "nproc", "uname", "uptime",
+    # User info
+    "getent", "groups", "id", "logname", "pinky", "users", "who", "whoami",
+    # Process info
+    "htop", "ps", "tty",
+    # Network inspection
+    "dig", "host", "netstat", "nslookup", "ping", "ss", "traceroute", "whois",
+    # Math/calculators
+    "bc", "cal", "dc", "expr", "factor", "seq", "units",
+    # Output/control
+    "echo", "false", "printf", "sleep", "true", "yes",
+    # Data processing
+    "jq",
+    # Dev tools
+    "cloc", "pytest",
+    # Auth
+    "aws-azure-login",
+    # Shell builtins
+    "cd", "env", "printenv", "type",
 }
 
 SAFE_SCRIPTS: set[str] = set()
