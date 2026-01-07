@@ -111,46 +111,134 @@ def _log(level: str, **kwargs) -> None:
 
 SAFE_COMMANDS = {
     # File viewing
-    "bat", "cat", "head", "less", "more", "tail", "tac",
+    "bat",
+    "cat",
+    "head",
+    "less",
+    "more",
+    "tail",
+    "tac",
     # File info/metadata
-    "dir", "file", "ls", "lsof", "stat", "tree", "vdir",
+    "dir",
+    "file",
+    "ls",
+    "lsof",
+    "stat",
+    "tree",
+    "vdir",
     # Path utilities
-    "basename", "dirname", "pwd", "readlink", "realpath", "which", "whereis",
+    "basename",
+    "dirname",
+    "pwd",
+    "readlink",
+    "realpath",
+    "which",
+    "whereis",
     # Text processing
-    "ack", "col", "comm", "cut", "diff", "expand", "fmt", "fold",
-    "grep", "join", "nl", "paste", "rg", "tr", "tsort", "unexpand", "uniq", "wc",
+    "ack",
+    "col",
+    "comm",
+    "cut",
+    "diff",
+    "expand",
+    "fmt",
+    "fold",
+    "grep",
+    "join",
+    "nl",
+    "paste",
+    "rg",
+    "tr",
+    "tsort",
+    "unexpand",
+    "uniq",
+    "wc",
     # Search
     "fd",
     # Checksums & hashing
-    "b2sum", "cksum", "md5sum", "sha1sum", "sha256sum", "sha512sum",
+    "b2sum",
+    "cksum",
+    "md5sum",
+    "sha1sum",
+    "sha256sum",
+    "sha512sum",
     # Encoding
-    "base32", "base64", "basenc", "iconv",
+    "base32",
+    "base64",
+    "basenc",
+    "iconv",
     # Binary inspection
-    "hexdump", "od", "strings",
+    "hexdump",
+    "od",
+    "strings",
     # Archive inspection
-    "lsar", "zipinfo",
+    "lsar",
+    "zipinfo",
     # Documentation
-    "apropos", "info", "man", "whatis",
+    "apropos",
+    "info",
+    "man",
+    "whatis",
     # System info
-    "arch", "date", "df", "du", "free", "hostname", "hostid", "nproc", "uname", "uptime",
+    "arch",
+    "date",
+    "df",
+    "du",
+    "free",
+    "hostname",
+    "hostid",
+    "nproc",
+    "uname",
+    "uptime",
     # User info
-    "getent", "groups", "id", "logname", "pinky", "users", "who", "whoami",
+    "getent",
+    "groups",
+    "id",
+    "logname",
+    "pinky",
+    "users",
+    "who",
+    "whoami",
     # Process info
-    "htop", "ps", "tty",
+    "htop",
+    "ps",
+    "tty",
     # Network inspection
-    "dig", "host", "netstat", "nslookup", "ping", "ss", "traceroute", "whois",
+    "dig",
+    "host",
+    "netstat",
+    "nslookup",
+    "ping",
+    "ss",
+    "traceroute",
+    "whois",
     # Math/calculators
-    "bc", "cal", "dc", "expr", "factor", "seq", "units",
+    "bc",
+    "cal",
+    "dc",
+    "expr",
+    "factor",
+    "seq",
+    "units",
     # Output/control
-    "echo", "false", "printf", "sleep", "true", "yes",
+    "echo",
+    "false",
+    "printf",
+    "sleep",
+    "true",
+    "yes",
     # Data processing
     "jq",
     # Dev tools
-    "cloc", "pytest",
+    "cloc",
+    "pytest",
     # Auth
     "aws-azure-login",
     # Shell builtins
-    "cd", "env", "printenv", "type",
+    "cd",
+    "env",
+    "printenv",
+    "type",
 }
 
 SAFE_SCRIPTS: set[str] = set()
@@ -383,21 +471,44 @@ CLI_CONFIGS = {
             ("devops", "wiki"): 2,  # az devops wiki list
             ("devops", "wiki", "page"): 3,  # az devops wiki page show
             ("eventhubs", "eventhub"): 2,  # az eventhubs eventhub list
-            ("eventhubs", "eventhub", "consumer-group"): 3,  # az eventhubs eventhub consumer-group list
+            (
+                "eventhubs",
+                "eventhub",
+                "consumer-group",
+            ): 3,  # az eventhubs eventhub consumer-group list
             ("functionapp", "config"): 2,  # az functionapp config show
-            ("functionapp", "config", "appsettings"): 3,  # az functionapp config appsettings list
-            ("functionapp", "deployment"): 2,  # az functionapp deployment list-publishing-profiles
+            (
+                "functionapp",
+                "config",
+                "appsettings",
+            ): 3,  # az functionapp config appsettings list
+            (
+                "functionapp",
+                "deployment",
+            ): 2,  # az functionapp deployment list-publishing-profiles
             ("functionapp", "function"): 2,  # az functionapp function list
             ("functionapp", "keys"): 2,  # az functionapp keys list
             ("keyvault", "certificate"): 2,  # az keyvault certificate list
             ("keyvault", "key"): 2,  # az keyvault key list
             ("keyvault", "secret"): 2,  # az keyvault secret list
             ("monitor", "log-analytics"): 2,  # az monitor log-analytics query
-            ("monitor", "log-analytics", "workspace"): 3,  # az monitor log-analytics workspace list
-            ("network", "application-gateway"): 2,  # az network application-gateway list
+            (
+                "monitor",
+                "log-analytics",
+                "workspace",
+            ): 3,  # az monitor log-analytics workspace list
+            (
+                "network",
+                "application-gateway",
+            ): 2,  # az network application-gateway list
             ("network", "dns"): 3,  # az network dns zone list
             ("network", "dns", "record-set"): 3,  # az network dns record-set list
-            ("network", "dns", "record-set", "a"): 4,  # az network dns record-set a list
+            (
+                "network",
+                "dns",
+                "record-set",
+                "a",
+            ): 4,  # az network dns record-set a list
             ("network", "lb"): 2,  # az network lb list
             ("network", "nic"): 2,  # az network nic list
             ("network", "nic", "ip-config"): 3,  # az network nic ip-config list
@@ -416,11 +527,24 @@ CLI_CONFIGS = {
             ("repos", "pr"): 2,  # az repos pr list
             ("repos", "ref"): 2,  # az repos ref list
             ("servicebus", "namespace"): 2,  # az servicebus namespace list
-            ("servicebus", "namespace", "authorization-rule"): 3,  # az servicebus namespace authorization-rule list
-            ("servicebus", "namespace", "authorization-rule", "keys"): 4,  # az servicebus namespace authorization-rule keys list
+            (
+                "servicebus",
+                "namespace",
+                "authorization-rule",
+            ): 3,  # az servicebus namespace authorization-rule list
+            (
+                "servicebus",
+                "namespace",
+                "authorization-rule",
+                "keys",
+            ): 4,  # az servicebus namespace authorization-rule keys list
             ("servicebus", "queue"): 2,  # az servicebus queue list
             ("servicebus", "topic"): 2,  # az servicebus topic list
-            ("servicebus", "topic", "subscription"): 3,  # az servicebus topic subscription list
+            (
+                "servicebus",
+                "topic",
+                "subscription",
+            ): 3,  # az servicebus topic subscription list
             ("sql", "db"): 2,  # az sql db list
             ("vm", "image"): 2,  # az vm image list
             ("sql", "elastic-pool"): 2,  # az sql elastic-pool list
@@ -433,7 +557,11 @@ CLI_CONFIGS = {
             ("storage", "container"): 2,  # az storage container list
             ("webapp", "config"): 2,  # az webapp config show
             ("webapp", "config", "appsettings"): 3,  # az webapp config appsettings list
-            ("webapp", "config", "connection-string"): 3,  # az webapp config connection-string list
+            (
+                "webapp",
+                "config",
+                "connection-string",
+            ): 3,  # az webapp config connection-string list
             ("webapp", "deployment"): 2,  # az webapp deployment list-*
             ("webapp", "deployment", "source"): 3,  # az webapp deployment source show
             ("webapp", "log"): 2,  # az webapp log show
@@ -451,7 +579,16 @@ CLI_CONFIGS = {
     },
     "gcloud": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"get-iam-policy", "get-value", "help", "info", "list-grantable-roles", "read", "topic", "version"},
+        | {
+            "get-iam-policy",
+            "get-value",
+            "help",
+            "info",
+            "list-grantable-roles",
+            "read",
+            "topic",
+            "version",
+        },
         "safe_prefixes": ("get-", "list-", "describe-"),
         "parser": "variable_depth",
         "action_depth": 2,
@@ -488,7 +625,11 @@ CLI_CONFIGS = {
             ("iam",): 1,  # gcloud iam list-grantable-roles (top-level iam commands)
             ("iam", "roles"): 2,  # gcloud iam roles list
             ("iam", "service-accounts"): 2,  # gcloud iam service-accounts list
-            ("iam", "service-accounts", "keys"): 3,  # gcloud iam service-accounts keys list
+            (
+                "iam",
+                "service-accounts",
+                "keys",
+            ): 3,  # gcloud iam service-accounts keys list
             ("iap", "tcp"): 3,  # gcloud iap tcp tunnels list
             ("logging", "logs"): 2,  # gcloud logging logs list
             ("secrets", "versions"): 2,  # gcloud secrets versions list
@@ -588,7 +729,16 @@ CLI_CONFIGS = {
     },
     "cdk": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"acknowledge", "doctor", "docs", "ls", "metadata", "notices", "synth", "synthesize"},
+        | {
+            "acknowledge",
+            "doctor",
+            "docs",
+            "ls",
+            "metadata",
+            "notices",
+            "synth",
+            "synthesize",
+        },
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -650,8 +800,7 @@ CLI_CONFIGS = {
         "parser": "first_token",
     },
     "pip": {
-        "safe_actions": COMMON_SAFE_ACTIONS
-        | {"check", "freeze", "index", "inspect"},
+        "safe_actions": COMMON_SAFE_ACTIONS | {"check", "freeze", "index", "inspect"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -946,7 +1095,11 @@ def check_tar(tokens: list[str]) -> bool:
     # Check first arg for old-style (no dash) like "tf", "tvf", "ztf"
     if len(tokens) > 1:
         first_arg = tokens[1]
-        if not first_arg.startswith("-") and "t" in first_arg and not any(c in first_arg for c in "cxru"):
+        if (
+            not first_arg.startswith("-")
+            and "t" in first_arg
+            and not any(c in first_arg for c in "cxru")
+        ):
             return True
     return False
 
@@ -1094,7 +1247,13 @@ def check_kubectl_config(tokens: list[str]) -> bool:
     # Safe subcommands: view, get-contexts, get-clusters, get-users, current-context
     # Unsafe: use-context, use, set-context, set-cluster, set-credentials, set,
     #         delete-context, delete-cluster, delete-user, rename-context
-    safe_subcommands = {"view", "get-contexts", "get-clusters", "get-users", "current-context"}
+    safe_subcommands = {
+        "view",
+        "get-contexts",
+        "get-clusters",
+        "get-users",
+        "current-context",
+    }
     return subcommand in safe_subcommands
 
 
@@ -1356,7 +1515,12 @@ def is_command_safe(tokens: list[str]) -> bool:
     if not tokens:
         return False
 
-    if "--help" in tokens or "-help" in tokens or "-h" in tokens or "--version" in tokens:
+    if (
+        "--help" in tokens
+        or "-help" in tokens
+        or "-h" in tokens
+        or "--version" in tokens
+    ):
         return True
 
     # Allow dippy to run itself (self-executing via uv run)

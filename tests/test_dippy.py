@@ -1,7 +1,8 @@
 """Test cases for dippy."""
 
-import sys
 from pathlib import Path
+
+import pytest
 
 from dippy.dippy import (
     parse_commands,
@@ -44,8 +45,14 @@ TESTS = [
     ("aws sts get-caller-identity", True),
     ("aws sts get-session-token", True),
     ("aws sts get-access-key-info --access-key-id AKIA...", True),
-    ("aws sts assume-role --role-arn arn:aws:iam::123:role/myrole --role-session-name sess", False),
-    ("aws sts assume-role-with-saml --role-arn arn --principal-arn arn --saml-assertion ...", False),
+    (
+        "aws sts assume-role --role-arn arn:aws:iam::123:role/myrole --role-session-name sess",
+        False,
+    ),
+    (
+        "aws sts assume-role-with-saml --role-arn arn --principal-arn arn --saml-assertion ...",
+        False,
+    ),
     # aws ec2 - Elastic Compute Cloud
     ("aws ec2 describe-instances", True),
     ("aws ec2 describe-instances --instance-ids i-123", True),
@@ -82,8 +89,14 @@ TESTS = [
     ("aws ec2 delete-key-pair --key-name mykey", False),
     ("aws ec2 create-security-group --group-name mysg --description desc", False),
     ("aws ec2 delete-security-group --group-id sg-123", False),
-    ("aws ec2 authorize-security-group-ingress --group-id sg-123 --protocol tcp --port 22 --cidr 0.0.0.0/0", False),
-    ("aws ec2 modify-instance-attribute --instance-id i-123 --instance-type t3.micro", False),
+    (
+        "aws ec2 authorize-security-group-ingress --group-id sg-123 --protocol tcp --port 22 --cidr 0.0.0.0/0",
+        False,
+    ),
+    (
+        "aws ec2 modify-instance-attribute --instance-id i-123 --instance-type t3.micro",
+        False,
+    ),
     # aws s3 - Simple Storage Service (high-level commands)
     ("aws s3 ls", True),
     ("aws s3 ls s3://mybucket", True),
@@ -126,7 +139,10 @@ TESTS = [
     ("aws s3api delete-objects --bucket mybucket --delete file://delete.json", False),
     ("aws s3api create-bucket --bucket newbucket", False),
     ("aws s3api delete-bucket --bucket mybucket", False),
-    ("aws s3api put-bucket-policy --bucket mybucket --policy file://policy.json", False),
+    (
+        "aws s3api put-bucket-policy --bucket mybucket --policy file://policy.json",
+        False,
+    ),
     ("aws s3api put-bucket-acl --bucket mybucket --acl public-read", False),
     # aws iam - Identity and Access Management
     ("aws iam list-users", True),
@@ -163,14 +179,23 @@ TESTS = [
     ("aws iam get-login-profile --user-name myuser", True),
     ("aws iam get-access-key-last-used --access-key-id AKIA...", True),
     ("aws iam generate-credential-report", True),
-    ("aws iam simulate-principal-policy --policy-source-arn arn --action-names s3:GetObject", True),
+    (
+        "aws iam simulate-principal-policy --policy-source-arn arn --action-names s3:GetObject",
+        True,
+    ),
     ("aws iam create-user --user-name newuser", False),
     ("aws iam delete-user --user-name myuser", False),
     ("aws iam create-group --group-name newgroup", False),
     ("aws iam delete-group --group-name mygroup", False),
-    ("aws iam create-role --role-name newrole --assume-role-policy-document file://trust.json", False),
+    (
+        "aws iam create-role --role-name newrole --assume-role-policy-document file://trust.json",
+        False,
+    ),
     ("aws iam delete-role --role-name myrole", False),
-    ("aws iam create-policy --policy-name newpolicy --policy-document file://policy.json", False),
+    (
+        "aws iam create-policy --policy-name newpolicy --policy-document file://policy.json",
+        False,
+    ),
     ("aws iam delete-policy --policy-arn arn", False),
     ("aws iam attach-user-policy --user-name myuser --policy-arn arn", False),
     ("aws iam detach-user-policy --user-name myuser --policy-arn arn", False),
@@ -185,8 +210,14 @@ TESTS = [
     ("aws iam update-login-profile --user-name myuser --password newpass", False),
     ("aws iam delete-login-profile --user-name myuser", False),
     ("aws iam change-password --old-password old --new-password new", False),
-    ("aws iam put-user-policy --user-name myuser --policy-name pol --policy-document file://p.json", False),
-    ("aws iam put-role-policy --role-name myrole --policy-name pol --policy-document file://p.json", False),
+    (
+        "aws iam put-user-policy --user-name myuser --policy-name pol --policy-document file://p.json",
+        False,
+    ),
+    (
+        "aws iam put-role-policy --role-name myrole --policy-name pol --policy-document file://p.json",
+        False,
+    ),
     # aws lambda - Lambda Functions
     ("aws lambda list-functions", True),
     ("aws lambda list-functions --region us-east-1", True),
@@ -207,16 +238,34 @@ TESTS = [
     ("aws lambda get-layer-version --layer-name mylayer --version-number 1", True),
     ("aws lambda invoke --function-name myfunc response.json", False),
     ("aws lambda invoke --function-name myfunc --payload '{}' response.json", False),
-    ("aws lambda create-function --function-name newfunc --runtime python3.9 --role arn --handler handler.main --zip-file fileb://code.zip", False),
+    (
+        "aws lambda create-function --function-name newfunc --runtime python3.9 --role arn --handler handler.main --zip-file fileb://code.zip",
+        False,
+    ),
     ("aws lambda delete-function --function-name myfunc", False),
-    ("aws lambda update-function-code --function-name myfunc --zip-file fileb://code.zip", False),
-    ("aws lambda update-function-configuration --function-name myfunc --timeout 30", False),
+    (
+        "aws lambda update-function-code --function-name myfunc --zip-file fileb://code.zip",
+        False,
+    ),
+    (
+        "aws lambda update-function-configuration --function-name myfunc --timeout 30",
+        False,
+    ),
     ("aws lambda publish-version --function-name myfunc", False),
-    ("aws lambda create-alias --function-name myfunc --name myalias --function-version 1", False),
+    (
+        "aws lambda create-alias --function-name myfunc --name myalias --function-version 1",
+        False,
+    ),
     ("aws lambda delete-alias --function-name myfunc --name myalias", False),
-    ("aws lambda add-permission --function-name myfunc --statement-id stmt --action lambda:InvokeFunction --principal s3.amazonaws.com", False),
+    (
+        "aws lambda add-permission --function-name myfunc --statement-id stmt --action lambda:InvokeFunction --principal s3.amazonaws.com",
+        False,
+    ),
     ("aws lambda remove-permission --function-name myfunc --statement-id stmt", False),
-    ("aws lambda put-function-concurrency --function-name myfunc --reserved-concurrent-executions 10", False),
+    (
+        "aws lambda put-function-concurrency --function-name myfunc --reserved-concurrent-executions 10",
+        False,
+    ),
     # aws dynamodb - DynamoDB
     ("aws dynamodb list-tables", True),
     ("aws dynamodb list-tables --region us-east-1", True),
@@ -235,21 +284,36 @@ TESTS = [
     ("aws dynamodb describe-global-table-settings --global-table-name mytable", True),
     ("aws dynamodb get-item --table-name mytable --key file://key.json", True),
     ("aws dynamodb batch-get-item --request-items file://items.json", True),
-    ("aws dynamodb query --table-name mytable --key-condition-expression 'pk = :pk' --expression-attribute-values file://vals.json", True),
+    (
+        "aws dynamodb query --table-name mytable --key-condition-expression 'pk = :pk' --expression-attribute-values file://vals.json",
+        True,
+    ),
     ("aws dynamodb scan --table-name mytable", True),
     ("aws dynamodb scan --table-name mytable --filter-expression 'attr > :val'", True),
     ("aws dynamodb transact-get-items --transact-items file://items.json", True),
-    ("aws dynamodb create-table --table-name newtable --attribute-definitions ... --key-schema ... --billing-mode PAY_PER_REQUEST", False),
+    (
+        "aws dynamodb create-table --table-name newtable --attribute-definitions ... --key-schema ... --billing-mode PAY_PER_REQUEST",
+        False,
+    ),
     ("aws dynamodb delete-table --table-name mytable", False),
-    ("aws dynamodb update-table --table-name mytable --billing-mode PAY_PER_REQUEST", False),
+    (
+        "aws dynamodb update-table --table-name mytable --billing-mode PAY_PER_REQUEST",
+        False,
+    ),
     ("aws dynamodb put-item --table-name mytable --item file://item.json", False),
-    ("aws dynamodb update-item --table-name mytable --key file://key.json --update-expression 'SET attr = :val'", False),
+    (
+        "aws dynamodb update-item --table-name mytable --key file://key.json --update-expression 'SET attr = :val'",
+        False,
+    ),
     ("aws dynamodb delete-item --table-name mytable --key file://key.json", False),
     ("aws dynamodb batch-write-item --request-items file://items.json", False),
     ("aws dynamodb transact-write-items --transact-items file://items.json", False),
     ("aws dynamodb create-backup --table-name mytable --backup-name mybackup", False),
     ("aws dynamodb delete-backup --backup-arn arn", False),
-    ("aws dynamodb restore-table-from-backup --target-table-name newtable --backup-arn arn", False),
+    (
+        "aws dynamodb restore-table-from-backup --target-table-name newtable --backup-arn arn",
+        False,
+    ),
     # aws rds - Relational Database Service
     ("aws rds describe-db-instances", True),
     ("aws rds describe-db-instances --db-instance-identifier mydb", True),
@@ -272,19 +336,43 @@ TESTS = [
     ("aws rds describe-certificates", True),
     ("aws rds describe-pending-maintenance-actions", True),
     ("aws rds list-tags-for-resource --resource-name arn:aws:rds:...", True),
-    ("aws rds download-db-log-file-portion --db-instance-identifier mydb --log-file-name error.log", True),
-    ("aws rds create-db-instance --db-instance-identifier newdb --db-instance-class db.t3.micro --engine postgres", False),
+    (
+        "aws rds download-db-log-file-portion --db-instance-identifier mydb --log-file-name error.log",
+        True,
+    ),
+    (
+        "aws rds create-db-instance --db-instance-identifier newdb --db-instance-class db.t3.micro --engine postgres",
+        False,
+    ),
     ("aws rds delete-db-instance --db-instance-identifier mydb", False),
-    ("aws rds delete-db-instance --db-instance-identifier mydb --skip-final-snapshot", False),
+    (
+        "aws rds delete-db-instance --db-instance-identifier mydb --skip-final-snapshot",
+        False,
+    ),
     ("aws rds start-db-instance --db-instance-identifier mydb", False),
     ("aws rds stop-db-instance --db-instance-identifier mydb", False),
     ("aws rds reboot-db-instance --db-instance-identifier mydb", False),
-    ("aws rds modify-db-instance --db-instance-identifier mydb --db-instance-class db.t3.medium", False),
-    ("aws rds modify-db-instance --db-instance-identifier mydb --apply-immediately", False),
-    ("aws rds create-db-snapshot --db-instance-identifier mydb --db-snapshot-identifier mysnap", False),
+    (
+        "aws rds modify-db-instance --db-instance-identifier mydb --db-instance-class db.t3.medium",
+        False,
+    ),
+    (
+        "aws rds modify-db-instance --db-instance-identifier mydb --apply-immediately",
+        False,
+    ),
+    (
+        "aws rds create-db-snapshot --db-instance-identifier mydb --db-snapshot-identifier mysnap",
+        False,
+    ),
     ("aws rds delete-db-snapshot --db-snapshot-identifier mysnap", False),
-    ("aws rds restore-db-instance-from-db-snapshot --db-instance-identifier newdb --db-snapshot-identifier mysnap", False),
-    ("aws rds create-db-cluster --db-cluster-identifier mycluster --engine aurora-postgresql", False),
+    (
+        "aws rds restore-db-instance-from-db-snapshot --db-instance-identifier newdb --db-snapshot-identifier mysnap",
+        False,
+    ),
+    (
+        "aws rds create-db-cluster --db-cluster-identifier mycluster --engine aurora-postgresql",
+        False,
+    ),
     ("aws rds delete-db-cluster --db-cluster-identifier mycluster", False),
     # aws eks - Elastic Kubernetes Service
     ("aws eks list-clusters", True),
@@ -294,26 +382,53 @@ TESTS = [
     ("aws eks list-identity-provider-configs --cluster-name mycluster", True),
     ("aws eks list-updates --name mycluster", True),
     ("aws eks describe-cluster --name mycluster", True),
-    ("aws eks describe-nodegroup --cluster-name mycluster --nodegroup-name mynodegroup", True),
-    ("aws eks describe-fargate-profile --cluster-name mycluster --fargate-profile-name myprofile", True),
+    (
+        "aws eks describe-nodegroup --cluster-name mycluster --nodegroup-name mynodegroup",
+        True,
+    ),
+    (
+        "aws eks describe-fargate-profile --cluster-name mycluster --fargate-profile-name myprofile",
+        True,
+    ),
     ("aws eks describe-addon --cluster-name mycluster --addon-name vpc-cni", True),
     ("aws eks describe-addon-versions --addon-name vpc-cni", True),
     ("aws eks describe-update --name mycluster --update-id id", True),
-    ("aws eks describe-identity-provider-config --cluster-name mycluster --identity-provider-config type=oidc,name=myconfig", True),
-    ("aws eks create-cluster --name newcluster --role-arn arn --resources-vpc-config subnetIds=...", False),
+    (
+        "aws eks describe-identity-provider-config --cluster-name mycluster --identity-provider-config type=oidc,name=myconfig",
+        True,
+    ),
+    (
+        "aws eks create-cluster --name newcluster --role-arn arn --resources-vpc-config subnetIds=...",
+        False,
+    ),
     ("aws eks delete-cluster --name mycluster", False),
-    ("aws eks update-cluster-config --name mycluster --resources-vpc-config ...", False),
-    ("aws eks update-cluster-version --name mycluster --kubernetes-version 1.27", False),
+    (
+        "aws eks update-cluster-config --name mycluster --resources-vpc-config ...",
+        False,
+    ),
+    (
+        "aws eks update-cluster-version --name mycluster --kubernetes-version 1.27",
+        False,
+    ),
     ("aws eks update-kubeconfig --name mycluster", False),
-    ("aws eks create-nodegroup --cluster-name mycluster --nodegroup-name newnodegroup --subnets ... --node-role arn", False),
-    ("aws eks delete-nodegroup --cluster-name mycluster --nodegroup-name mynodegroup", False),
+    (
+        "aws eks create-nodegroup --cluster-name mycluster --nodegroup-name newnodegroup --subnets ... --node-role arn",
+        False,
+    ),
+    (
+        "aws eks delete-nodegroup --cluster-name mycluster --nodegroup-name mynodegroup",
+        False,
+    ),
     ("aws eks create-addon --cluster-name mycluster --addon-name vpc-cni", False),
     ("aws eks delete-addon --cluster-name mycluster --addon-name vpc-cni", False),
     # aws ecr - Elastic Container Registry
     ("aws ecr describe-repositories", True),
     ("aws ecr describe-repositories --repository-names myrepo", True),
     ("aws ecr describe-images --repository-name myrepo", True),
-    ("aws ecr describe-image-scan-findings --repository-name myrepo --image-id imageTag=latest", True),
+    (
+        "aws ecr describe-image-scan-findings --repository-name myrepo --image-id imageTag=latest",
+        True,
+    ),
     ("aws ecr list-images --repository-name myrepo", True),
     ("aws ecr list-tags-for-resource --resource-arn arn", True),
     ("aws ecr get-repository-policy --repository-name myrepo", True),
@@ -322,15 +437,33 @@ TESTS = [
     ("aws ecr get-login-password", True),
     ("aws ecr get-login-password --region us-east-1", True),
     ("aws ecr get-authorization-token", True),
-    ("aws ecr batch-get-image --repository-name myrepo --image-ids imageTag=latest", True),
+    (
+        "aws ecr batch-get-image --repository-name myrepo --image-ids imageTag=latest",
+        True,
+    ),
     ("aws ecr create-repository --repository-name newrepo", False),
     ("aws ecr delete-repository --repository-name myrepo", False),
     ("aws ecr delete-repository --repository-name myrepo --force", False),
-    ("aws ecr put-image --repository-name myrepo --image-manifest file://manifest.json", False),
-    ("aws ecr batch-delete-image --repository-name myrepo --image-ids imageTag=latest", False),
-    ("aws ecr put-lifecycle-policy --repository-name myrepo --lifecycle-policy-text file://policy.json", False),
-    ("aws ecr set-repository-policy --repository-name myrepo --policy-text file://policy.json", False),
-    ("aws ecr start-image-scan --repository-name myrepo --image-id imageTag=latest", False),
+    (
+        "aws ecr put-image --repository-name myrepo --image-manifest file://manifest.json",
+        False,
+    ),
+    (
+        "aws ecr batch-delete-image --repository-name myrepo --image-ids imageTag=latest",
+        False,
+    ),
+    (
+        "aws ecr put-lifecycle-policy --repository-name myrepo --lifecycle-policy-text file://policy.json",
+        False,
+    ),
+    (
+        "aws ecr set-repository-policy --repository-name myrepo --policy-text file://policy.json",
+        False,
+    ),
+    (
+        "aws ecr start-image-scan --repository-name myrepo --image-id imageTag=latest",
+        False,
+    ),
     # aws cloudformation - CloudFormation
     ("aws cloudformation list-stacks", True),
     ("aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE", True),
@@ -343,33 +476,66 @@ TESTS = [
     ("aws cloudformation describe-stacks", True),
     ("aws cloudformation describe-stacks --stack-name mystack", True),
     ("aws cloudformation describe-stack-events --stack-name mystack", True),
-    ("aws cloudformation describe-stack-resource --stack-name mystack --logical-resource-id myresource", True),
+    (
+        "aws cloudformation describe-stack-resource --stack-name mystack --logical-resource-id myresource",
+        True,
+    ),
     ("aws cloudformation describe-stack-resources --stack-name mystack", True),
     ("aws cloudformation describe-stack-resource-drifts --stack-name mystack", True),
     ("aws cloudformation describe-stack-set --stack-set-name myset", True),
-    ("aws cloudformation describe-change-set --change-set-name mychangeset --stack-name mystack", True),
+    (
+        "aws cloudformation describe-change-set --change-set-name mychangeset --stack-name mystack",
+        True,
+    ),
     ("aws cloudformation describe-type --type-name AWS::S3::Bucket", True),
     ("aws cloudformation get-stack-policy --stack-name mystack", True),
     ("aws cloudformation get-template --stack-name mystack", True),
     ("aws cloudformation get-template-summary --stack-name mystack", True),
     ("aws cloudformation detect-stack-drift --stack-name mystack", True),
-    ("aws cloudformation detect-stack-resource-drift --stack-name mystack --logical-resource-id res", True),
+    (
+        "aws cloudformation detect-stack-resource-drift --stack-name mystack --logical-resource-id res",
+        True,
+    ),
     ("aws cloudformation validate-template --template-body file://template.yaml", True),
-    ("aws cloudformation estimate-template-cost --template-body file://template.yaml", True),
-    ("aws cloudformation create-stack --stack-name newstack --template-body file://template.yaml", False),
+    (
+        "aws cloudformation estimate-template-cost --template-body file://template.yaml",
+        True,
+    ),
+    (
+        "aws cloudformation create-stack --stack-name newstack --template-body file://template.yaml",
+        False,
+    ),
     ("aws cloudformation delete-stack --stack-name mystack", False),
-    ("aws cloudformation update-stack --stack-name mystack --template-body file://template.yaml", False),
-    ("aws cloudformation execute-change-set --change-set-name mychangeset --stack-name mystack", False),
+    (
+        "aws cloudformation update-stack --stack-name mystack --template-body file://template.yaml",
+        False,
+    ),
+    (
+        "aws cloudformation execute-change-set --change-set-name mychangeset --stack-name mystack",
+        False,
+    ),
     ("aws cloudformation cancel-update-stack --stack-name mystack", False),
     ("aws cloudformation continue-update-rollback --stack-name mystack", False),
-    ("aws cloudformation create-change-set --stack-name mystack --change-set-name mychangeset --template-body file://t.yaml", False),
-    ("aws cloudformation delete-change-set --change-set-name mychangeset --stack-name mystack", False),
-    ("aws cloudformation signal-resource --stack-name mystack --logical-resource-id res --unique-id id --status SUCCESS", False),
+    (
+        "aws cloudformation create-change-set --stack-name mystack --change-set-name mychangeset --template-body file://t.yaml",
+        False,
+    ),
+    (
+        "aws cloudformation delete-change-set --change-set-name mychangeset --stack-name mystack",
+        False,
+    ),
+    (
+        "aws cloudformation signal-resource --stack-name mystack --logical-resource-id res --unique-id id --status SUCCESS",
+        False,
+    ),
     # aws logs - CloudWatch Logs
     ("aws logs describe-log-groups", True),
     ("aws logs describe-log-groups --log-group-name-prefix /aws/lambda", True),
     ("aws logs describe-log-streams --log-group-name mygroup", True),
-    ("aws logs describe-log-streams --log-group-name mygroup --order-by LastEventTime --descending", True),
+    (
+        "aws logs describe-log-streams --log-group-name mygroup --order-by LastEventTime --descending",
+        True,
+    ),
     ("aws logs describe-metric-filters --log-group-name mygroup", True),
     ("aws logs describe-subscription-filters --log-group-name mygroup", True),
     ("aws logs describe-export-tasks", True),
@@ -378,24 +544,54 @@ TESTS = [
     ("aws logs describe-destinations", True),
     ("aws logs describe-resource-policies", True),
     ("aws logs filter-log-events --log-group-name mygroup", True),
-    ("aws logs filter-log-events --log-group-name mygroup --filter-pattern ERROR", True),
-    ("aws logs filter-log-events --log-group-name mygroup --start-time 1234567890000", True),
-    ("aws logs get-log-events --log-group-name mygroup --log-stream-name mystream", True),
+    (
+        "aws logs filter-log-events --log-group-name mygroup --filter-pattern ERROR",
+        True,
+    ),
+    (
+        "aws logs filter-log-events --log-group-name mygroup --start-time 1234567890000",
+        True,
+    ),
+    (
+        "aws logs get-log-events --log-group-name mygroup --log-stream-name mystream",
+        True,
+    ),
     ("aws logs get-log-record --log-record-pointer ptr", True),
     ("aws logs get-query-results --query-id id", True),
-    ("aws logs start-query --log-group-name mygroup --start-time 0 --end-time 1 --query-string 'fields @message'", True),
+    (
+        "aws logs start-query --log-group-name mygroup --start-time 0 --end-time 1 --query-string 'fields @message'",
+        True,
+    ),
     ("aws logs stop-query --query-id id", True),
     ("aws logs tail --log-group-name mygroup", True),
     ("aws logs tail --log-group-name mygroup --follow", True),
     ("aws logs create-log-group --log-group-name newgroup", False),
     ("aws logs delete-log-group --log-group-name mygroup", False),
-    ("aws logs create-log-stream --log-group-name mygroup --log-stream-name newstream", False),
-    ("aws logs delete-log-stream --log-group-name mygroup --log-stream-name mystream", False),
-    ("aws logs put-log-events --log-group-name mygroup --log-stream-name mystream --log-events ...", False),
-    ("aws logs put-retention-policy --log-group-name mygroup --retention-in-days 30", False),
+    (
+        "aws logs create-log-stream --log-group-name mygroup --log-stream-name newstream",
+        False,
+    ),
+    (
+        "aws logs delete-log-stream --log-group-name mygroup --log-stream-name mystream",
+        False,
+    ),
+    (
+        "aws logs put-log-events --log-group-name mygroup --log-stream-name mystream --log-events ...",
+        False,
+    ),
+    (
+        "aws logs put-retention-policy --log-group-name mygroup --retention-in-days 30",
+        False,
+    ),
     ("aws logs delete-retention-policy --log-group-name mygroup", False),
-    ("aws logs put-metric-filter --log-group-name mygroup --filter-name myfilter --filter-pattern ERROR --metric-transformations ...", False),
-    ("aws logs delete-metric-filter --log-group-name mygroup --filter-name myfilter", False),
+    (
+        "aws logs put-metric-filter --log-group-name mygroup --filter-name myfilter --filter-pattern ERROR --metric-transformations ...",
+        False,
+    ),
+    (
+        "aws logs delete-metric-filter --log-group-name mygroup --filter-name myfilter",
+        False,
+    ),
     # aws cloudwatch - CloudWatch Metrics/Alarms
     ("aws cloudwatch list-metrics", True),
     ("aws cloudwatch list-metrics --namespace AWS/EC2", True),
@@ -403,58 +599,127 @@ TESTS = [
     ("aws cloudwatch list-tags-for-resource --resource-arn arn", True),
     ("aws cloudwatch describe-alarms", True),
     ("aws cloudwatch describe-alarms --alarm-names myalarm", True),
-    ("aws cloudwatch describe-alarms-for-metric --metric-name CPUUtilization --namespace AWS/EC2", True),
+    (
+        "aws cloudwatch describe-alarms-for-metric --metric-name CPUUtilization --namespace AWS/EC2",
+        True,
+    ),
     ("aws cloudwatch describe-alarm-history --alarm-name myalarm", True),
     ("aws cloudwatch describe-anomaly-detectors", True),
     ("aws cloudwatch describe-insight-rules", True),
     ("aws cloudwatch get-dashboard --dashboard-name mydash", True),
-    ("aws cloudwatch get-metric-data --metric-data-queries file://queries.json --start-time 2023-01-01 --end-time 2023-01-02", True),
-    ("aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --start-time 2023-01-01 --end-time 2023-01-02 --period 3600 --statistics Average", True),
+    (
+        "aws cloudwatch get-metric-data --metric-data-queries file://queries.json --start-time 2023-01-01 --end-time 2023-01-02",
+        True,
+    ),
+    (
+        "aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization --start-time 2023-01-01 --end-time 2023-01-02 --period 3600 --statistics Average",
+        True,
+    ),
     ("aws cloudwatch get-metric-widget-image --metric-widget file://widget.json", True),
-    ("aws cloudwatch get-insight-rule-report --rule-name myrule --start-time 2023-01-01 --end-time 2023-01-02 --period 3600", True),
-    ("aws cloudwatch put-metric-alarm --alarm-name newalarm --metric-name CPUUtilization --namespace AWS/EC2 --threshold 80 --comparison-operator GreaterThanThreshold --evaluation-periods 2 --period 300 --statistic Average", False),
+    (
+        "aws cloudwatch get-insight-rule-report --rule-name myrule --start-time 2023-01-01 --end-time 2023-01-02 --period 3600",
+        True,
+    ),
+    (
+        "aws cloudwatch put-metric-alarm --alarm-name newalarm --metric-name CPUUtilization --namespace AWS/EC2 --threshold 80 --comparison-operator GreaterThanThreshold --evaluation-periods 2 --period 300 --statistic Average",
+        False,
+    ),
     ("aws cloudwatch delete-alarms --alarm-names myalarm", False),
-    ("aws cloudwatch put-dashboard --dashboard-name mydash --dashboard-body file://dash.json", False),
+    (
+        "aws cloudwatch put-dashboard --dashboard-name mydash --dashboard-body file://dash.json",
+        False,
+    ),
     ("aws cloudwatch delete-dashboards --dashboard-names mydash", False),
-    ("aws cloudwatch put-metric-data --namespace MyNamespace --metric-name MyMetric --value 1", False),
+    (
+        "aws cloudwatch put-metric-data --namespace MyNamespace --metric-name MyMetric --value 1",
+        False,
+    ),
     ("aws cloudwatch enable-alarm-actions --alarm-names myalarm", False),
     ("aws cloudwatch disable-alarm-actions --alarm-names myalarm", False),
-    ("aws cloudwatch set-alarm-state --alarm-name myalarm --state-value OK --state-reason testing", False),
+    (
+        "aws cloudwatch set-alarm-state --alarm-name myalarm --state-value OK --state-reason testing",
+        False,
+    ),
     # aws secretsmanager - Secrets Manager
     ("aws secretsmanager list-secrets", True),
     ("aws secretsmanager list-secrets --filters Key=name,Values=prod", True),
     ("aws secretsmanager list-secret-version-ids --secret-id mysecret", True),
     ("aws secretsmanager describe-secret --secret-id mysecret", True),
     ("aws secretsmanager get-resource-policy --secret-id mysecret", True),
-    ("aws secretsmanager get-secret-value --secret-id mysecret", False),  # accessing secret data
-    ("aws secretsmanager get-secret-value --secret-id mysecret --version-stage AWSCURRENT", False),
-    ("aws secretsmanager create-secret --name newsecret --secret-string 'myvalue'", False),
+    (
+        "aws secretsmanager get-secret-value --secret-id mysecret",
+        False,
+    ),  # accessing secret data
+    (
+        "aws secretsmanager get-secret-value --secret-id mysecret --version-stage AWSCURRENT",
+        False,
+    ),
+    (
+        "aws secretsmanager create-secret --name newsecret --secret-string 'myvalue'",
+        False,
+    ),
     ("aws secretsmanager delete-secret --secret-id mysecret", False),
-    ("aws secretsmanager delete-secret --secret-id mysecret --force-delete-without-recovery", False),
-    ("aws secretsmanager update-secret --secret-id mysecret --secret-string 'newvalue'", False),
-    ("aws secretsmanager put-secret-value --secret-id mysecret --secret-string 'value'", False),
+    (
+        "aws secretsmanager delete-secret --secret-id mysecret --force-delete-without-recovery",
+        False,
+    ),
+    (
+        "aws secretsmanager update-secret --secret-id mysecret --secret-string 'newvalue'",
+        False,
+    ),
+    (
+        "aws secretsmanager put-secret-value --secret-id mysecret --secret-string 'value'",
+        False,
+    ),
     ("aws secretsmanager rotate-secret --secret-id mysecret", False),
     ("aws secretsmanager restore-secret --secret-id mysecret", False),
-    ("aws secretsmanager tag-resource --secret-id mysecret --tags Key=env,Value=prod", False),
-    ("aws secretsmanager put-resource-policy --secret-id mysecret --resource-policy file://policy.json", False),
+    (
+        "aws secretsmanager tag-resource --secret-id mysecret --tags Key=env,Value=prod",
+        False,
+    ),
+    (
+        "aws secretsmanager put-resource-policy --secret-id mysecret --resource-policy file://policy.json",
+        False,
+    ),
     # aws sqs - Simple Queue Service
     ("aws sqs list-queues", True),
     ("aws sqs list-queues --queue-name-prefix prod", True),
     ("aws sqs list-queue-tags --queue-url https://sqs...", True),
     ("aws sqs list-dead-letter-source-queues --queue-url https://sqs...", True),
     ("aws sqs get-queue-url --queue-name myqueue", True),
-    ("aws sqs get-queue-attributes --queue-url https://sqs... --attribute-names All", True),
+    (
+        "aws sqs get-queue-attributes --queue-url https://sqs... --attribute-names All",
+        True,
+    ),
     ("aws sqs receive-message --queue-url https://sqs...", True),
-    ("aws sqs receive-message --queue-url https://sqs... --max-number-of-messages 10", True),
+    (
+        "aws sqs receive-message --queue-url https://sqs... --max-number-of-messages 10",
+        True,
+    ),
     ("aws sqs create-queue --queue-name newqueue", False),
     ("aws sqs delete-queue --queue-url https://sqs...", False),
     ("aws sqs purge-queue --queue-url https://sqs...", False),
     ("aws sqs send-message --queue-url https://sqs... --message-body hello", False),
-    ("aws sqs send-message-batch --queue-url https://sqs... --entries file://entries.json", False),
-    ("aws sqs delete-message --queue-url https://sqs... --receipt-handle handle", False),
-    ("aws sqs delete-message-batch --queue-url https://sqs... --entries file://entries.json", False),
-    ("aws sqs set-queue-attributes --queue-url https://sqs... --attributes file://attrs.json", False),
-    ("aws sqs add-permission --queue-url https://sqs... --label perm --aws-account-ids 123 --actions SendMessage", False),
+    (
+        "aws sqs send-message-batch --queue-url https://sqs... --entries file://entries.json",
+        False,
+    ),
+    (
+        "aws sqs delete-message --queue-url https://sqs... --receipt-handle handle",
+        False,
+    ),
+    (
+        "aws sqs delete-message-batch --queue-url https://sqs... --entries file://entries.json",
+        False,
+    ),
+    (
+        "aws sqs set-queue-attributes --queue-url https://sqs... --attributes file://attrs.json",
+        False,
+    ),
+    (
+        "aws sqs add-permission --queue-url https://sqs... --label perm --aws-account-ids 123 --actions SendMessage",
+        False,
+    ),
     ("aws sqs remove-permission --queue-url https://sqs... --label perm", False),
     ("aws sqs tag-queue --queue-url https://sqs... --tags env=prod", False),
     # aws sns - Simple Notification Service
@@ -462,7 +727,10 @@ TESTS = [
     ("aws sns list-subscriptions", True),
     ("aws sns list-subscriptions-by-topic --topic-arn arn", True),
     ("aws sns list-platform-applications", True),
-    ("aws sns list-endpoints-by-platform-application --platform-application-arn arn", True),
+    (
+        "aws sns list-endpoints-by-platform-application --platform-application-arn arn",
+        True,
+    ),
     ("aws sns list-phone-numbers-opted-out", True),
     ("aws sns list-origination-numbers", True),
     ("aws sns list-sms-sandbox-phone-numbers", True),
@@ -472,19 +740,34 @@ TESTS = [
     ("aws sns get-sms-attributes", True),
     ("aws sns get-sms-sandbox-account-status", True),
     ("aws sns get-endpoint-attributes --endpoint-arn arn", True),
-    ("aws sns get-platform-application-attributes --platform-application-arn arn", True),
+    (
+        "aws sns get-platform-application-attributes --platform-application-arn arn",
+        True,
+    ),
     ("aws sns get-data-protection-policy --resource-arn arn", True),
     ("aws sns check-if-phone-number-is-opted-out --phone-number +1234567890", True),
     ("aws sns create-topic --name newtopic", False),
     ("aws sns delete-topic --topic-arn arn", False),
-    ("aws sns subscribe --topic-arn arn --protocol email --notification-endpoint email@example.com", False),
+    (
+        "aws sns subscribe --topic-arn arn --protocol email --notification-endpoint email@example.com",
+        False,
+    ),
     ("aws sns unsubscribe --subscription-arn arn", False),
     ("aws sns confirm-subscription --topic-arn arn --token token", False),
     ("aws sns publish --topic-arn arn --message hello", False),
     ("aws sns publish --phone-number +1234567890 --message hello", False),
-    ("aws sns set-topic-attributes --topic-arn arn --attribute-name DisplayName --attribute-value name", False),
-    ("aws sns set-subscription-attributes --subscription-arn arn --attribute-name RawMessageDelivery --attribute-value true", False),
-    ("aws sns add-permission --topic-arn arn --label perm --aws-account-id 123 --action-name Publish", False),
+    (
+        "aws sns set-topic-attributes --topic-arn arn --attribute-name DisplayName --attribute-value name",
+        False,
+    ),
+    (
+        "aws sns set-subscription-attributes --subscription-arn arn --attribute-name RawMessageDelivery --attribute-value true",
+        False,
+    ),
+    (
+        "aws sns add-permission --topic-arn arn --label perm --aws-account-id 123 --action-name Publish",
+        False,
+    ),
     ("aws sns remove-permission --topic-arn arn --label perm", False),
     ("aws sns tag-resource --resource-arn arn --tags Key=env,Value=prod", False),
     # aws kinesis - Kinesis Data Streams
@@ -494,21 +777,54 @@ TESTS = [
     ("aws kinesis list-tags-for-stream --stream-name mystream", True),
     ("aws kinesis describe-stream --stream-name mystream", True),
     ("aws kinesis describe-stream-summary --stream-name mystream", True),
-    ("aws kinesis describe-stream-consumer --stream-arn arn --consumer-name consumer", True),
+    (
+        "aws kinesis describe-stream-consumer --stream-arn arn --consumer-name consumer",
+        True,
+    ),
     ("aws kinesis describe-limits", True),
-    ("aws kinesis get-shard-iterator --stream-name mystream --shard-id shardId-000 --shard-iterator-type TRIM_HORIZON", True),
+    (
+        "aws kinesis get-shard-iterator --stream-name mystream --shard-id shardId-000 --shard-iterator-type TRIM_HORIZON",
+        True,
+    ),
     ("aws kinesis get-records --shard-iterator iter", True),
     ("aws kinesis create-stream --stream-name newstream --shard-count 1", False),
     ("aws kinesis delete-stream --stream-name mystream", False),
-    ("aws kinesis put-record --stream-name mystream --partition-key key --data data", False),
-    ("aws kinesis put-records --stream-name mystream --records file://records.json", False),
-    ("aws kinesis split-shard --stream-name mystream --shard-to-split shardId-000 --new-starting-hash-key 123", False),
-    ("aws kinesis merge-shards --stream-name mystream --shard-to-merge shardId-000 --adjacent-shard-to-merge shardId-001", False),
-    ("aws kinesis increase-stream-retention-period --stream-name mystream --retention-period-hours 48", False),
-    ("aws kinesis decrease-stream-retention-period --stream-name mystream --retention-period-hours 24", False),
-    ("aws kinesis register-stream-consumer --stream-arn arn --consumer-name consumer", False),
-    ("aws kinesis deregister-stream-consumer --stream-arn arn --consumer-name consumer", False),
-    ("aws kinesis update-shard-count --stream-name mystream --target-shard-count 2 --scaling-type UNIFORM_SCALING", False),
+    (
+        "aws kinesis put-record --stream-name mystream --partition-key key --data data",
+        False,
+    ),
+    (
+        "aws kinesis put-records --stream-name mystream --records file://records.json",
+        False,
+    ),
+    (
+        "aws kinesis split-shard --stream-name mystream --shard-to-split shardId-000 --new-starting-hash-key 123",
+        False,
+    ),
+    (
+        "aws kinesis merge-shards --stream-name mystream --shard-to-merge shardId-000 --adjacent-shard-to-merge shardId-001",
+        False,
+    ),
+    (
+        "aws kinesis increase-stream-retention-period --stream-name mystream --retention-period-hours 48",
+        False,
+    ),
+    (
+        "aws kinesis decrease-stream-retention-period --stream-name mystream --retention-period-hours 24",
+        False,
+    ),
+    (
+        "aws kinesis register-stream-consumer --stream-arn arn --consumer-name consumer",
+        False,
+    ),
+    (
+        "aws kinesis deregister-stream-consumer --stream-arn arn --consumer-name consumer",
+        False,
+    ),
+    (
+        "aws kinesis update-shard-count --stream-name mystream --target-shard-count 2 --scaling-type UNIFORM_SCALING",
+        False,
+    ),
     # aws route53 - Route 53 DNS
     ("aws route53 list-hosted-zones", True),
     ("aws route53 list-hosted-zones-by-name", True),
@@ -518,8 +834,14 @@ TESTS = [
     ("aws route53 list-traffic-policies", True),
     ("aws route53 list-traffic-policy-instances", True),
     ("aws route53 list-vpc-association-authorizations --hosted-zone-id Z123", True),
-    ("aws route53 list-tags-for-resource --resource-type hostedzone --resource-id Z123", True),
-    ("aws route53 list-tags-for-resources --resource-type hostedzone --resource-ids Z123", True),
+    (
+        "aws route53 list-tags-for-resource --resource-type hostedzone --resource-id Z123",
+        True,
+    ),
+    (
+        "aws route53 list-tags-for-resources --resource-type hostedzone --resource-ids Z123",
+        True,
+    ),
     ("aws route53 list-reusable-delegation-sets", True),
     ("aws route53 list-geo-locations", True),
     ("aws route53 list-cidr-collections", True),
@@ -540,53 +862,137 @@ TESTS = [
     ("aws route53 get-traffic-policy --id tp123 --version 1", True),
     ("aws route53 get-traffic-policy-instance --id tpi123", True),
     ("aws route53 get-traffic-policy-instance-count", True),
-    ("aws route53 test-dns-answer --hosted-zone-id Z123 --record-name example.com --record-type A", True),
+    (
+        "aws route53 test-dns-answer --hosted-zone-id Z123 --record-name example.com --record-type A",
+        True,
+    ),
     ("aws route53 create-hosted-zone --name example.com --caller-reference ref", False),
     ("aws route53 delete-hosted-zone --id Z123", False),
-    ("aws route53 change-resource-record-sets --hosted-zone-id Z123 --change-batch file://changes.json", False),
-    ("aws route53 create-health-check --caller-reference ref --health-check-config file://config.json", False),
+    (
+        "aws route53 change-resource-record-sets --hosted-zone-id Z123 --change-batch file://changes.json",
+        False,
+    ),
+    (
+        "aws route53 create-health-check --caller-reference ref --health-check-config file://config.json",
+        False,
+    ),
     ("aws route53 delete-health-check --health-check-id hc123", False),
     ("aws route53 update-health-check --health-check-id hc123 --port 443", False),
-    ("aws route53 associate-vpc-with-hosted-zone --hosted-zone-id Z123 --vpc VPCRegion=us-east-1,VPCId=vpc-123", False),
-    ("aws route53 disassociate-vpc-from-hosted-zone --hosted-zone-id Z123 --vpc VPCRegion=us-east-1,VPCId=vpc-123", False),
+    (
+        "aws route53 associate-vpc-with-hosted-zone --hosted-zone-id Z123 --vpc VPCRegion=us-east-1,VPCId=vpc-123",
+        False,
+    ),
+    (
+        "aws route53 disassociate-vpc-from-hosted-zone --hosted-zone-id Z123 --vpc VPCRegion=us-east-1,VPCId=vpc-123",
+        False,
+    ),
     # aws cognito-idp - Cognito User Pools
     ("aws cognito-idp list-user-pools --max-results 10", True),
     ("aws cognito-idp list-users --user-pool-id us-east-1_abc123", True),
-    ("aws cognito-idp list-users --user-pool-id us-east-1_abc123 --filter 'email = \"user@example.com\"'", True),
+    (
+        "aws cognito-idp list-users --user-pool-id us-east-1_abc123 --filter 'email = \"user@example.com\"'",
+        True,
+    ),
     ("aws cognito-idp list-groups --user-pool-id us-east-1_abc123", True),
-    ("aws cognito-idp list-users-in-group --user-pool-id us-east-1_abc123 --group-name mygroup", True),
+    (
+        "aws cognito-idp list-users-in-group --user-pool-id us-east-1_abc123 --group-name mygroup",
+        True,
+    ),
     ("aws cognito-idp list-user-pool-clients --user-pool-id us-east-1_abc123", True),
     ("aws cognito-idp list-identity-providers --user-pool-id us-east-1_abc123", True),
     ("aws cognito-idp list-resource-servers --user-pool-id us-east-1_abc123", True),
     ("aws cognito-idp list-tags-for-resource --resource-arn arn", True),
     ("aws cognito-idp describe-user-pool --user-pool-id us-east-1_abc123", True),
-    ("aws cognito-idp describe-user-pool-client --user-pool-id us-east-1_abc123 --client-id clientid", True),
-    ("aws cognito-idp describe-identity-provider --user-pool-id us-east-1_abc123 --provider-name Google", True),
-    ("aws cognito-idp describe-resource-server --user-pool-id us-east-1_abc123 --identifier myrs", True),
-    ("aws cognito-idp describe-user-import-job --user-pool-id us-east-1_abc123 --job-id jobid", True),
+    (
+        "aws cognito-idp describe-user-pool-client --user-pool-id us-east-1_abc123 --client-id clientid",
+        True,
+    ),
+    (
+        "aws cognito-idp describe-identity-provider --user-pool-id us-east-1_abc123 --provider-name Google",
+        True,
+    ),
+    (
+        "aws cognito-idp describe-resource-server --user-pool-id us-east-1_abc123 --identifier myrs",
+        True,
+    ),
+    (
+        "aws cognito-idp describe-user-import-job --user-pool-id us-east-1_abc123 --job-id jobid",
+        True,
+    ),
     ("aws cognito-idp get-user-pool-mfa-config --user-pool-id us-east-1_abc123", True),
-    ("aws cognito-idp get-group --user-pool-id us-east-1_abc123 --group-name mygroup", True),
+    (
+        "aws cognito-idp get-group --user-pool-id us-east-1_abc123 --group-name mygroup",
+        True,
+    ),
     ("aws cognito-idp get-ui-customization --user-pool-id us-east-1_abc123", True),
     ("aws cognito-idp get-csv-header --user-pool-id us-east-1_abc123", True),
     ("aws cognito-idp get-signing-certificate --user-pool-id us-east-1_abc123", True),
-    ("aws cognito-idp admin-get-user --user-pool-id us-east-1_abc123 --username myuser", True),
-    ("aws cognito-idp admin-list-groups-for-user --user-pool-id us-east-1_abc123 --username myuser", True),
-    ("aws cognito-idp admin-list-user-auth-events --user-pool-id us-east-1_abc123 --username myuser", True),
-    ("aws cognito-idp admin-list-devices --user-pool-id us-east-1_abc123 --username myuser", True),
+    (
+        "aws cognito-idp admin-get-user --user-pool-id us-east-1_abc123 --username myuser",
+        True,
+    ),
+    (
+        "aws cognito-idp admin-list-groups-for-user --user-pool-id us-east-1_abc123 --username myuser",
+        True,
+    ),
+    (
+        "aws cognito-idp admin-list-user-auth-events --user-pool-id us-east-1_abc123 --username myuser",
+        True,
+    ),
+    (
+        "aws cognito-idp admin-list-devices --user-pool-id us-east-1_abc123 --username myuser",
+        True,
+    ),
     ("aws cognito-idp create-user-pool --pool-name newpool", False),
     ("aws cognito-idp delete-user-pool --user-pool-id us-east-1_abc123", False),
-    ("aws cognito-idp update-user-pool --user-pool-id us-east-1_abc123 --auto-verified-attributes email", False),
-    ("aws cognito-idp admin-create-user --user-pool-id us-east-1_abc123 --username newuser", False),
-    ("aws cognito-idp admin-delete-user --user-pool-id us-east-1_abc123 --username myuser", False),
-    ("aws cognito-idp admin-set-user-password --user-pool-id us-east-1_abc123 --username myuser --password pass --permanent", False),
-    ("aws cognito-idp admin-confirm-sign-up --user-pool-id us-east-1_abc123 --username myuser", False),
-    ("aws cognito-idp admin-enable-user --user-pool-id us-east-1_abc123 --username myuser", False),
-    ("aws cognito-idp admin-disable-user --user-pool-id us-east-1_abc123 --username myuser", False),
-    ("aws cognito-idp admin-add-user-to-group --user-pool-id us-east-1_abc123 --username myuser --group-name mygroup", False),
-    ("aws cognito-idp admin-remove-user-from-group --user-pool-id us-east-1_abc123 --username myuser --group-name mygroup", False),
-    ("aws cognito-idp admin-reset-user-password --user-pool-id us-east-1_abc123 --username myuser", False),
-    ("aws cognito-idp create-group --user-pool-id us-east-1_abc123 --group-name newgroup", False),
-    ("aws cognito-idp delete-group --user-pool-id us-east-1_abc123 --group-name mygroup", False),
+    (
+        "aws cognito-idp update-user-pool --user-pool-id us-east-1_abc123 --auto-verified-attributes email",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-create-user --user-pool-id us-east-1_abc123 --username newuser",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-delete-user --user-pool-id us-east-1_abc123 --username myuser",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-set-user-password --user-pool-id us-east-1_abc123 --username myuser --password pass --permanent",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-confirm-sign-up --user-pool-id us-east-1_abc123 --username myuser",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-enable-user --user-pool-id us-east-1_abc123 --username myuser",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-disable-user --user-pool-id us-east-1_abc123 --username myuser",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-add-user-to-group --user-pool-id us-east-1_abc123 --username myuser --group-name mygroup",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-remove-user-from-group --user-pool-id us-east-1_abc123 --username myuser --group-name mygroup",
+        False,
+    ),
+    (
+        "aws cognito-idp admin-reset-user-password --user-pool-id us-east-1_abc123 --username myuser",
+        False,
+    ),
+    (
+        "aws cognito-idp create-group --user-pool-id us-east-1_abc123 --group-name newgroup",
+        False,
+    ),
+    (
+        "aws cognito-idp delete-group --user-pool-id us-east-1_abc123 --group-name mygroup",
+        False,
+    ),
     # aws ssm - Systems Manager
     ("aws ssm list-commands", True),
     ("aws ssm list-command-invocations --command-id cmd123", True),
@@ -594,17 +1000,32 @@ TESTS = [
     ("aws ssm list-document-versions --name mydoc", True),
     ("aws ssm list-associations", True),
     ("aws ssm list-association-versions --association-id assoc123", True),
-    ("aws ssm list-inventory-entries --instance-id i-123 --type-name AWS:Application", True),
+    (
+        "aws ssm list-inventory-entries --instance-id i-123 --type-name AWS:Application",
+        True,
+    ),
     ("aws ssm list-resource-compliance-summaries", True),
-    ("aws ssm list-compliance-items --resource-ids i-123 --resource-types ManagedInstance", True),
+    (
+        "aws ssm list-compliance-items --resource-ids i-123 --resource-types ManagedInstance",
+        True,
+    ),
     ("aws ssm list-compliance-summaries", True),
-    ("aws ssm list-tags-for-resource --resource-type Document --resource-id mydoc", True),
+    (
+        "aws ssm list-tags-for-resource --resource-type Document --resource-id mydoc",
+        True,
+    ),
     ("aws ssm describe-instance-information", True),
-    ("aws ssm describe-instance-information --instance-information-filter-list key=InstanceIds,valueSet=i-123", True),
+    (
+        "aws ssm describe-instance-information --instance-information-filter-list key=InstanceIds,valueSet=i-123",
+        True,
+    ),
     ("aws ssm describe-parameters", True),
     ("aws ssm describe-document --name mydoc", True),
     ("aws ssm describe-automation-executions", True),
-    ("aws ssm describe-automation-step-executions --automation-execution-id exec123", True),
+    (
+        "aws ssm describe-automation-step-executions --automation-execution-id exec123",
+        True,
+    ),
     ("aws ssm describe-maintenance-windows", True),
     ("aws ssm describe-maintenance-window-executions --window-id mw-123", True),
     ("aws ssm describe-patch-baselines", True),
@@ -612,11 +1033,17 @@ TESTS = [
     ("aws ssm describe-patch-group-state --patch-group mygroup", True),
     ("aws ssm describe-instance-patches --instance-id i-123", True),
     ("aws ssm describe-instance-patch-states --instance-ids i-123", True),
-    ("aws ssm describe-effective-patches-for-patch-baseline --baseline-id pb-123", True),
+    (
+        "aws ssm describe-effective-patches-for-patch-baseline --baseline-id pb-123",
+        True,
+    ),
     ("aws ssm describe-ops-items", True),
     ("aws ssm describe-sessions --state Active", True),
     ("aws ssm get-parameter --name /my/param", True),
-    ("aws ssm get-parameter --name /my/param --with-decryption", False),  # decryption could expose secrets
+    (
+        "aws ssm get-parameter --name /my/param --with-decryption",
+        False,
+    ),  # decryption could expose secrets
     ("aws ssm get-parameters --names /my/param1 /my/param2", True),
     ("aws ssm get-parameters --names /my/param1 --with-decryption", False),
     ("aws ssm get-parameters-by-path --path /my/path", True),
@@ -633,16 +1060,28 @@ TESTS = [
     ("aws ssm get-inventory-schema", True),
     ("aws ssm get-connection-status --target i-123", True),
     ("aws ssm put-parameter --name /my/param --value myvalue --type String", False),
-    ("aws ssm put-parameter --name /my/param --value myvalue --type SecureString", False),
+    (
+        "aws ssm put-parameter --name /my/param --value myvalue --type SecureString",
+        False,
+    ),
     ("aws ssm delete-parameter --name /my/param", False),
     ("aws ssm delete-parameters --names /my/param1 /my/param2", False),
-    ("aws ssm send-command --instance-ids i-123 --document-name AWS-RunShellScript --parameters commands=ls", False),
+    (
+        "aws ssm send-command --instance-ids i-123 --document-name AWS-RunShellScript --parameters commands=ls",
+        False,
+    ),
     ("aws ssm start-automation-execution --document-name mydoc", False),
     ("aws ssm stop-automation-execution --automation-execution-id exec123", False),
     ("aws ssm cancel-command --command-id cmd123", False),
-    ("aws ssm create-document --name newdoc --content file://doc.json --document-type Command", False),
+    (
+        "aws ssm create-document --name newdoc --content file://doc.json --document-type Command",
+        False,
+    ),
     ("aws ssm delete-document --name mydoc", False),
-    ("aws ssm update-document --name mydoc --content file://doc.json --document-version '$LATEST'", False),
+    (
+        "aws ssm update-document --name mydoc --content file://doc.json --document-version '$LATEST'",
+        False,
+    ),
     ("aws ssm start-session --target i-123", False),
     ("aws ssm terminate-session --session-id sess123", False),
     # aws configure - AWS CLI configuration (not the service)
@@ -1000,16 +1439,31 @@ TESTS = [
     ("gcloud iam roles describe roles/editor", True),
     ("gcloud iam roles create my-role --project=my-project --file=role.yaml", False),
     ("gcloud iam roles delete my-role --project=my-project", False),
-    ("gcloud iam list-grantable-roles //cloudresourcemanager.googleapis.com/projects/my-project", True),
+    (
+        "gcloud iam list-grantable-roles //cloudresourcemanager.googleapis.com/projects/my-project",
+        True,
+    ),
     # gcloud iam - service accounts
     ("gcloud iam service-accounts list", True),
     ("gcloud iam service-accounts describe sa@project.iam.gserviceaccount.com", True),
     ("gcloud iam service-accounts create my-sa", False),
     ("gcloud iam service-accounts delete sa@project.iam.gserviceaccount.com", False),
-    ("gcloud iam service-accounts add-iam-policy-binding sa@project.iam.gserviceaccount.com --member=user:foo --role=roles/iam.serviceAccountUser", False),
-    ("gcloud iam service-accounts set-iam-policy sa@project.iam.gserviceaccount.com policy.json", False),
-    ("gcloud iam service-accounts keys list --iam-account=sa@project.iam.gserviceaccount.com", True),
-    ("gcloud iam service-accounts keys create key.json --iam-account=sa@project.iam.gserviceaccount.com", False),
+    (
+        "gcloud iam service-accounts add-iam-policy-binding sa@project.iam.gserviceaccount.com --member=user:foo --role=roles/iam.serviceAccountUser",
+        False,
+    ),
+    (
+        "gcloud iam service-accounts set-iam-policy sa@project.iam.gserviceaccount.com policy.json",
+        False,
+    ),
+    (
+        "gcloud iam service-accounts keys list --iam-account=sa@project.iam.gserviceaccount.com",
+        True,
+    ),
+    (
+        "gcloud iam service-accounts keys create key.json --iam-account=sa@project.iam.gserviceaccount.com",
+        False,
+    ),
     # gcloud app (depth 2 - default)
     ("gcloud app deploy", False),
     ("gcloud app deploy app.yaml", False),
@@ -1029,9 +1483,15 @@ TESTS = [
     # gcloud secrets (depth 1)
     ("gcloud secrets versions list my-secret", True),
     ("gcloud secrets versions describe 1 --secret=my-secret", True),
-    ("gcloud secrets versions access 1 --secret=my-secret", False),  # accessing secret data
+    (
+        "gcloud secrets versions access 1 --secret=my-secret",
+        False,
+    ),  # accessing secret data
     ("gcloud secrets versions destroy 1 --secret=my-secret", False),
-    ("gcloud secrets add-iam-policy-binding my-secret --member=user:foo --role=roles/secretmanager.secretAccessor", False),
+    (
+        "gcloud secrets add-iam-policy-binding my-secret --member=user:foo --role=roles/secretmanager.secretAccessor",
+        False,
+    ),
     # gcloud functions (depth 1)
     ("gcloud functions describe my-function", True),
     ("gcloud functions logs read my-function", True),  # read is safe
@@ -1055,7 +1515,10 @@ TESTS = [
     ("gcloud dns managed-zones delete my-zone", False),
     ("gcloud dns record-sets list --zone=my-zone", True),
     ("gcloud dns record-sets describe www --zone=my-zone --type=A", True),
-    ("gcloud dns record-sets create www --zone=my-zone --type=A --rrdatas=1.2.3.4", False),
+    (
+        "gcloud dns record-sets create www --zone=my-zone --type=A --rrdatas=1.2.3.4",
+        False,
+    ),
     ("gcloud dns record-sets delete www --zone=my-zone --type=A", False),
     # gcloud storage (depth 2)
     ("gcloud storage buckets list", True),
@@ -1069,7 +1532,10 @@ TESTS = [
     # gcloud run (depth 2)
     ("gcloud run services list", True),
     ("gcloud run services describe my-service --region=us-central1", True),
-    ("gcloud run services update my-service --region=us-central1 --memory=512Mi", False),
+    (
+        "gcloud run services update my-service --region=us-central1 --memory=512Mi",
+        False,
+    ),
     ("gcloud run services delete my-service --region=us-central1", False),
     ("gcloud run deploy my-service --image=gcr.io/my-project/my-image", False),
     ("gcloud run revisions list --service=my-service", True),
@@ -1079,9 +1545,18 @@ TESTS = [
     ("gcloud artifacts repositories describe my-repo --location=us-central1", True),
     ("gcloud artifacts repositories create my-repo --location=us-central1", False),
     ("gcloud artifacts repositories delete my-repo --location=us-central1", False),
-    ("gcloud artifacts docker images list us-central1-docker.pkg.dev/my-project/my-repo", True),
-    ("gcloud artifacts docker tags list us-central1-docker.pkg.dev/my-project/my-repo/my-image", True),
-    ("gcloud artifacts docker tags delete us-central1-docker.pkg.dev/my-project/my-repo/my-image:v1", False),
+    (
+        "gcloud artifacts docker images list us-central1-docker.pkg.dev/my-project/my-repo",
+        True,
+    ),
+    (
+        "gcloud artifacts docker tags list us-central1-docker.pkg.dev/my-project/my-repo/my-image",
+        True,
+    ),
+    (
+        "gcloud artifacts docker tags delete us-central1-docker.pkg.dev/my-project/my-repo/my-image:v1",
+        False,
+    ),
     # gcloud beta (depth 3)
     ("gcloud beta run services list", True),
     ("gcloud beta run services describe my-service", True),
@@ -1104,8 +1579,14 @@ TESTS = [
     # gcloud iap (depth 2)
     ("gcloud iap settings get --project=my-project", True),
     ("gcloud iap settings set iap-settings.yaml --project=my-project", False),
-    ("gcloud iap web get-iam-policy --resource-type=backend-services --service=my-service", True),
-    ("gcloud iap web set-iam-policy policy.json --resource-type=backend-services", False),
+    (
+        "gcloud iap web get-iam-policy --resource-type=backend-services --service=my-service",
+        True,
+    ),
+    (
+        "gcloud iap web set-iam-policy policy.json --resource-type=backend-services",
+        False,
+    ),
     ("gcloud iap tcp tunnels list", True),
     # gcloud sql (depth 2 - default)
     ("gcloud sql instances list", True),
@@ -1120,7 +1601,10 @@ TESTS = [
     ("gcloud sql backups create --instance=my-instance", False),
     ("gcloud sql export sql my-instance gs://my-bucket/dump.sql", False),
     ("gcloud sql export sql my-instance gs://my-bucket/dump.sql --async", False),
-    ("gcloud sql export sql my-instance gs://my-bucket/dump.sql --database=mydb", False),
+    (
+        "gcloud sql export sql my-instance gs://my-bucket/dump.sql --database=mydb",
+        False,
+    ),
     ("gcloud sql import sql my-instance gs://my-bucket/dump.sql", False),
     # gcloud kms (depth 2 - default)
     ("gcloud kms keyrings list --location=global", True),
@@ -1128,9 +1612,18 @@ TESTS = [
     ("gcloud kms keyrings create my-keyring --location=global", False),
     ("gcloud kms keys list --keyring=my-keyring --location=global", True),
     ("gcloud kms keys describe my-key --keyring=my-keyring --location=global", True),
-    ("gcloud kms keys create my-key --keyring=my-keyring --location=global --purpose=encryption", False),
-    ("gcloud kms decrypt --key=my-key --keyring=my-keyring --location=global --ciphertext-file=cipher.enc --plaintext-file=plain.txt", False),
-    ("gcloud kms encrypt --key=my-key --keyring=my-keyring --location=global --plaintext-file=plain.txt --ciphertext-file=cipher.enc", False),
+    (
+        "gcloud kms keys create my-key --keyring=my-keyring --location=global --purpose=encryption",
+        False,
+    ),
+    (
+        "gcloud kms decrypt --key=my-key --keyring=my-keyring --location=global --ciphertext-file=cipher.enc --plaintext-file=plain.txt",
+        False,
+    ),
+    (
+        "gcloud kms encrypt --key=my-key --keyring=my-keyring --location=global --plaintext-file=plain.txt --ciphertext-file=cipher.enc",
+        False,
+    ),
     # gcloud pubsub (depth 2 - default)
     ("gcloud pubsub topics list", True),
     ("gcloud pubsub topics describe my-topic", True),
@@ -1148,7 +1641,10 @@ TESTS = [
     ("gcloud --configuration=my-config compute instances list", True),
     ("gcloud --region=us-central1 compute instances list", True),
     ("gcloud --zone=us-central1-a compute instances list", True),
-    ("gcloud --project=my-project --format=json compute instances describe my-instance", True),
+    (
+        "gcloud --project=my-project --format=json compute instances describe my-instance",
+        True,
+    ),
     ("gcloud --project=my-project compute instances delete my-instance", False),
     # gcloud help/info/version/init
     ("gcloud help", True),
@@ -1261,7 +1757,10 @@ TESTS = [
     # az login/logout
     ("az login", False),
     ("az login --use-device-code", False),
-    ("az login --service-principal --username id --password secret --tenant tenant", False),
+    (
+        "az login --service-principal --username id --password secret --tenant tenant",
+        False,
+    ),
     ("az logout", False),
     # az group - resource groups
     ("az group list", True),
@@ -1287,9 +1786,15 @@ TESTS = [
     ("az vm image list --all", True),
     ("az vm image list --publisher Canonical", True),
     ("az vm image list-offers --publisher Canonical --location eastus", True),
-    ("az vm image list-skus --publisher Canonical --offer UbuntuServer --location eastus", True),
+    (
+        "az vm image list-skus --publisher Canonical --offer UbuntuServer --location eastus",
+        True,
+    ),
     ("az vm image show --urn Canonical:UbuntuServer:18.04-LTS:latest", True),
-    ("az vm create --name newvm -g mygroup --image UbuntuLTS --admin-user azureuser --generate-ssh-keys", False),
+    (
+        "az vm create --name newvm -g mygroup --image UbuntuLTS --admin-user azureuser --generate-ssh-keys",
+        False,
+    ),
     ("az vm delete --name myvm -g mygroup", False),
     ("az vm delete --name myvm -g mygroup --yes", False),
     ("az vm start --name myvm -g mygroup", False),
@@ -1302,7 +1807,10 @@ TESTS = [
     ("az vm capture --name myvm -g mygroup --vhd-name-prefix myimage", False),
     ("az vm generalize --name myvm -g mygroup", False),
     ("az vm open-port --name myvm -g mygroup --port 80", False),
-    ("az vm run-command invoke --name myvm -g mygroup --command-id RunShellScript --scripts 'ls -la'", False),
+    (
+        "az vm run-command invoke --name myvm -g mygroup --command-id RunShellScript --scripts 'ls -la'",
+        False,
+    ),
     # az disk - managed disks
     ("az disk list", True),
     ("az disk list --resource-group mygroup", True),
@@ -1312,7 +1820,10 @@ TESTS = [
     ("az disk delete --name mydisk -g mygroup", False),
     ("az disk delete --name mydisk -g mygroup --yes", False),
     ("az disk update --name mydisk -g mygroup --size-gb 256", False),
-    ("az disk grant-access --name mydisk -g mygroup --access-level Read --duration-in-seconds 3600", False),
+    (
+        "az disk grant-access --name mydisk -g mygroup --access-level Read --duration-in-seconds 3600",
+        False,
+    ),
     ("az disk revoke-access --name mydisk -g mygroup", False),
     # az snapshot
     ("az snapshot list", True),
@@ -1332,15 +1843,30 @@ TESTS = [
     ("az aks get-upgrades --name mycluster -g mygroup", True),
     ("az aks nodepool list --cluster-name mycluster -g mygroup", True),
     ("az aks nodepool show --cluster-name mycluster --name nodepool1 -g mygroup", True),
-    ("az aks create --name newcluster -g mygroup --node-count 3 --node-vm-size Standard_DS2_v2", False),
+    (
+        "az aks create --name newcluster -g mygroup --node-count 3 --node-vm-size Standard_DS2_v2",
+        False,
+    ),
     ("az aks delete --name mycluster -g mygroup", False),
     ("az aks delete --name mycluster -g mygroup --yes", False),
     ("az aks upgrade --name mycluster -g mygroup --kubernetes-version 1.27.0", False),
     ("az aks scale --name mycluster -g mygroup --node-count 5", False),
-    ("az aks update --name mycluster -g mygroup --enable-cluster-autoscaler --min-count 1 --max-count 10", False),
-    ("az aks nodepool add --cluster-name mycluster --name nodepool2 -g mygroup --node-count 2", False),
-    ("az aks nodepool delete --cluster-name mycluster --name nodepool2 -g mygroup", False),
-    ("az aks nodepool upgrade --cluster-name mycluster --name nodepool1 -g mygroup --kubernetes-version 1.27.0", False),
+    (
+        "az aks update --name mycluster -g mygroup --enable-cluster-autoscaler --min-count 1 --max-count 10",
+        False,
+    ),
+    (
+        "az aks nodepool add --cluster-name mycluster --name nodepool2 -g mygroup --node-count 2",
+        False,
+    ),
+    (
+        "az aks nodepool delete --cluster-name mycluster --name nodepool2 -g mygroup",
+        False,
+    ),
+    (
+        "az aks nodepool upgrade --cluster-name mycluster --name nodepool1 -g mygroup --kubernetes-version 1.27.0",
+        False,
+    ),
     ("az aks start --name mycluster -g mygroup", False),
     ("az aks stop --name mycluster -g mygroup", False),
     # az acr - Azure Container Registry
@@ -1353,7 +1879,10 @@ TESTS = [
     ("az acr repository list --name myacr --output table", True),
     ("az acr repository show --name myacr --repository myrepo", True),
     ("az acr repository show-tags --name myacr --repository myrepo", True),
-    ("az acr repository show-tags --name myacr --repository myrepo --orderby time_desc", True),
+    (
+        "az acr repository show-tags --name myacr --repository myrepo --orderby time_desc",
+        True,
+    ),
     ("az acr repository show-manifests --name myacr --repository myrepo", True),
     ("az acr credential show --name myacr", True),
     ("az acr check-health --name myacr", True),
@@ -1364,7 +1893,10 @@ TESTS = [
     ("az acr login --name myacr", False),
     ("az acr repository delete --name myacr --repository myrepo", False),
     ("az acr repository delete --name myacr --image myrepo:v1", False),
-    ("az acr import --name myacr --source docker.io/library/nginx:latest --image nginx:latest", False),
+    (
+        "az acr import --name myacr --source docker.io/library/nginx:latest --image nginx:latest",
+        False,
+    ),
     ("az acr build --registry myacr --image myimage:v1 .", False),
     # az storage - storage accounts
     ("az storage account list", True),
@@ -1373,34 +1905,91 @@ TESTS = [
     ("az storage account show-connection-string --name myaccount -g mygroup", True),
     ("az storage account keys list --account-name myaccount -g mygroup", True),
     ("az storage account show-usage --location eastus", True),
-    ("az storage account create --name newaccount -g mygroup --location eastus --sku Standard_LRS", False),
+    (
+        "az storage account create --name newaccount -g mygroup --location eastus --sku Standard_LRS",
+        False,
+    ),
     ("az storage account delete --name myaccount -g mygroup", False),
     ("az storage account delete --name myaccount -g mygroup --yes", False),
-    ("az storage account update --name myaccount -g mygroup --min-tls-version TLS1_2", False),
-    ("az storage account keys renew --account-name myaccount -g mygroup --key primary", False),
+    (
+        "az storage account update --name myaccount -g mygroup --min-tls-version TLS1_2",
+        False,
+    ),
+    (
+        "az storage account keys renew --account-name myaccount -g mygroup --key primary",
+        False,
+    ),
     # az storage container
     ("az storage container list --account-name myaccount", True),
     ("az storage container list --account-name myaccount --auth-mode login", True),
     ("az storage container show --name mycontainer --account-name myaccount", True),
-    ("az storage container show-permission --name mycontainer --account-name myaccount", True),
+    (
+        "az storage container show-permission --name mycontainer --account-name myaccount",
+        True,
+    ),
     ("az storage container create --name newcontainer --account-name myaccount", False),
     ("az storage container delete --name mycontainer --account-name myaccount", False),
-    ("az storage container set-permission --name mycontainer --account-name myaccount --public-access blob", False),
+    (
+        "az storage container set-permission --name mycontainer --account-name myaccount --public-access blob",
+        False,
+    ),
     # az storage blob
-    ("az storage blob list --container-name mycontainer --account-name myaccount", True),
-    ("az storage blob list --container-name mycontainer --account-name myaccount --prefix prefix/", True),
-    ("az storage blob show --name myblob --container-name mycontainer --account-name myaccount", True),
-    ("az storage blob exists --name myblob --container-name mycontainer --account-name myaccount", True),
-    ("az storage blob url --name myblob --container-name mycontainer --account-name myaccount", True),
-    ("az storage blob metadata show --name myblob --container-name mycontainer --account-name myaccount", True),
-    ("az storage blob download --name myblob --container-name mycontainer --account-name myaccount --file localfile", True),
-    ("az storage blob download-batch --source mycontainer --destination ./local --account-name myaccount", True),
-    ("az storage blob upload --name myblob --container-name mycontainer --account-name myaccount --file localfile", False),
-    ("az storage blob upload-batch --source ./local --destination mycontainer --account-name myaccount", False),
-    ("az storage blob delete --name myblob --container-name mycontainer --account-name myaccount", False),
-    ("az storage blob delete-batch --source mycontainer --account-name myaccount --pattern '*.log'", False),
-    ("az storage blob copy start --source-uri https://src.blob.core.windows.net/c/b --destination-blob b --destination-container c --account-name myaccount", False),
-    ("az storage blob generate-sas --name myblob --container-name mycontainer --account-name myaccount --permissions r --expiry 2024-12-31", False),
+    (
+        "az storage blob list --container-name mycontainer --account-name myaccount",
+        True,
+    ),
+    (
+        "az storage blob list --container-name mycontainer --account-name myaccount --prefix prefix/",
+        True,
+    ),
+    (
+        "az storage blob show --name myblob --container-name mycontainer --account-name myaccount",
+        True,
+    ),
+    (
+        "az storage blob exists --name myblob --container-name mycontainer --account-name myaccount",
+        True,
+    ),
+    (
+        "az storage blob url --name myblob --container-name mycontainer --account-name myaccount",
+        True,
+    ),
+    (
+        "az storage blob metadata show --name myblob --container-name mycontainer --account-name myaccount",
+        True,
+    ),
+    (
+        "az storage blob download --name myblob --container-name mycontainer --account-name myaccount --file localfile",
+        True,
+    ),
+    (
+        "az storage blob download-batch --source mycontainer --destination ./local --account-name myaccount",
+        True,
+    ),
+    (
+        "az storage blob upload --name myblob --container-name mycontainer --account-name myaccount --file localfile",
+        False,
+    ),
+    (
+        "az storage blob upload-batch --source ./local --destination mycontainer --account-name myaccount",
+        False,
+    ),
+    (
+        "az storage blob delete --name myblob --container-name mycontainer --account-name myaccount",
+        False,
+    ),
+    (
+        "az storage blob delete-batch --source mycontainer --account-name myaccount --pattern '*.log'",
+        False,
+    ),
+    (
+        "az storage blob copy start --source-uri https://src.blob.core.windows.net/c/b --destination-blob b --destination-container c --account-name myaccount",
+        False,
+    ),
+    (
+        "az storage blob generate-sas --name myblob --container-name mycontainer --account-name myaccount --permissions r --expiry 2024-12-31",
+        False,
+    ),
     # az network - networking
     ("az network vnet list", True),
     ("az network vnet list --resource-group mygroup", True),
@@ -1430,22 +2019,52 @@ TESTS = [
     ("az network private-dns zone list", True),
     ("az network private-dns zone show --name myprivatedns -g mygroup", True),
     ("az network list-usages --location eastus", True),
-    ("az network vnet create --name newvnet -g mygroup --address-prefix 10.0.0.0/16 --subnet-name default --subnet-prefix 10.0.0.0/24", False),
+    (
+        "az network vnet create --name newvnet -g mygroup --address-prefix 10.0.0.0/16 --subnet-name default --subnet-prefix 10.0.0.0/24",
+        False,
+    ),
     ("az network vnet delete --name myvnet -g mygroup", False),
-    ("az network vnet update --name myvnet -g mygroup --address-prefixes 10.0.0.0/16 10.1.0.0/16", False),
-    ("az network vnet subnet create --name newsubnet --vnet-name myvnet -g mygroup --address-prefix 10.0.1.0/24", False),
-    ("az network vnet subnet delete --name mysubnet --vnet-name myvnet -g mygroup", False),
-    ("az network nic create --name newnic -g mygroup --vnet-name myvnet --subnet mysubnet", False),
+    (
+        "az network vnet update --name myvnet -g mygroup --address-prefixes 10.0.0.0/16 10.1.0.0/16",
+        False,
+    ),
+    (
+        "az network vnet subnet create --name newsubnet --vnet-name myvnet -g mygroup --address-prefix 10.0.1.0/24",
+        False,
+    ),
+    (
+        "az network vnet subnet delete --name mysubnet --vnet-name myvnet -g mygroup",
+        False,
+    ),
+    (
+        "az network nic create --name newnic -g mygroup --vnet-name myvnet --subnet mysubnet",
+        False,
+    ),
     ("az network nic delete --name mynic -g mygroup", False),
-    ("az network nic update --name mynic -g mygroup --accelerated-networking true", False),
+    (
+        "az network nic update --name mynic -g mygroup --accelerated-networking true",
+        False,
+    ),
     ("az network nsg create --name newnsg -g mygroup", False),
     ("az network nsg delete --name mynsg -g mygroup", False),
-    ("az network nsg rule create --name newrule --nsg-name mynsg -g mygroup --priority 100 --access Allow --protocol Tcp --destination-port-ranges 22", False),
+    (
+        "az network nsg rule create --name newrule --nsg-name mynsg -g mygroup --priority 100 --access Allow --protocol Tcp --destination-port-ranges 22",
+        False,
+    ),
     ("az network nsg rule delete --name myrule --nsg-name mynsg -g mygroup", False),
-    ("az network public-ip create --name newpip -g mygroup --allocation-method Static --sku Standard", False),
+    (
+        "az network public-ip create --name newpip -g mygroup --allocation-method Static --sku Standard",
+        False,
+    ),
     ("az network public-ip delete --name mypip -g mygroup", False),
-    ("az network dns record-set a add-record --zone-name mydomain.com -g mygroup --record-set-name www --ipv4-address 1.2.3.4", False),
-    ("az network dns record-set a remove-record --zone-name mydomain.com -g mygroup --record-set-name www --ipv4-address 1.2.3.4", False),
+    (
+        "az network dns record-set a add-record --zone-name mydomain.com -g mygroup --record-set-name www --ipv4-address 1.2.3.4",
+        False,
+    ),
+    (
+        "az network dns record-set a remove-record --zone-name mydomain.com -g mygroup --record-set-name www --ipv4-address 1.2.3.4",
+        False,
+    ),
     # az webapp - web apps
     ("az webapp list", True),
     ("az webapp list --resource-group mygroup", True),
@@ -1460,16 +2079,31 @@ TESTS = [
     ("az webapp deployment list-publishing-profiles --name myapp -g mygroup", True),
     ("az webapp deployment list-publishing-credentials --name myapp -g mygroup", True),
     ("az webapp deployment source show --name myapp -g mygroup", True),
-    ("az webapp create --name newapp -g mygroup --plan myplan --runtime 'NODE:18-lts'", False),
+    (
+        "az webapp create --name newapp -g mygroup --plan myplan --runtime 'NODE:18-lts'",
+        False,
+    ),
     ("az webapp delete --name myapp -g mygroup", False),
     ("az webapp up --name myapp -g mygroup --runtime 'PYTHON:3.9'", False),
     ("az webapp start --name myapp -g mygroup", False),
     ("az webapp stop --name myapp -g mygroup", False),
     ("az webapp restart --name myapp -g mygroup", False),
-    ("az webapp config appsettings set --name myapp -g mygroup --settings KEY=VALUE", False),
-    ("az webapp config appsettings delete --name myapp -g mygroup --setting-names KEY", False),
-    ("az webapp config set --name myapp -g mygroup --linux-fx-version 'PYTHON|3.9'", False),
-    ("az webapp deployment source config-zip --name myapp -g mygroup --src app.zip", False),
+    (
+        "az webapp config appsettings set --name myapp -g mygroup --settings KEY=VALUE",
+        False,
+    ),
+    (
+        "az webapp config appsettings delete --name myapp -g mygroup --setting-names KEY",
+        False,
+    ),
+    (
+        "az webapp config set --name myapp -g mygroup --linux-fx-version 'PYTHON|3.9'",
+        False,
+    ),
+    (
+        "az webapp deployment source config-zip --name myapp -g mygroup --src app.zip",
+        False,
+    ),
     # az functionapp - Azure Functions
     ("az functionapp list", True),
     ("az functionapp list --resource-group mygroup", True),
@@ -1477,16 +2111,31 @@ TESTS = [
     ("az functionapp config show --name myfunc -g mygroup", True),
     ("az functionapp config appsettings list --name myfunc -g mygroup", True),
     ("az functionapp function list --name myfunc -g mygroup", True),
-    ("az functionapp function show --name myfunc --function-name myfunction -g mygroup", True),
+    (
+        "az functionapp function show --name myfunc --function-name myfunction -g mygroup",
+        True,
+    ),
     ("az functionapp keys list --name myfunc -g mygroup", True),
-    ("az functionapp deployment list-publishing-profiles --name myfunc -g mygroup", True),
-    ("az functionapp create --name newfunc -g mygroup --storage-account myaccount --runtime python --runtime-version 3.9 --functions-version 4 --consumption-plan-location eastus", False),
+    (
+        "az functionapp deployment list-publishing-profiles --name myfunc -g mygroup",
+        True,
+    ),
+    (
+        "az functionapp create --name newfunc -g mygroup --storage-account myaccount --runtime python --runtime-version 3.9 --functions-version 4 --consumption-plan-location eastus",
+        False,
+    ),
     ("az functionapp delete --name myfunc -g mygroup", False),
     ("az functionapp start --name myfunc -g mygroup", False),
     ("az functionapp stop --name myfunc -g mygroup", False),
     ("az functionapp restart --name myfunc -g mygroup", False),
-    ("az functionapp config appsettings set --name myfunc -g mygroup --settings KEY=VALUE", False),
-    ("az functionapp deployment source config-zip --name myfunc -g mygroup --src func.zip", False),
+    (
+        "az functionapp config appsettings set --name myfunc -g mygroup --settings KEY=VALUE",
+        False,
+    ),
+    (
+        "az functionapp deployment source config-zip --name myfunc -g mygroup --src func.zip",
+        False,
+    ),
     # az keyvault - Key Vault
     ("az keyvault list", True),
     ("az keyvault list --resource-group mygroup", True),
@@ -1503,89 +2152,200 @@ TESTS = [
     ("az keyvault delete --name myvault", False),
     ("az keyvault purge --name myvault", False),
     ("az keyvault recover --name myvault", False),
-    ("az keyvault secret set --name newsecret --vault-name myvault --value 'mysecretvalue'", False),
+    (
+        "az keyvault secret set --name newsecret --vault-name myvault --value 'mysecretvalue'",
+        False,
+    ),
     ("az keyvault secret delete --name mysecret --vault-name myvault", False),
     ("az keyvault secret purge --name mysecret --vault-name myvault", False),
     ("az keyvault key create --name newkey --vault-name myvault", False),
     ("az keyvault key delete --name mykey --vault-name myvault", False),
-    ("az keyvault certificate create --name newcert --vault-name myvault --policy @policy.json", False),
+    (
+        "az keyvault certificate create --name newcert --vault-name myvault --policy @policy.json",
+        False,
+    ),
     ("az keyvault certificate delete --name mycert --vault-name myvault", False),
-    ("az keyvault set-policy --name myvault --object-id objid --secret-permissions get list", False),
+    (
+        "az keyvault set-policy --name myvault --object-id objid --secret-permissions get list",
+        False,
+    ),
     # az sql - Azure SQL
     ("az sql server list", True),
     ("az sql server list --resource-group mygroup", True),
     ("az sql server show --name myserver -g mygroup", True),
     ("az sql db list --server myserver -g mygroup", True),
     ("az sql db show --name mydb --server myserver -g mygroup", True),
-    ("az sql db show-connection-string --name mydb --server myserver --client sqlcmd", True),
+    (
+        "az sql db show-connection-string --name mydb --server myserver --client sqlcmd",
+        True,
+    ),
     ("az sql db list-editions --location eastus", True),
     ("az sql elastic-pool list --server myserver -g mygroup", True),
     ("az sql elastic-pool show --name mypool --server myserver -g mygroup", True),
     ("az sql failover-group list --server myserver -g mygroup", True),
     ("az sql server firewall-rule list --server myserver -g mygroup", True),
-    ("az sql server firewall-rule show --name myrule --server myserver -g mygroup", True),
-    ("az sql server create --name newserver -g mygroup --admin-user myadmin --admin-password mypassword", False),
+    (
+        "az sql server firewall-rule show --name myrule --server myserver -g mygroup",
+        True,
+    ),
+    (
+        "az sql server create --name newserver -g mygroup --admin-user myadmin --admin-password mypassword",
+        False,
+    ),
     ("az sql server delete --name myserver -g mygroup", False),
     ("az sql db create --name newdb --server myserver -g mygroup", False),
     ("az sql db delete --name mydb --server myserver -g mygroup", False),
-    ("az sql db update --name mydb --server myserver -g mygroup --max-size 250GB", False),
-    ("az sql db copy --name mydb --server myserver -g mygroup --dest-name copydb", False),
-    ("az sql db restore --name mydb --server myserver -g mygroup --dest-name restoreddb --time 2023-12-01T00:00:00Z", False),
-    ("az sql server firewall-rule create --name myrule --server myserver -g mygroup --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4", False),
-    ("az sql server firewall-rule delete --name myrule --server myserver -g mygroup", False),
+    (
+        "az sql db update --name mydb --server myserver -g mygroup --max-size 250GB",
+        False,
+    ),
+    (
+        "az sql db copy --name mydb --server myserver -g mygroup --dest-name copydb",
+        False,
+    ),
+    (
+        "az sql db restore --name mydb --server myserver -g mygroup --dest-name restoreddb --time 2023-12-01T00:00:00Z",
+        False,
+    ),
+    (
+        "az sql server firewall-rule create --name myrule --server myserver -g mygroup --start-ip-address 1.2.3.4 --end-ip-address 1.2.3.4",
+        False,
+    ),
+    (
+        "az sql server firewall-rule delete --name myrule --server myserver -g mygroup",
+        False,
+    ),
     # az cosmosdb - Cosmos DB
     ("az cosmosdb list", True),
     ("az cosmosdb list --resource-group mygroup", True),
     ("az cosmosdb show --name myaccount -g mygroup", True),
     ("az cosmosdb keys list --name myaccount -g mygroup", True),
     ("az cosmosdb sql database list --account-name myaccount -g mygroup", True),
-    ("az cosmosdb sql database show --name mydb --account-name myaccount -g mygroup", True),
-    ("az cosmosdb sql container list --database-name mydb --account-name myaccount -g mygroup", True),
-    ("az cosmosdb sql container show --name mycontainer --database-name mydb --account-name myaccount -g mygroup", True),
+    (
+        "az cosmosdb sql database show --name mydb --account-name myaccount -g mygroup",
+        True,
+    ),
+    (
+        "az cosmosdb sql container list --database-name mydb --account-name myaccount -g mygroup",
+        True,
+    ),
+    (
+        "az cosmosdb sql container show --name mycontainer --database-name mydb --account-name myaccount -g mygroup",
+        True,
+    ),
     ("az cosmosdb mongodb database list --account-name myaccount -g mygroup", True),
-    ("az cosmosdb create --name newaccount -g mygroup --locations regionName=eastus", False),
+    (
+        "az cosmosdb create --name newaccount -g mygroup --locations regionName=eastus",
+        False,
+    ),
     ("az cosmosdb delete --name myaccount -g mygroup", False),
-    ("az cosmosdb update --name myaccount -g mygroup --default-consistency-level Session", False),
-    ("az cosmosdb sql database create --name newdb --account-name myaccount -g mygroup", False),
-    ("az cosmosdb sql database delete --name mydb --account-name myaccount -g mygroup", False),
-    ("az cosmosdb sql container create --name newcontainer --database-name mydb --account-name myaccount -g mygroup --partition-key-path /id", False),
-    ("az cosmosdb keys regenerate --name myaccount -g mygroup --key-kind primary", False),
+    (
+        "az cosmosdb update --name myaccount -g mygroup --default-consistency-level Session",
+        False,
+    ),
+    (
+        "az cosmosdb sql database create --name newdb --account-name myaccount -g mygroup",
+        False,
+    ),
+    (
+        "az cosmosdb sql database delete --name mydb --account-name myaccount -g mygroup",
+        False,
+    ),
+    (
+        "az cosmosdb sql container create --name newcontainer --database-name mydb --account-name myaccount -g mygroup --partition-key-path /id",
+        False,
+    ),
+    (
+        "az cosmosdb keys regenerate --name myaccount -g mygroup --key-kind primary",
+        False,
+    ),
     # az servicebus - Service Bus
     ("az servicebus namespace list", True),
     ("az servicebus namespace list --resource-group mygroup", True),
     ("az servicebus namespace show --name mynamespace -g mygroup", True),
-    ("az servicebus namespace authorization-rule list --namespace-name mynamespace -g mygroup", True),
-    ("az servicebus namespace authorization-rule keys list --name RootManageSharedAccessKey --namespace-name mynamespace -g mygroup", True),
+    (
+        "az servicebus namespace authorization-rule list --namespace-name mynamespace -g mygroup",
+        True,
+    ),
+    (
+        "az servicebus namespace authorization-rule keys list --name RootManageSharedAccessKey --namespace-name mynamespace -g mygroup",
+        True,
+    ),
     ("az servicebus queue list --namespace-name mynamespace -g mygroup", True),
-    ("az servicebus queue show --name myqueue --namespace-name mynamespace -g mygroup", True),
+    (
+        "az servicebus queue show --name myqueue --namespace-name mynamespace -g mygroup",
+        True,
+    ),
     ("az servicebus topic list --namespace-name mynamespace -g mygroup", True),
-    ("az servicebus topic show --name mytopic --namespace-name mynamespace -g mygroup", True),
-    ("az servicebus topic subscription list --topic-name mytopic --namespace-name mynamespace -g mygroup", True),
-    ("az servicebus namespace create --name newnamesapce -g mygroup --location eastus", False),
+    (
+        "az servicebus topic show --name mytopic --namespace-name mynamespace -g mygroup",
+        True,
+    ),
+    (
+        "az servicebus topic subscription list --topic-name mytopic --namespace-name mynamespace -g mygroup",
+        True,
+    ),
+    (
+        "az servicebus namespace create --name newnamesapce -g mygroup --location eastus",
+        False,
+    ),
     ("az servicebus namespace delete --name mynamespace -g mygroup", False),
-    ("az servicebus queue create --name newqueue --namespace-name mynamespace -g mygroup", False),
-    ("az servicebus queue delete --name myqueue --namespace-name mynamespace -g mygroup", False),
-    ("az servicebus topic create --name newtopic --namespace-name mynamespace -g mygroup", False),
-    ("az servicebus topic delete --name mytopic --namespace-name mynamespace -g mygroup", False),
+    (
+        "az servicebus queue create --name newqueue --namespace-name mynamespace -g mygroup",
+        False,
+    ),
+    (
+        "az servicebus queue delete --name myqueue --namespace-name mynamespace -g mygroup",
+        False,
+    ),
+    (
+        "az servicebus topic create --name newtopic --namespace-name mynamespace -g mygroup",
+        False,
+    ),
+    (
+        "az servicebus topic delete --name mytopic --namespace-name mynamespace -g mygroup",
+        False,
+    ),
     # az eventhubs - Event Hubs
     ("az eventhubs namespace list", True),
     ("az eventhubs namespace list --resource-group mygroup", True),
     ("az eventhubs namespace show --name mynamespace -g mygroup", True),
     ("az eventhubs eventhub list --namespace-name mynamespace -g mygroup", True),
-    ("az eventhubs eventhub show --name myeventhub --namespace-name mynamespace -g mygroup", True),
-    ("az eventhubs eventhub consumer-group list --eventhub-name myeventhub --namespace-name mynamespace -g mygroup", True),
-    ("az eventhubs namespace create --name newnamesapce -g mygroup --location eastus", False),
+    (
+        "az eventhubs eventhub show --name myeventhub --namespace-name mynamespace -g mygroup",
+        True,
+    ),
+    (
+        "az eventhubs eventhub consumer-group list --eventhub-name myeventhub --namespace-name mynamespace -g mygroup",
+        True,
+    ),
+    (
+        "az eventhubs namespace create --name newnamesapce -g mygroup --location eastus",
+        False,
+    ),
     ("az eventhubs namespace delete --name mynamespace -g mygroup", False),
-    ("az eventhubs eventhub create --name neweventhub --namespace-name mynamespace -g mygroup", False),
-    ("az eventhubs eventhub delete --name myeventhub --namespace-name mynamespace -g mygroup", False),
+    (
+        "az eventhubs eventhub create --name neweventhub --namespace-name mynamespace -g mygroup",
+        False,
+    ),
+    (
+        "az eventhubs eventhub delete --name myeventhub --namespace-name mynamespace -g mygroup",
+        False,
+    ),
     # az redis - Redis Cache
     ("az redis list", True),
     ("az redis list --resource-group mygroup", True),
     ("az redis show --name myredis -g mygroup", True),
     ("az redis list-keys --name myredis -g mygroup", True),
-    ("az redis create --name newredis -g mygroup --location eastus --sku Basic --vm-size c0", False),
+    (
+        "az redis create --name newredis -g mygroup --location eastus --sku Basic --vm-size c0",
+        False,
+    ),
     ("az redis delete --name myredis -g mygroup", False),
-    ("az redis update --name myredis -g mygroup --set redisConfiguration.maxmemory-policy=allkeys-lru", False),
+    (
+        "az redis update --name myredis -g mygroup --set redisConfiguration.maxmemory-policy=allkeys-lru",
+        False,
+    ),
     ("az redis regenerate-keys --name myredis -g mygroup --key-type Primary", False),
     # az appservice - App Service plans
     ("az appservice plan list", True),
@@ -1598,18 +2358,36 @@ TESTS = [
     ("az resource list", True),
     ("az resource list --resource-group mygroup", True),
     ("az resource list --resource-type Microsoft.Compute/virtualMachines", True),
-    ("az resource show --ids /subscriptions/.../resourceGroups/.../providers/.../resource", True),
-    ("az resource show --name myresource -g mygroup --resource-type Microsoft.Web/sites", True),
-    ("az resource create --id /subscriptions/.../resourceGroups/.../providers/... --properties '{}'", False),
-    ("az resource delete --ids /subscriptions/.../resourceGroups/.../providers/.../resource", False),
+    (
+        "az resource show --ids /subscriptions/.../resourceGroups/.../providers/.../resource",
+        True,
+    ),
+    (
+        "az resource show --name myresource -g mygroup --resource-type Microsoft.Web/sites",
+        True,
+    ),
+    (
+        "az resource create --id /subscriptions/.../resourceGroups/.../providers/... --properties '{}'",
+        False,
+    ),
+    (
+        "az resource delete --ids /subscriptions/.../resourceGroups/.../providers/.../resource",
+        False,
+    ),
     ("az resource update --ids /subscriptions/.../... --set properties.foo=bar", False),
-    ("az resource move --ids /subscriptions/.../... --destination-group newgroup", False),
+    (
+        "az resource move --ids /subscriptions/.../... --destination-group newgroup",
+        False,
+    ),
     # az tag - resource tags
     ("az tag list", True),
     ("az tag list --resource-id /subscriptions/...", True),
     ("az tag create --name mytag", False),
     ("az tag delete --name mytag", False),
-    ("az tag update --resource-id /subscriptions/... --operation merge --tags env=prod", False),
+    (
+        "az tag update --resource-id /subscriptions/... --operation merge --tags env=prod",
+        False,
+    ),
     # az policy - Azure Policy
     ("az policy definition list", True),
     ("az policy definition show --name mypolicy", True),
@@ -1627,18 +2405,42 @@ TESTS = [
     ("az monitor metrics list-definitions --resource /subscriptions/.../...", True),
     ("az monitor activity-log list", True),
     ("az monitor activity-log list --resource-group mygroup", True),
-    ("az monitor activity-log list --start-time 2023-01-01 --end-time 2023-01-31", True),
+    (
+        "az monitor activity-log list --start-time 2023-01-01 --end-time 2023-01-31",
+        True,
+    ),
     ("az monitor log-analytics workspace list", True),
-    ("az monitor log-analytics workspace show --workspace-name myworkspace -g mygroup", True),
-    ("az monitor log-analytics query --workspace myworkspace --analytics-query 'AzureActivity | take 10'", True),
+    (
+        "az monitor log-analytics workspace show --workspace-name myworkspace -g mygroup",
+        True,
+    ),
+    (
+        "az monitor log-analytics query --workspace myworkspace --analytics-query 'AzureActivity | take 10'",
+        True,
+    ),
     ("az monitor diagnostic-settings list --resource /subscriptions/.../...", True),
-    ("az monitor diagnostic-settings show --name mydiag --resource /subscriptions/.../...", True),
+    (
+        "az monitor diagnostic-settings show --name mydiag --resource /subscriptions/.../...",
+        True,
+    ),
     ("az monitor alert list --resource-group mygroup", True),
     ("az monitor action-group list --resource-group mygroup", True),
-    ("az monitor log-analytics workspace create --workspace-name newworkspace -g mygroup", False),
-    ("az monitor log-analytics workspace delete --workspace-name myworkspace -g mygroup", False),
-    ("az monitor diagnostic-settings create --name newdiag --resource /subscriptions/.../... --logs '[]' --metrics '[]'", False),
-    ("az monitor diagnostic-settings delete --name mydiag --resource /subscriptions/.../...", False),
+    (
+        "az monitor log-analytics workspace create --workspace-name newworkspace -g mygroup",
+        False,
+    ),
+    (
+        "az monitor log-analytics workspace delete --workspace-name myworkspace -g mygroup",
+        False,
+    ),
+    (
+        "az monitor diagnostic-settings create --name newdiag --resource /subscriptions/.../... --logs '[]' --metrics '[]'",
+        False,
+    ),
+    (
+        "az monitor diagnostic-settings delete --name mydiag --resource /subscriptions/.../...",
+        False,
+    ),
     # az ad - Azure Active Directory
     ("az ad user list", True),
     ("az ad user show --id user@example.com", True),
@@ -1650,7 +2452,10 @@ TESTS = [
     ("az ad sp list", True),
     ("az ad sp show --id spid", True),
     ("az ad signed-in-user show", True),
-    ("az ad user create --display-name 'New User' --user-principal-name newuser@example.com --password pass", False),
+    (
+        "az ad user create --display-name 'New User' --user-principal-name newuser@example.com --password pass",
+        False,
+    ),
     ("az ad user delete --id user@example.com", False),
     ("az ad group create --display-name 'New Group' --mail-nickname newgroup", False),
     ("az ad group delete --group mygroup", False),
@@ -1667,7 +2472,10 @@ TESTS = [
     ("az container show --name mycontainer -g mygroup", True),
     ("az container logs --name mycontainer -g mygroup", True),
     ("az container logs --name mycontainer -g mygroup --follow", True),
-    ("az container create --name newcontainer -g mygroup --image nginx --cpu 1 --memory 1", False),
+    (
+        "az container create --name newcontainer -g mygroup --image nginx --cpu 1 --memory 1",
+        False,
+    ),
     ("az container delete --name mycontainer -g mygroup", False),
     ("az container delete --name mycontainer -g mygroup --yes", False),
     ("az container start --name mycontainer -g mygroup", False),
@@ -1677,15 +2485,27 @@ TESTS = [
     # az devops / pipelines / repos / boards (existing tests expanded)
     ("az devops configure --list", True),
     ("az devops project list --organization https://dev.azure.com/myorg", True),
-    ("az devops project show --project myproject --organization https://dev.azure.com/myorg", True),
+    (
+        "az devops project show --project myproject --organization https://dev.azure.com/myorg",
+        True,
+    ),
     ("az devops service-endpoint list --project myproject", True),
     ("az devops wiki list --project myproject", True),
     ("az devops wiki show --wiki mywiki --project myproject", True),
     ("az devops wiki page show --path /page --wiki mywiki --project myproject", True),
-    ("az devops configure --defaults project=myproject organization=https://dev.azure.com/myorg", False),
+    (
+        "az devops configure --defaults project=myproject organization=https://dev.azure.com/myorg",
+        False,
+    ),
     ("az devops login --organization https://dev.azure.com/myorg", False),
-    ("az devops project create --name newproject --organization https://dev.azure.com/myorg", False),
-    ("az devops project delete --id projectid --organization https://dev.azure.com/myorg --yes", False),
+    (
+        "az devops project create --name newproject --organization https://dev.azure.com/myorg",
+        False,
+    ),
+    (
+        "az devops project delete --id projectid --organization https://dev.azure.com/myorg --yes",
+        False,
+    ),
     ("az pipelines list --project myproject", True),
     ("az pipelines show --name mypipeline --project myproject", True),
     ("az pipelines runs list --pipeline-id 1 --project myproject", True),
@@ -1694,11 +2514,20 @@ TESTS = [
     ("az pipelines build show --id 100 --project myproject", True),
     ("az pipelines variable-group list --project myproject", True),
     ("az pipelines variable-group show --group-id 1 --project myproject", True),
-    ("az pipelines agent list --pool-id 1 --organization https://dev.azure.com/myorg", True),
-    ("az pipelines create --name newpipeline --repository myrepo --branch main --project myproject", False),
+    (
+        "az pipelines agent list --pool-id 1 --organization https://dev.azure.com/myorg",
+        True,
+    ),
+    (
+        "az pipelines create --name newpipeline --repository myrepo --branch main --project myproject",
+        False,
+    ),
     ("az pipelines delete --id 1 --project myproject --yes", False),
     ("az pipelines run --name mypipeline --project myproject", False),
-    ("az pipelines update --name mypipeline --new-name newname --project myproject", False),
+    (
+        "az pipelines update --name mypipeline --new-name newname --project myproject",
+        False,
+    ),
     ("az repos list --project myproject", True),
     ("az repos show --repository myrepo --project myproject", True),
     ("az repos pr list --project myproject", True),
@@ -1707,10 +2536,16 @@ TESTS = [
     ("az repos ref list --repository myrepo --project myproject", True),
     ("az repos create --name newrepo --project myproject", False),
     ("az repos delete --id repoid --project myproject --yes", False),
-    ("az repos pr create --repository myrepo --source-branch feature --target-branch main --project myproject", False),
+    (
+        "az repos pr create --repository myrepo --source-branch feature --target-branch main --project myproject",
+        False,
+    ),
     ("az repos pr update --id 1 --status completed --project myproject", False),
     ("az repos policy list --repository-id repoid --project myproject", True),
-    ("az repos policy build create --repository-id repoid --branch main --blocking --enabled --build-definition-id 1 --project myproject", False),
+    (
+        "az repos policy build create --repository-id repoid --branch main --blocking --enabled --build-definition-id 1 --project myproject",
+        False,
+    ),
     # az version/upgrade/interactive/feedback/configure
     ("az version", True),
     ("az --version", True),
@@ -1845,8 +2680,11 @@ TESTS = [
     ("kubectl delete namespace test", False),
     ("kubectl edit deployment nginx", False),
     ("kubectl edit configmap my-config", False),
-    ("kubectl patch deployment nginx -p '{\"spec\":{\"replicas\":3}}'", False),
-    ("kubectl patch pod nginx --type='json' -p='[{\"op\": \"replace\", \"path\": \"/spec/containers/0/image\", \"value\":\"nginx:latest\"}]'", False),
+    ('kubectl patch deployment nginx -p \'{"spec":{"replicas":3}}\'', False),
+    (
+        'kubectl patch pod nginx --type=\'json\' -p=\'[{"op": "replace", "path": "/spec/containers/0/image", "value":"nginx:latest"}]\'',
+        False,
+    ),
     ("kubectl replace -f deployment.yaml", False),
     ("kubectl replace --force -f pod.yaml", False),
     ("kubectl label pods nginx app=v2", False),
@@ -1855,7 +2693,10 @@ TESTS = [
     ("kubectl annotate pods nginx description='my pod'", False),
     ("kubectl annotate pods nginx description-", False),
     ("kubectl set image deployment/nginx nginx=nginx:1.19", False),
-    ("kubectl set resources deployment/nginx -c=nginx --limits=cpu=200m,memory=512Mi", False),
+    (
+        "kubectl set resources deployment/nginx -c=nginx --limits=cpu=200m,memory=512Mi",
+        False,
+    ),
     ("kubectl set env deployment/nginx ENV_VAR=value", False),
     # kubectl - unsafe (scaling)
     ("kubectl scale deployment nginx --replicas=3", False),
@@ -2483,9 +3324,6 @@ DESCRIPTION_TESTS = [
     ([], "empty command"),
     (["time"], "empty command"),  # wrapper with nothing after
 ]
-
-
-import pytest
 
 
 @pytest.mark.parametrize("cmd,expected_safe", TESTS)

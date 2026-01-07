@@ -1,10 +1,8 @@
 """Tests for dippy-local.toml config loading - exercises all configurable sections."""
 
-import pytest
 from pathlib import Path
 
 from dippy.dippy import (
-    parse_commands,
     is_command_safe,
     _load_custom_configs,
     SAFE_SCRIPTS,
