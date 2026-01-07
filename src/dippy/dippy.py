@@ -79,7 +79,9 @@ def setup_logging():
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(LOG_FILE)
         file_handler.setLevel(logging.INFO)
-        logging.basicConfig(format="%(message)s", handlers=[file_handler], level=logging.INFO)
+        logging.basicConfig(
+            format="%(message)s", handlers=[file_handler], level=logging.INFO
+        )
         structlog.configure(
             processors=[
                 structlog.processors.TimeStamper(fmt="iso"),
@@ -95,6 +97,7 @@ def setup_logging():
 
 log = None
 
+
 def _log(level: str, **kwargs) -> None:
     """Log a message, silently ignoring errors."""
     try:
@@ -103,23 +106,90 @@ def _log(level: str, **kwargs) -> None:
     except Exception:
         pass
 
+
 # === Data: What commands are safe ===
 
 SAFE_COMMANDS = {
-    "ack", "arch", "aws-azure-login", "base32", "base64", "basenc", "basename", "cat", "cd",
-    "cloc", "col", "comm", "cut", "date", "df", "diff", "dig", "dir", "dirname",
-    "du", "echo", "env", "false", "fd", "file", "free", "getent", "grep",
-    "groups", "head", "host", "hostid", "hostname", "id", "join", "jq",
-    "logname", "ls", "lsof", "netstat", "nproc", "nslookup", "paste",
-    "ping", "pinky", "printenv", "printf", "ps", "pwd", "pytest", "readlink", "realpath",
-    "rg", "sleep", "ss", "stat", "tail", "traceroute", "tr", "tree", "true",
-    "tsort", "tty", "type", "uname", "uniq", "uptime", "users", "vdir",
-    "wc", "which", "who", "whoami", "yes",
+    "ack",
+    "arch",
+    "aws-azure-login",
+    "base32",
+    "base64",
+    "basenc",
+    "basename",
+    "cat",
+    "cd",
+    "cloc",
+    "col",
+    "comm",
+    "cut",
+    "date",
+    "df",
+    "diff",
+    "dig",
+    "dir",
+    "dirname",
+    "du",
+    "echo",
+    "env",
+    "false",
+    "fd",
+    "file",
+    "free",
+    "getent",
+    "grep",
+    "groups",
+    "head",
+    "host",
+    "hostid",
+    "hostname",
+    "id",
+    "join",
+    "jq",
+    "logname",
+    "ls",
+    "lsof",
+    "netstat",
+    "nproc",
+    "nslookup",
+    "paste",
+    "ping",
+    "pinky",
+    "printenv",
+    "printf",
+    "ps",
+    "pwd",
+    "pytest",
+    "readlink",
+    "realpath",
+    "rg",
+    "sleep",
+    "ss",
+    "stat",
+    "tail",
+    "traceroute",
+    "tr",
+    "tree",
+    "true",
+    "tsort",
+    "tty",
+    "type",
+    "uname",
+    "uniq",
+    "uptime",
+    "users",
+    "vdir",
+    "wc",
+    "which",
+    "who",
+    "whoami",
+    "yes",
 }
 
 SAFE_SCRIPTS: set[str] = set()
 CURL_WRAPPERS: set[str] = set()
 CUSTOM_PATTERNS: list[re.Pattern] = []
+
 
 def _load_config_file(config_path: Path) -> dict:
     """Load patterns from a config file. Returns parsed config or empty dict."""
@@ -132,9 +202,17 @@ def _load_config_file(config_path: Path) -> dict:
         print(f"Warning: Failed to load {config_path}: {e}", file=sys.stderr)
         return {}
 
+
 def _load_custom_configs() -> None:
     """Load custom patterns from config files into global state."""
-    global SAFE_SCRIPTS, CURL_WRAPPERS, CUSTOM_PATTERNS, SAFE_COMMANDS, CLI_ALIASES, PREFIX_COMMANDS, WRAPPERS
+    global \
+        SAFE_SCRIPTS, \
+        CURL_WRAPPERS, \
+        CUSTOM_PATTERNS, \
+        SAFE_COMMANDS, \
+        CLI_ALIASES, \
+        PREFIX_COMMANDS, \
+        WRAPPERS
     for config_path in [TEST_CONFIG, CUSTOM_CONFIG]:
         config = _load_config_file(config_path)
         if not config:
@@ -149,17 +227,22 @@ def _load_custom_configs() -> None:
             CUSTOM_PATTERNS.append(re.compile(expanded))
         for cli, actions in config.get("cli_safe_actions", {}).items():
             if cli in CLI_CONFIGS:
-                CLI_CONFIGS[cli]["safe_actions"] = CLI_CONFIGS[cli]["safe_actions"] | set(actions)
+                CLI_CONFIGS[cli]["safe_actions"] = CLI_CONFIGS[cli][
+                    "safe_actions"
+                ] | set(actions)
         # New CLI tools
         for cli, cli_config in config.get("cli_tools", {}).items():
             if cli not in CLI_CONFIGS:
                 CLI_CONFIGS[cli] = {
-                    "safe_actions": COMMON_SAFE_ACTIONS | set(cli_config.get("safe_actions", [])),
+                    "safe_actions": COMMON_SAFE_ACTIONS
+                    | set(cli_config.get("safe_actions", [])),
                     "safe_prefixes": tuple(cli_config.get("safe_prefixes", [])),
                     "parser": cli_config.get("parser", "first_token"),
                 }
                 if "flags_with_arg" in cli_config:
-                    CLI_CONFIGS[cli]["flags_with_arg"] = set(cli_config["flags_with_arg"])
+                    CLI_CONFIGS[cli]["flags_with_arg"] = set(
+                        cli_config["flags_with_arg"]
+                    )
         # Wrappers
         for name, wrapper_config in config.get("wrappers", {}).items():
             prefix = wrapper_config.get("prefix", [name])
@@ -168,6 +251,7 @@ def _load_custom_configs() -> None:
                 skip = None
             flags = set(wrapper_config.get("flags_with_arg", []))
             WRAPPERS[name] = (prefix, skip, flags)
+
 
 PREFIX_COMMANDS = {
     "git config --get",
@@ -187,14 +271,32 @@ WRAPPERS = {
     "time": (["time"], 0, set()),
     "nice": (["nice"], "nice", set()),
     "timeout": (["timeout"], 1, set()),
-    "env": (["env"], None, set()),
-    "uv": (["uv", "run"], None, {"--group", "--project", "-p", "--package", "--with", "--python", "--no-project"}),
+    "env": (["env"], None, {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}),
+    "uv": (
+        ["uv", "run"],
+        None,
+        {"--group", "--project", "-p", "--package", "--with", "--python"},
+    ),
 }
 
 # === Data: CLI configurations ===
 
 # Common read-only actions shared across most CLI tools
-COMMON_SAFE_ACTIONS = {"describe", "diff", "export", "get", "help", "info", "list", "logs", "search", "show", "status", "version", "view"}
+COMMON_SAFE_ACTIONS = {
+    "describe",
+    "diff",
+    "export",
+    "get",
+    "help",
+    "info",
+    "list",
+    "logs",
+    "search",
+    "show",
+    "status",
+    "version",
+    "view",
+}
 
 # CLI tools with action-based checks
 # parser types:
@@ -204,8 +306,25 @@ COMMON_SAFE_ACTIONS = {"describe", "diff", "export", "get", "help", "info", "lis
 #   "variable_depth": action depth varies by service (see action_depth, service_depths)
 CLI_CONFIGS = {
     "aws": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"filter-log-events", "lookup-events", "ls", "query", "scan", "tail", "transact-get-items", "wait"},
-        "safe_prefixes": ("batch-get-", "describe-", "get-", "head-", "list-", "validate-"),
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {
+            "filter-log-events",
+            "lookup-events",
+            "ls",
+            "query",
+            "scan",
+            "tail",
+            "transact-get-items",
+            "wait",
+        },
+        "safe_prefixes": (
+            "batch-get-",
+            "describe-",
+            "get-",
+            "head-",
+            "list-",
+            "validate-",
+        ),
         "parser": "aws",
     },
     "az": {
@@ -215,27 +334,38 @@ CLI_CONFIGS = {
         "action_depth": 1,
         "service_depths": {
             "cognitiveservices": 2,  # az cognitiveservices model list
-            "deployment": 2,      # az deployment group show
-            "devops": 2,          # az devops team list
-            "keyvault": 2,        # az keyvault secret list
-            "ml": 2,              # az ml workspace list
-            "monitor": 2,         # az monitor log-analytics query
+            "deployment": 2,  # az deployment group show
+            "devops": 2,  # az devops team list
+            "keyvault": 2,  # az keyvault secret list
+            "ml": 2,  # az ml workspace list
+            "monitor": 2,  # az monitor log-analytics query
             "network": 2,
-            "role": 2,            # az role assignment list
+            "role": 2,  # az role assignment list
             "storage": 2,
         },
         # Subgroups that need different depths
         "subservice_depths": {
-            ("acr", "repository"): 2,     # az acr repository list
-            ("boards", "area"): 3,        # az boards area project list
-            ("boards", "iteration"): 3,   # az boards iteration team list
-            ("boards", "work-item"): 2,   # az boards work-item show
-            ("cognitiveservices", "account", "deployment"): 3,  # az cognitiveservices account deployment list
+            ("acr", "repository"): 2,  # az acr repository list
+            ("boards", "area"): 3,  # az boards area project list
+            ("boards", "iteration"): 3,  # az boards iteration team list
+            ("boards", "work-item"): 2,  # az boards work-item show
+            (
+                "cognitiveservices",
+                "account",
+                "deployment",
+            ): 3,  # az cognitiveservices account deployment list
             ("containerapp", "logs"): 2,  # az containerapp logs show
             ("containerapp", "revision"): 2,  # az containerapp revision list
             ("deployment", "operation"): 3,  # az deployment operation group list
         },
-        "flags_with_arg": {"-g", "-o", "--output", "--query", "--resource-group", "--subscription"},
+        "flags_with_arg": {
+            "-g",
+            "-o",
+            "--output",
+            "--query",
+            "--resource-group",
+            "--subscription",
+        },
     },
     "gcloud": {
         "safe_actions": COMMON_SAFE_ACTIONS | {"get-iam-policy", "get-value", "read"},
@@ -243,27 +373,34 @@ CLI_CONFIGS = {
         "parser": "variable_depth",
         "action_depth": 2,
         "service_depths": {
-            "artifacts": 3,       # gcloud artifacts docker images list
-            "auth": 1,            # gcloud auth list
-            "beta": 3,            # gcloud beta run services describe
+            "artifacts": 3,  # gcloud artifacts docker images list
+            "auth": 1,  # gcloud auth list
+            "beta": 3,  # gcloud beta run services describe
             "certificate-manager": 2,  # gcloud certificate-manager trust-configs describe
             "components": 1,
-            "compute": 2,         # gcloud compute backend-services list
-            "config": 1,          # gcloud config get-value
-            "container": 2,       # gcloud container images list-tags
-            "dns": 2,             # gcloud dns record-sets list
-            "functions": 1,       # gcloud functions list
-            "iam": 2,             # gcloud iam service-accounts list
-            "iap": 2,             # gcloud iap web get-iam-policy
-            "logging": 1,         # gcloud logging read
+            "compute": 2,  # gcloud compute backend-services list
+            "config": 1,  # gcloud config get-value
+            "container": 2,  # gcloud container images list-tags
+            "dns": 2,  # gcloud dns record-sets list
+            "functions": 1,  # gcloud functions list
+            "iam": 2,  # gcloud iam service-accounts list
+            "iap": 2,  # gcloud iap web get-iam-policy
+            "logging": 1,  # gcloud logging read
             "network-security": 2,  # gcloud network-security server-tls-policies describe
-            "projects": 1,        # gcloud projects list/describe
-            "run": 2,             # gcloud run services describe
-            "secrets": 1,         # gcloud secrets list
-            "storage": 2,         # gcloud storage buckets describe
+            "projects": 1,  # gcloud projects list/describe
+            "run": 2,  # gcloud run services describe
+            "secrets": 1,  # gcloud secrets list
+            "storage": 2,  # gcloud storage buckets describe
             "topic": 1,
         },
-        "flags_with_arg": {"--account", "--configuration", "--format", "--project", "--region", "--zone"},
+        "flags_with_arg": {
+            "--account",
+            "--configuration",
+            "--format",
+            "--project",
+            "--region",
+            "--zone",
+        },
     },
     "gh": {
         "safe_actions": COMMON_SAFE_ACTIONS | {"checks"},
@@ -272,10 +409,19 @@ CLI_CONFIGS = {
         "flags_with_arg": {"-R", "--repo"},
     },
     "docker": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"events", "history", "images", "inspect", "port", "ps", "stats", "top"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"events", "history", "images", "inspect", "port", "ps", "stats", "top"},
         "safe_prefixes": (),
         "parser": "first_token",
-        "flags_with_arg": {"-c", "--config", "--context", "-H", "--host", "-l", "--log-level"},
+        "flags_with_arg": {
+            "-c",
+            "--config",
+            "--context",
+            "-H",
+            "--host",
+            "-l",
+            "--log-level",
+        },
     },
     "auth0": {
         "safe_actions": COMMON_SAFE_ACTIONS | {"search-by-email", "stats", "tail"},
@@ -284,29 +430,59 @@ CLI_CONFIGS = {
         "flags_with_arg": {"--tenant"},
     },
     "brew": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"config", "deps", "desc", "doctor", "leaves", "options", "outdated", "uses"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"config", "deps", "desc", "doctor", "leaves", "options", "outdated", "uses"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
     "git": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"blame", "cat-file", "check-ignore", "cherry", "fetch", "for-each-ref", "grep", "log", "ls-files", "ls-tree", "merge-base", "name-rev", "reflog", "rev-list", "rev-parse", "shortlog"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {
+            "blame",
+            "cat-file",
+            "check-ignore",
+            "cherry",
+            "fetch",
+            "for-each-ref",
+            "grep",
+            "log",
+            "ls-files",
+            "ls-tree",
+            "merge-base",
+            "name-rev",
+            "reflog",
+            "rev-list",
+            "rev-parse",
+            "shortlog",
+        },
         "safe_prefixes": (),
         "parser": "first_token",
         "flags_with_arg": {"-C", "-c", "--git-dir", "--work-tree"},
     },
     "kubectl": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"api-resources", "api-versions", "cluster-info", "explain", "top"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"api-resources", "api-versions", "cluster-info", "explain", "top"},
         "safe_prefixes": (),
         "parser": "first_token",
-        "flags_with_arg": {"-n", "--namespace", "--context", "--cluster", "--kubeconfig", "-o", "--output"},
+        "flags_with_arg": {
+            "-n",
+            "--namespace",
+            "--context",
+            "--cluster",
+            "--kubeconfig",
+            "-o",
+            "--output",
+        },
     },
     "cdk": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"doctor", "docs", "ls", "metadata", "notices", "synth"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"doctor", "docs", "ls", "metadata", "notices", "synth"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
     "pre-commit": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"sample-config", "validate-config", "validate-manifest"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"sample-config", "validate-config", "validate-manifest"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -321,13 +497,44 @@ CLI_CONFIGS = {
         "parser": "first_token",
     },
     "terraform": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"fmt", "graph", "output", "plan", "providers", "state", "validate"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"fmt", "graph", "output", "plan", "providers", "state", "validate"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
 }
 
 CLI_ALIASES: dict[str, str] = {}
+
+# === Simple token rejection checks ===
+# Commands that are safe unless they contain specific tokens.
+# Format: command -> (exact_reject, prefix_reject)
+# - exact_reject: set of tokens that must match exactly
+# - prefix_reject: tuple of prefixes to match with startswith()
+
+SIMPLE_CHECKS: dict[str, tuple[set[str], tuple[str, ...]]] = {
+    "dmesg": ({"-c", "-C", "--clear"}, ()),
+    "find": ({"-exec", "-execdir", "-ok", "-okdir", "-delete"}, ()),
+    "journalctl": (
+        {"--rotate", "--flush", "--sync", "--relinquish-var"},
+        ("--vacuum",),
+    ),
+    "sed": (set(), ("-i", "--in-place")),
+    "sort": (set(), ("-o",)),
+}
+
+
+def check_simple(
+    tokens: list[str], reject_exact: set[str], reject_prefixes: tuple[str, ...]
+) -> bool:
+    """Check if command is safe by rejecting specific tokens."""
+    for t in tokens:
+        if t in reject_exact:
+            return False
+        if reject_prefixes and t.startswith(reject_prefixes):
+            return False
+    return True
+
 
 # === Custom validators ===
 
@@ -340,22 +547,6 @@ def check_awk(tokens: list[str]) -> bool:
         if not t.startswith("-"):
             if ">" in t or "|" in t or "system" in t:
                 return False
-    return True
-
-
-def check_dmesg(tokens: list[str]) -> bool:
-    """Approve dmesg if no clear flags."""
-    for t in tokens:
-        if t in {"-c", "-C", "--clear"}:
-            return False
-    return True
-
-
-def check_find(tokens: list[str]) -> bool:
-    """Approve find if no dangerous flags."""
-    dangerous = {"-exec", "-execdir", "-ok", "-okdir", "-delete"}
-    if dangerous & set(tokens):
-        return False
     return True
 
 
@@ -382,20 +573,23 @@ def check_ip(tokens: list[str]) -> bool:
         break
     if not obj:
         return False
-    safe_objects = {"addr", "address", "link", "route", "neigh", "neighbor", "rule", "maddr", "mroute", "tunnel"}
+    safe_objects = {
+        "addr",
+        "address",
+        "link",
+        "route",
+        "neigh",
+        "neighbor",
+        "rule",
+        "maddr",
+        "mroute",
+        "tunnel",
+    }
     if obj not in safe_objects:
         return False
     dangerous = {"add", "del", "delete", "change", "replace", "set", "flush", "exec"}
     if dangerous & set(tokens):
         return False
-    return True
-
-
-def check_journalctl(tokens: list[str]) -> bool:
-    """Approve journalctl if no modifying flags."""
-    for t in tokens:
-        if t in {"--rotate", "--flush", "--sync", "--relinquish-var"} or t.startswith("--vacuum"):
-            return False
     return True
 
 
@@ -409,23 +603,19 @@ def check_openssl(tokens: list[str]) -> bool:
     return False
 
 
-def check_sed(tokens: list[str]) -> bool:
-    """Approve sed if no -i flag (in-place editing)."""
-    for t in tokens:
-        if t == "-i" or t.startswith("-i") or t.startswith("--in-place"):
-            return False
-    return True
-
-
-def check_sort(tokens: list[str]) -> bool:
-    """Approve sort if no -o flag."""
-    return not any(t.startswith("-o") for t in tokens)
-
-
 # Curl flags that send data (imply POST or upload)
 CURL_DATA_FLAGS = {
-    "-d", "--data", "--data-binary", "--data-raw", "--data-ascii",
-    "--data-urlencode", "-F", "--form", "--form-string", "-T", "--upload-file",
+    "-d",
+    "--data",
+    "--data-binary",
+    "--data-raw",
+    "--data-ascii",
+    "--data-urlencode",
+    "-F",
+    "--form",
+    "--form-string",
+    "-T",
+    "--upload-file",
 }
 
 
@@ -473,28 +663,32 @@ def check_shell_c(tokens: list[str]) -> bool:
 
 
 XARGS_FLAGS_WITH_ARG = {
-    "-a", "--arg-file", "-d", "--delimiter", "-E", "-e", "--eof",
-    "-I", "-i", "--replace", "-L", "-l", "--max-lines", "-n", "--max-args",
-    "-P", "--max-procs", "-s", "--max-chars", "--process-slot-var",
+    "-a",
+    "--arg-file",
+    "-d",
+    "--delimiter",
+    "-E",
+    "-e",
+    "--eof",
+    "-I",
+    "-i",
+    "--replace",
+    "-L",
+    "-l",
+    "--max-lines",
+    "-n",
+    "--max-args",
+    "-P",
+    "--max-procs",
+    "-s",
+    "--max-chars",
+    "--process-slot-var",
 }
 
 
 def check_xargs(tokens: list[str]) -> bool:
     """Approve xargs if the command it runs is safe."""
-    i = 1
-    while i < len(tokens):
-        tok = tokens[i]
-        if tok == "--":
-            i += 1
-            break
-        if tok in XARGS_FLAGS_WITH_ARG:
-            i += 2
-        elif tok.startswith("--") and "=" in tok:
-            i += 1
-        elif tok.startswith("-"):
-            i += 1
-        else:
-            break
+    i = 1 + skip_flags(tokens[1:], XARGS_FLAGS_WITH_ARG, stop_at_double_dash=True)
     if i >= len(tokens):
         return False
     return is_command_safe(tokens[i:])
@@ -578,19 +772,15 @@ CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
     "awk": check_awk,
     "bash": check_shell_c,
     "curl": check_curl,
-    "dmesg": check_dmesg,
-    "find": check_find,
     "ifconfig": check_ifconfig,
     "ip": check_ip,
-    "journalctl": check_journalctl,
     "openssl": check_openssl,
     "python": check_python,
-    "sed": check_sed,
     "sh": check_shell_c,
-    "sort": check_sort,
     "xargs": check_xargs,
     "zsh": check_shell_c,
 }
+
 
 # Compound command checks (multi-token prefix -> validator)
 def check_uv_pip(tokens: list[str]) -> bool:
@@ -615,20 +805,15 @@ def strip_wrappers(tokens: list[str]) -> list[str]:
     """Strip wrapper commands and return inner command tokens."""
     while tokens and tokens[0] in WRAPPERS:
         prefix, skip, flags_with_arg = WRAPPERS[tokens[0]]
-        if tokens[:len(prefix)] != prefix:
+        if tokens[: len(prefix)] != prefix:
             break
-        tokens = tokens[len(prefix):]
+        tokens = tokens[len(prefix) :]
 
         if skip is None:
-            while tokens:
-                if tokens[0] in flags_with_arg:
-                    tokens = tokens[2:]  # skip flag and its argument
-                elif tokens[0].startswith("-"):
-                    tokens = tokens[1:]
-                elif "=" in tokens[0]:
-                    tokens = tokens[1:]
-                else:
-                    break
+            i = skip_flags(
+                tokens, flags_with_arg, skip_env_vars=True, stop_at_double_dash=True
+            )
+            tokens = tokens[i:]
         elif skip == "nice":
             while tokens and tokens[0].startswith("-"):
                 tokens = tokens[1:]
@@ -643,18 +828,41 @@ def strip_wrappers(tokens: list[str]) -> list[str]:
 # === CLI action extraction ===
 
 AWS_FLAGS_WITH_ARG = {
-    "--ca-bundle", "--cli-connect-timeout", "--cli-read-timeout", "--color",
-    "--endpoint-url", "--output", "--profile", "--region",
+    "--ca-bundle",
+    "--cli-connect-timeout",
+    "--cli-read-timeout",
+    "--color",
+    "--endpoint-url",
+    "--output",
+    "--profile",
+    "--region",
 }
 
 
-def skip_flags(tokens: list[str], flags_with_arg: set[str]) -> int:
-    """Return index of first non-flag token, skipping flags and their arguments."""
+def skip_flags(
+    tokens: list[str],
+    flags_with_arg: set[str] = frozenset(),
+    skip_env_vars: bool = False,
+    stop_at_double_dash: bool = False,
+) -> int:
+    """Return index of first non-flag token, skipping flags and their arguments.
+
+    Args:
+        tokens: List of command tokens to scan
+        flags_with_arg: Flags that consume the next token as their argument
+        skip_env_vars: If True, also skip VAR=value environment variable assignments
+        stop_at_double_dash: If True, stop at -- and return index after it
+    """
     i = 0
     while i < len(tokens):
-        if tokens[i] in flags_with_arg:
+        tok = tokens[i]
+        if stop_at_double_dash and tok == "--":
+            return i + 1
+        if tok in flags_with_arg:
             i += 2
-        elif tokens[i].startswith("-"):
+        elif tok.startswith("-"):
+            i += 1
+        elif skip_env_vars and "=" in tok:
             i += 1
         else:
             break
@@ -663,14 +871,7 @@ def skip_flags(tokens: list[str], flags_with_arg: set[str]) -> int:
 
 def _get_aws_action(tokens: list[str]) -> str | None:
     """Extract action from aws <service> <action> command."""
-    i = 0
-    while i < len(tokens):
-        if tokens[i] in AWS_FLAGS_WITH_ARG:
-            i += 2
-        elif tokens[i].startswith("--"):
-            i += 1
-        else:
-            break
+    i = skip_flags(tokens, AWS_FLAGS_WITH_ARG)
     # "aws help" - help is the first token
     if i < len(tokens) and tokens[i] == "help":
         return "help"
@@ -722,13 +923,19 @@ def _get_variable_depth_action(tokens: list[str], config: dict[str, Any]) -> str
 
 PARSERS: dict[str, Callable[[list[str], dict[str, Any]], str | None]] = {
     "aws": lambda tokens, config: _get_aws_action(tokens),
-    "first_token": lambda tokens, config: _get_nth_token(tokens, 0, config.get("flags_with_arg", set())),
-    "second_token": lambda tokens, config: _get_nth_token(tokens, 1, config.get("flags_with_arg", set())),
+    "first_token": lambda tokens, config: _get_nth_token(
+        tokens, 0, config.get("flags_with_arg", set())
+    ),
+    "second_token": lambda tokens, config: _get_nth_token(
+        tokens, 1, config.get("flags_with_arg", set())
+    ),
     "variable_depth": _get_variable_depth_action,
 }
 
 
-def get_cli_action(tokens: list[str], parser: str, config: dict[str, Any] | None = None) -> str | None:
+def get_cli_action(
+    tokens: list[str], parser: str, config: dict[str, Any] | None = None
+) -> str | None:
     """Extract action from CLI command based on parser type."""
     return PARSERS[parser](tokens, config)
 
@@ -756,8 +963,8 @@ def get_command_description(tokens: list[str]) -> str:
             return f"aws {args[i]} {args[i + 1]}"
     # Check compound commands first (e.g., uv pip install)
     for prefix in COMPOUND_CHECKS:
-        if tuple(tokens[:len(prefix)]) == prefix and len(tokens) > len(prefix):
-            return " ".join(tokens[:len(prefix) + 1])
+        if tuple(tokens[: len(prefix)]) == prefix and len(tokens) > len(prefix):
+            return " ".join(tokens[: len(prefix) + 1])
     if cmd in CLI_CONFIGS:
         config = CLI_CONFIGS[cmd]
         action = get_cli_action(tokens[1:], config["parser"], config)
@@ -826,14 +1033,18 @@ def is_command_safe(tokens: list[str]) -> bool:
 
     for prefix in PREFIX_COMMANDS:
         prefix_tokens = prefix.split()
-        if tokens[:len(prefix_tokens)] == prefix_tokens:
+        if tokens[: len(prefix_tokens)] == prefix_tokens:
             return True
+
+    if cmd in SIMPLE_CHECKS:
+        reject_exact, reject_prefixes = SIMPLE_CHECKS[cmd]
+        return check_simple(tokens, reject_exact, reject_prefixes)
 
     if cmd in CUSTOM_CHECKS:
         return CUSTOM_CHECKS[cmd](tokens)
 
     for prefix, checker in COMPOUND_CHECKS.items():
-        if tuple(tokens[:len(prefix)]) == prefix:
+        if tuple(tokens[: len(prefix)]) == prefix:
             return checker(tokens)
 
     cmd = CLI_ALIASES.get(cmd, cmd)
@@ -863,7 +1074,11 @@ def has_unsafe_output_redirect(node: Any) -> bool:
             if part.kind == "redirect" and part.type in OUTPUT_REDIRECTS:
                 if isinstance(part.output, int):
                     continue
-                target = getattr(part.output, "word", None) if hasattr(part, "output") else None
+                target = (
+                    getattr(part.output, "word", None)
+                    if hasattr(part, "output")
+                    else None
+                )
                 if target in SAFE_REDIRECT_TARGETS:
                     continue
                 return True
@@ -895,21 +1110,24 @@ def get_command_nodes(node: Any) -> list[list[str]] | None:
 def preprocess_command(cmd_string: str) -> str:
     """Strip bash constructs that bashlex doesn't handle."""
     # Remove 'time' reserved word
-    cmd_string = re.sub(r'\btime\s+(-p\s+)?', '', cmd_string)
+    cmd_string = re.sub(r"\btime\s+(-p\s+)?", "", cmd_string)
     # Replace heredoc in command substitution with placeholder string
     # Matches: "$(cat <<'EOF'...EOF)" or "$(cat <<EOF...EOF)"
     cmd_string = re.sub(
         r'"\$\(cat\s+<<\'?EOF\'?\n.*?\nEOF\n\)"',
         '"HEREDOC_PLACEHOLDER"',
         cmd_string,
-        flags=re.DOTALL
+        flags=re.DOTALL,
     )
     return cmd_string
 
 
 class ParseResult:
     """Result of parsing a command string."""
-    def __init__(self, commands: list[list[str]] | None = None, error: str | None = None):
+
+    def __init__(
+        self, commands: list[list[str]] | None = None, error: str | None = None
+    ):
         self.commands = commands
         self.error = error
 
@@ -957,13 +1175,17 @@ def main() -> None:
 
     def defer_to_user(reason: str) -> None:
         """Print JSON to defer decision to user and exit."""
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "ask",
-                "permissionDecisionReason": f"🐤 {reason}",
-            }
-        }))
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "ask",
+                        "permissionDecisionReason": f"🐤 {reason}",
+                    }
+                }
+            )
+        )
         sys.exit(0)
 
     if not command.strip():
@@ -973,7 +1195,12 @@ def main() -> None:
     result = parse_commands(command)
 
     if result.error:
-        _log("info", event="deferred", command=command, reason=result.error.lower().replace(" ", "_"))
+        _log(
+            "info",
+            event="deferred",
+            command=command,
+            reason=result.error.lower().replace(" ", "_"),
+        )
         defer_to_user(result.error)
 
     commands = result.commands
@@ -983,17 +1210,27 @@ def main() -> None:
 
     unsafe_descs = get_unsafe_commands(commands)
     if unsafe_descs:
-        _log("info", event="deferred", command=command, reason="unsafe_command", unsafe_commands=unsafe_descs)
+        _log(
+            "info",
+            event="deferred",
+            command=command,
+            reason="unsafe_command",
+            unsafe_commands=unsafe_descs,
+        )
         defer_to_user(f"Command requires approval: {', '.join(unsafe_descs)}")
 
     _log("info", event="approved", command=command)
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "permissionDecisionReason": "all commands safe",
-        }
-    }))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "permissionDecisionReason": "all commands safe",
+                }
+            }
+        )
+    )
     sys.exit(0)
 
 

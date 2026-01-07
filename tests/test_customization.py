@@ -39,7 +39,9 @@ class TestCurlWrappers:
         assert is_command_safe(["./curl-wrapper.sh", "https://example.com"])
 
     def test_curl_wrapper_post_rejected(self):
-        assert not is_command_safe(["./curl-wrapper.sh", "-X", "POST", "https://example.com"])
+        assert not is_command_safe(
+            ["./curl-wrapper.sh", "-X", "POST", "https://example.com"]
+        )
 
     def test_curl_wrapper_in_set(self):
         assert "curl-wrapper.sh" in CURL_WRAPPERS
