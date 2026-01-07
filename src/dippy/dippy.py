@@ -683,11 +683,14 @@ CLI_CONFIGS = {
             "cat-file",
             "check-ignore",
             "cherry",
+            "count-objects",
             "fetch",
             "for-each-ref",
+            "fsck",
             "grep",
             "log",
             "ls-files",
+            "ls-remote",
             "ls-tree",
             "merge-base",
             "name-rev",
@@ -695,6 +698,8 @@ CLI_CONFIGS = {
             "rev-list",
             "rev-parse",
             "shortlog",
+            "verify-commit",
+            "verify-tag",
         },
         "safe_prefixes": (),
         "parser": "first_token",
@@ -1273,6 +1278,234 @@ def check_kubectl_rollout(tokens: list[str]) -> bool:
     return subcommand in {"status", "history"}
 
 
+def check_git_branch(tokens: list[str]) -> bool:
+    """Approve git branch only for listing operations."""
+    # tokens: ['git', 'branch'] or ['git', ...flags..., 'branch', ...]
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1  # +1 for 'git'
+    if i >= len(tokens) or tokens[i] != "branch":
+        return False
+    # Get remaining args after 'branch'
+    args = tokens[i + 1 :]
+    # Unsafe flags: -d, -D, --delete, -m, -M, --move, -c, -C, --copy, --set-upstream-to,
+    # --unset-upstream, --edit-description, --track, --no-track
+    unsafe_flags = {
+        "-d",
+        "-D",
+        "--delete",
+        "-m",
+        "-M",
+        "--move",
+        "-c",
+        "-C",
+        "--copy",
+        "--set-upstream-to",
+        "--unset-upstream",
+        "--edit-description",
+        "--track",
+        "--no-track",
+    }
+    for arg in args:
+        if arg.startswith("-"):
+            # Check for =value suffix
+            flag = arg.split("=")[0]
+            if flag in unsafe_flags:
+                return False
+        else:
+            # Non-flag argument after branch - could be creating a branch
+            # Check if this is a pattern for --list or a ref for --contains/--merged
+            # If no safe listing flags present, this is likely branch creation
+            if not any(
+                f in args
+                for f in {
+                    "--list",
+                    "--contains",
+                    "--merged",
+                    "--no-merged",
+                    "--points-at",
+                }
+            ):
+                return False
+    return True
+
+
+def check_git_tag(tokens: list[str]) -> bool:
+    """Approve git tag only for listing operations."""
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1
+    if i >= len(tokens) or tokens[i] != "tag":
+        return False
+    args = tokens[i + 1 :]
+    # Safe flags: -l, --list, -n, --contains, --merged, --no-merged, --sort, --format,
+    # --points-at, --column, --no-column
+    # Unsafe flags: -a, --annotate, -s, --sign, -d, --delete, -v, --verify, -f, --force
+    unsafe_flags = {
+        "-a",
+        "--annotate",
+        "-s",
+        "--sign",
+        "-d",
+        "--delete",
+        "-v",
+        "--verify",
+        "-f",
+        "--force",
+        "-m",
+        "--message",
+        "-F",
+        "--file",
+        "-u",
+        "--local-user",
+    }
+    has_list_flag = False
+    for arg in args:
+        if arg.startswith("-"):
+            flag = arg.split("=")[0]
+            if flag in unsafe_flags:
+                return False
+            if flag in {
+                "-l",
+                "--list",
+                "-n",
+                "--contains",
+                "--merged",
+                "--no-merged",
+                "--points-at",
+            }:
+                has_list_flag = True
+        else:
+            # Non-flag argument - if no list flag present, this is tag creation
+            if not has_list_flag:
+                return False
+    return True
+
+
+def check_git_remote(tokens: list[str]) -> bool:
+    """Approve git remote only for read-only operations."""
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1
+    if i >= len(tokens) or tokens[i] != "remote":
+        return False
+    args = tokens[i + 1 :]
+    if not args:
+        return True  # Just 'git remote' lists remotes
+    # Check first non-flag argument for subcommand
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        # Safe subcommands: show, get-url
+        # Unsafe: add, remove, rm, rename, set-url, set-head, set-branches, prune, update
+        if arg in {"show", "get-url"}:
+            return True
+        return False
+    # Only flags (like -v) - safe for listing
+    return True
+
+
+def check_git_config(tokens: list[str]) -> bool:
+    """Approve git config only for read operations."""
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1
+    if i >= len(tokens) or tokens[i] != "config":
+        return False
+    args = tokens[i + 1 :]
+    # Safe flags: --get, --get-all, --get-regexp, --list, -l, --show-origin, --show-scope,
+    # --name-only, --type, --default
+    # Unsafe flags: --unset, --unset-all, --add, --replace-all, --edit, -e, --rename-section,
+    # --remove-section
+    safe_flags = {
+        "--get",
+        "--get-all",
+        "--get-regexp",
+        "--list",
+        "-l",
+        "--show-origin",
+        "--show-scope",
+        "--name-only",
+    }
+    unsafe_flags = {
+        "--unset",
+        "--unset-all",
+        "--add",
+        "--replace-all",
+        "--edit",
+        "-e",
+        "--rename-section",
+        "--remove-section",
+    }
+    has_safe_flag = False
+    for arg in args:
+        if arg.startswith("-"):
+            flag = arg.split("=")[0]
+            if flag in unsafe_flags:
+                return False
+            if flag in safe_flags:
+                has_safe_flag = True
+    # If we have a safe flag, allow it
+    if has_safe_flag:
+        return True
+    # If only scope flags (--global, --local, --system) with a key name, that's setting
+    return False
+
+
+def check_git_stash(tokens: list[str]) -> bool:
+    """Approve git stash only for list/show operations."""
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1
+    if i >= len(tokens) or tokens[i] != "stash":
+        return False
+    args = tokens[i + 1 :]
+    if not args:
+        return False  # Just 'git stash' pushes a stash
+    # Check first non-flag argument for subcommand
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        # Safe subcommands: list, show
+        # Unsafe: push, pop, apply, drop, clear, branch, create, store
+        return arg in {"list", "show"}
+    return False
+
+
+def check_git_notes(tokens: list[str]) -> bool:
+    """Approve git notes only for list/show operations."""
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1
+    if i >= len(tokens) or tokens[i] != "notes":
+        return False
+    args = tokens[i + 1 :]
+    if not args:
+        return False  # Just 'git notes' - unclear intent
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        return arg in {"list", "show"}
+    return False
+
+
+def check_git_worktree(tokens: list[str]) -> bool:
+    """Approve git worktree only for list operations."""
+    config = CLI_CONFIGS["git"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1
+    if i >= len(tokens) or tokens[i] != "worktree":
+        return False
+    args = tokens[i + 1 :]
+    if not args:
+        return False
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        return arg == "list"
+    return False
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
     ("aws", "secretsmanager"): check_aws_secretsmanager,
@@ -1280,6 +1513,13 @@ COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("az", "devops", "configure"): check_az_devops_configure,
     ("cdk", "context"): check_cdk_context,
     ("gh", "api"): check_gh_api,
+    ("git", "branch"): check_git_branch,
+    ("git", "config"): check_git_config,
+    ("git", "notes"): check_git_notes,
+    ("git", "remote"): check_git_remote,
+    ("git", "stash"): check_git_stash,
+    ("git", "tag"): check_git_tag,
+    ("git", "worktree"): check_git_worktree,
     ("kubectl", "config"): check_kubectl_config,
     ("kubectl", "rollout"): check_kubectl_rollout,
     ("terraform", "state"): check_terraform_state,
