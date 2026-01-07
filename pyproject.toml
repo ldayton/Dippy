@@ -5,10 +5,27 @@ description = "Claude Code permission hook - auto-approve safe bash commands"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.14"
+authors = [
+    { name = "Lily Dayton" }
+]
+keywords = ["claude", "claude-code", "hook", "bash", "permissions"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Tools",
+]
 dependencies = [
     "bashlex>=0.18",
     "structlog>=25.5.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ldayton/Dippy"
+Repository = "https://github.com/ldayton/Dippy"
+Issues = "https://github.com/ldayton/Dippy/issues"
 
 [project.scripts]
 dippy = "dippy.dippy:main"
