@@ -3,6 +3,7 @@ name = "dippy"
 version = "0.1.0"
 description = "Claude Code permission hook - auto-approve safe bash commands"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.14"
 dependencies = [
     "bashlex>=0.18",
