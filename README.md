@@ -83,14 +83,6 @@ See `dippy-local-sample.toml` for all options including `prefix_commands`, `safe
 
 ---
 
-## Develop
-
-```bash
-uv run pytest  # run tests after changes
-```
-
-`bin/bashlex-dump.py 'command'` helps Claude interactively develop dippy by inspecting bashlex AST parsing.
-
 <details>
 <summary><strong>Claude Instructions</strong></summary>
 
