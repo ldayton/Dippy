@@ -184,6 +184,51 @@ SAFE_COMMANDS = {
     "who",
     "whoami",
     "yes",
+    # Text viewers & pagers
+    "bat",
+    "less",
+    "more",
+    # Documentation/help
+    "apropos",
+    "info",
+    "man",
+    "whatis",
+    "whereis",
+    # Checksums & hashing
+    "b2sum",
+    "cksum",
+    "md5sum",
+    "sha1sum",
+    "sha256sum",
+    "sha512sum",
+    # Binary/file inspection
+    "hexdump",
+    "od",
+    "strings",
+    # Network lookup
+    "whois",
+    # Process monitors
+    "htop",
+    # Text processing
+    "expand",
+    "fmt",
+    "fold",
+    "nl",
+    "tac",
+    "unexpand",
+    # Math/calculators
+    "bc",
+    "cal",
+    "dc",
+    "expr",
+    "factor",
+    "seq",
+    "units",
+    # Encoding
+    "iconv",
+    # Archive inspection (read-only)
+    "lsar",
+    "zipinfo",
 }
 
 SAFE_SCRIPTS: set[str] = set()
