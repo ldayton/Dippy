@@ -308,24 +308,60 @@ CLI_CONFIGS = {
         "parser": "aws",
     },
     "az": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"query"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {
+            "check-health",
+            "configure",
+            "download",
+            "download-batch",
+            "exists",
+            "get-access-token",
+            "get-credentials",
+            "get-instance-view",
+            "get-upgrades",
+            "get-versions",
+            "logs",
+            "query",
+            "summarize",
+            "tail",
+            "url",
+        },
         "safe_prefixes": ("get-", "list-", "show-"),
         "parser": "variable_depth",
         "action_depth": 1,
         "service_depths": {
+            "--version": 0,  # az --version
+            "ad": 2,  # az ad user list
+            "aks": 1,  # az aks list
+            "appservice": 2,  # az appservice plan list
             "cognitiveservices": 2,  # az cognitiveservices model list
+            "cosmosdb": 1,  # az cosmosdb list (subservices like sql need more)
             "deployment": 2,  # az deployment group show
             "devops": 2,  # az devops team list
-            "keyvault": 2,  # az keyvault secret list
+            "eventhubs": 2,  # az eventhubs namespace list
+            "functionapp": 1,  # az functionapp list
+            "keyvault": 1,  # az keyvault list (subservices like secret need more)
             "ml": 2,  # az ml workspace list
             "monitor": 2,  # az monitor log-analytics query
-            "network": 2,
+            "network": 1,  # az network list-usages (subservices like vnet need more)
+            "pipelines": 1,  # az pipelines list
+            "policy": 2,  # az policy definition list
+            "repos": 1,  # az repos list
             "role": 2,  # az role assignment list
+            "servicebus": 2,  # az servicebus namespace list
+            "sql": 2,  # az sql server list
             "storage": 2,
+            "version": 0,  # az version (command itself is safe)
+            "webapp": 1,  # az webapp list
         },
         # Subgroups that need different depths
         "subservice_depths": {
+            ("acr", "credential"): 2,  # az acr credential show
             ("acr", "repository"): 2,  # az acr repository list
+            ("ad", "group"): 2,  # az ad group list
+            ("ad", "group", "member"): 3,  # az ad group member list
+            ("ad", "signed-in-user"): 2,  # az ad signed-in-user show
+            ("aks", "nodepool"): 2,  # az aks nodepool list
             ("boards", "area"): 3,  # az boards area project list
             ("boards", "iteration"): 3,  # az boards iteration team list
             ("boards", "work-item"): 2,  # az boards work-item show
@@ -336,11 +372,77 @@ CLI_CONFIGS = {
             ): 3,  # az cognitiveservices account deployment list
             ("containerapp", "logs"): 2,  # az containerapp logs show
             ("containerapp", "revision"): 2,  # az containerapp revision list
+            ("cosmosdb", "keys"): 2,  # az cosmosdb keys list
+            ("cosmosdb", "mongodb"): 3,  # az cosmosdb mongodb database list
+            ("cosmosdb", "mongodb", "database"): 3,  # az cosmosdb mongodb database list
+            ("cosmosdb", "sql"): 3,  # az cosmosdb sql database list
+            ("cosmosdb", "sql", "container"): 3,  # az cosmosdb sql container list
+            ("cosmosdb", "sql", "database"): 3,  # az cosmosdb sql database list
             ("deployment", "operation"): 3,  # az deployment operation group list
+            ("devops", "configure"): 1,  # az devops configure --list
+            ("devops", "wiki"): 2,  # az devops wiki list
+            ("devops", "wiki", "page"): 3,  # az devops wiki page show
+            ("eventhubs", "eventhub"): 2,  # az eventhubs eventhub list
+            ("eventhubs", "eventhub", "consumer-group"): 3,  # az eventhubs eventhub consumer-group list
+            ("functionapp", "config"): 2,  # az functionapp config show
+            ("functionapp", "config", "appsettings"): 3,  # az functionapp config appsettings list
+            ("functionapp", "deployment"): 2,  # az functionapp deployment list-publishing-profiles
+            ("functionapp", "function"): 2,  # az functionapp function list
+            ("functionapp", "keys"): 2,  # az functionapp keys list
+            ("keyvault", "certificate"): 2,  # az keyvault certificate list
+            ("keyvault", "key"): 2,  # az keyvault key list
+            ("keyvault", "secret"): 2,  # az keyvault secret list
+            ("monitor", "log-analytics"): 2,  # az monitor log-analytics query
+            ("monitor", "log-analytics", "workspace"): 3,  # az monitor log-analytics workspace list
+            ("network", "application-gateway"): 2,  # az network application-gateway list
+            ("network", "dns"): 3,  # az network dns zone list
+            ("network", "dns", "record-set"): 3,  # az network dns record-set list
+            ("network", "dns", "record-set", "a"): 4,  # az network dns record-set a list
+            ("network", "lb"): 2,  # az network lb list
+            ("network", "nic"): 2,  # az network nic list
+            ("network", "nic", "ip-config"): 3,  # az network nic ip-config list
+            ("network", "nsg"): 2,  # az network nsg list
+            ("network", "nsg", "rule"): 3,  # az network nsg rule list
+            ("network", "private-dns"): 3,  # az network private-dns zone list
+            ("network", "public-ip"): 2,  # az network public-ip list
+            ("network", "vnet"): 2,  # az network vnet list
+            ("network", "vnet", "subnet"): 3,  # az network vnet subnet list
+            ("pipelines", "agent"): 2,  # az pipelines agent list
+            ("pipelines", "build"): 2,  # az pipelines build list
+            ("pipelines", "runs"): 2,  # az pipelines runs list
+            ("pipelines", "variable-group"): 2,  # az pipelines variable-group list
+            ("policy", "state"): 2,  # az policy state list
+            ("repos", "policy"): 2,  # az repos policy list
+            ("repos", "pr"): 2,  # az repos pr list
+            ("repos", "ref"): 2,  # az repos ref list
+            ("servicebus", "namespace"): 2,  # az servicebus namespace list
+            ("servicebus", "namespace", "authorization-rule"): 3,  # az servicebus namespace authorization-rule list
+            ("servicebus", "namespace", "authorization-rule", "keys"): 4,  # az servicebus namespace authorization-rule keys list
+            ("servicebus", "queue"): 2,  # az servicebus queue list
+            ("servicebus", "topic"): 2,  # az servicebus topic list
+            ("servicebus", "topic", "subscription"): 3,  # az servicebus topic subscription list
+            ("sql", "db"): 2,  # az sql db list
+            ("vm", "image"): 2,  # az vm image list
+            ("sql", "elastic-pool"): 2,  # az sql elastic-pool list
+            ("sql", "failover-group"): 2,  # az sql failover-group list
+            ("sql", "server"): 2,  # az sql server list
+            ("sql", "server", "firewall-rule"): 3,  # az sql server firewall-rule list
+            ("storage", "account", "keys"): 3,  # az storage account keys list
+            ("storage", "blob"): 2,  # az storage blob list
+            ("storage", "blob", "metadata"): 3,  # az storage blob metadata show
+            ("storage", "container"): 2,  # az storage container list
+            ("webapp", "config"): 2,  # az webapp config show
+            ("webapp", "config", "appsettings"): 3,  # az webapp config appsettings list
+            ("webapp", "config", "connection-string"): 3,  # az webapp config connection-string list
+            ("webapp", "deployment"): 2,  # az webapp deployment list-*
+            ("webapp", "deployment", "source"): 3,  # az webapp deployment source show
+            ("webapp", "log"): 2,  # az webapp log show
         },
         "flags_with_arg": {
             "-g",
+            "-n",
             "-o",
+            "--name",
             "--output",
             "--query",
             "--resource-group",
@@ -908,10 +1010,23 @@ def check_aws_secretsmanager(tokens: list[str]) -> bool:
     return _check_aws_action(tokens)
 
 
+def check_az_devops_configure(tokens: list[str]) -> bool:
+    """Approve az devops configure only for read-only flags (--list)."""
+    # tokens: ['az', 'devops', 'configure', ...]
+    # --defaults modifies configuration, so it's unsafe
+    # --list just shows configuration, so it's safe
+    if "--defaults" in tokens:
+        return False
+    if "--list" in tokens:
+        return True
+    return False
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
     ("aws", "secretsmanager"): check_aws_secretsmanager,
     ("aws", "ssm"): check_aws_ssm,
+    ("az", "devops", "configure"): check_az_devops_configure,
     ("gh", "api"): check_gh_api,
     ("uv", "pip"): check_uv_pip,
 }
@@ -1021,8 +1136,22 @@ def _get_variable_depth_action(tokens: list[str], config: dict[str, Any]) -> str
     depth = service_depths.get(service, default_depth)
 
     # Check for subservice overrides (most specific first)
-    # e.g., ("iam", "service-accounts", "keys") -> depth 3
-    if i + 2 < len(tokens):
+    # e.g., ("servicebus", "namespace", "authorization-rule", "keys") -> depth 4
+    if i + 3 < len(tokens):
+        key4 = (service, tokens[i + 1], tokens[i + 2], tokens[i + 3])
+        if key4 in subservice_depths:
+            depth = subservice_depths[key4]
+        else:
+            key3 = (service, tokens[i + 1], tokens[i + 2])
+            if key3 in subservice_depths:
+                depth = subservice_depths[key3]
+            else:
+                key2 = (service, tokens[i + 1])
+                if key2 in subservice_depths:
+                    depth = subservice_depths[key2]
+                elif (service,) in subservice_depths:
+                    depth = subservice_depths[(service,)]
+    elif i + 2 < len(tokens):
         key3 = (service, tokens[i + 1], tokens[i + 2])
         if key3 in subservice_depths:
             depth = subservice_depths[key3]
@@ -1130,7 +1259,7 @@ def is_command_safe(tokens: list[str]) -> bool:
     if not tokens:
         return False
 
-    if "--help" in tokens:
+    if "--help" in tokens or "--version" in tokens:
         return True
 
     # Allow dippy to run itself (self-executing via uv run)
