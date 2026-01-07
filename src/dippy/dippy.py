@@ -561,7 +561,19 @@ CLI_CONFIGS = {
     },
     "kubectl": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"api-resources", "api-versions", "cluster-info", "explain", "top"},
+        | {
+            "api-resources",
+            "api-versions",
+            "auth",
+            "cluster-info",
+            "completion",
+            "events",
+            "explain",
+            "kustomize",
+            "plugin",
+            "top",
+            "wait",
+        },
         "safe_prefixes": (),
         "parser": "first_token",
         "flags_with_arg": {
@@ -1067,6 +1079,41 @@ def check_cdk_context(tokens: list[str]) -> bool:
     return True
 
 
+def check_kubectl_config(tokens: list[str]) -> bool:
+    """Approve kubectl config only for read-only subcommands."""
+    # tokens: ['kubectl', 'config', 'view'] or ['kubectl', ...flags..., 'config', 'subcommand']
+    # Need to find the config subcommand after skipping flags
+    config = CLI_CONFIGS["kubectl"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1  # +1 for 'kubectl'
+    if i >= len(tokens) or tokens[i] != "config":
+        return False
+    if i + 1 >= len(tokens):
+        return False
+    subcommand = tokens[i + 1]
+    # Safe subcommands: view, get-contexts, get-clusters, get-users, current-context
+    # Unsafe: use-context, use, set-context, set-cluster, set-credentials, set,
+    #         delete-context, delete-cluster, delete-user, rename-context
+    safe_subcommands = {"view", "get-contexts", "get-clusters", "get-users", "current-context"}
+    return subcommand in safe_subcommands
+
+
+def check_kubectl_rollout(tokens: list[str]) -> bool:
+    """Approve kubectl rollout only for read-only subcommands."""
+    # tokens: ['kubectl', 'rollout', 'status', ...] or ['kubectl', ...flags..., 'rollout', ...]
+    config = CLI_CONFIGS["kubectl"]
+    flags_with_arg = config.get("flags_with_arg", set())
+    i = skip_flags(tokens[1:], flags_with_arg) + 1  # +1 for 'kubectl'
+    if i >= len(tokens) or tokens[i] != "rollout":
+        return False
+    if i + 1 >= len(tokens):
+        return False
+    subcommand = tokens[i + 1]
+    # Safe subcommands: status, history
+    # Unsafe: restart, undo, pause, resume
+    return subcommand in {"status", "history"}
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
     ("aws", "secretsmanager"): check_aws_secretsmanager,
@@ -1074,6 +1121,8 @@ COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("az", "devops", "configure"): check_az_devops_configure,
     ("cdk", "context"): check_cdk_context,
     ("gh", "api"): check_gh_api,
+    ("kubectl", "config"): check_kubectl_config,
+    ("kubectl", "rollout"): check_kubectl_rollout,
     ("terraform", "state"): check_terraform_state,
     ("terraform", "workspace"): check_terraform_workspace,
     ("uv", "pip"): check_uv_pip,
