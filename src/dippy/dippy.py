@@ -275,17 +275,30 @@ CLI_CONFIGS = {
     "aws": {
         "safe_actions": COMMON_SAFE_ACTIONS
         | {
+            "detect-stack-drift",
+            "detect-stack-resource-drift",
+            "download-db-log-file-portion",
+            "estimate-template-cost",
             "filter-log-events",
+            "generate-credential-report",
             "lookup-events",
             "ls",
             "query",
+            "receive-message",
             "scan",
+            "simulate-principal-policy",
+            "start-query",
+            "stop-query",
             "tail",
+            "test-dns-answer",
             "transact-get-items",
             "wait",
         },
         "safe_prefixes": (
+            "admin-get-",
+            "admin-list-",
             "batch-get-",
+            "check-if-",
             "describe-",
             "get-",
             "head-",
@@ -861,8 +874,44 @@ def check_uv_pip(tokens: list[str]) -> bool:
     return action in {"list", "show", "tree", "check"}
 
 
+def _check_aws_action(tokens: list[str]) -> bool:
+    """Check if an AWS command is safe using CLI_CONFIGS."""
+    config = CLI_CONFIGS["aws"]
+    action = get_cli_action(tokens[1:], config["parser"], config)
+    if not action:
+        return False
+    if action in config["safe_actions"]:
+        return True
+    if config["safe_prefixes"] and action.startswith(config["safe_prefixes"]):
+        return True
+    return False
+
+
+def check_aws_ssm(tokens: list[str]) -> bool:
+    """Approve aws ssm get-parameter* unless --with-decryption is used."""
+    # tokens: ['aws', 'ssm', 'get-parameter', '--name', '/my/param', '--with-decryption']
+    # --with-decryption exposes secret values, so it's unsafe
+    if "--with-decryption" in tokens:
+        return False
+    # Otherwise, delegate to normal AWS CLI action checking
+    return _check_aws_action(tokens)
+
+
+def check_aws_secretsmanager(tokens: list[str]) -> bool:
+    """Block aws secretsmanager get-secret-value (exposes secret data)."""
+    # tokens: ['aws', 'secretsmanager', 'get-secret-value', '--secret-id', 'mysecret']
+    action = _get_aws_action(tokens[1:])
+    # get-secret-value exposes secret data
+    if action == "get-secret-value":
+        return False
+    # Otherwise, delegate to normal AWS CLI action checking
+    return _check_aws_action(tokens)
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
+    ("aws", "secretsmanager"): check_aws_secretsmanager,
+    ("aws", "ssm"): check_aws_ssm,
     ("gh", "api"): check_gh_api,
     ("uv", "pip"): check_uv_pip,
 }
