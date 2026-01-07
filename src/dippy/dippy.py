@@ -469,6 +469,46 @@ CLI_CONFIGS = {
         "safe_prefixes": (),
         "parser": "first_token",
     },
+    "npm": {
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {
+            "audit",
+            "doctor",
+            "explain",
+            "find-dupes",
+            "fund",
+            "ls",
+            "outdated",
+            "owner",
+            "pack",  # creates tarball but doesn't install
+            "ping",
+            "prefix",
+            "root",
+            "search",
+            "view",
+            "why",
+        },
+        "safe_prefixes": (),
+        "parser": "first_token",
+    },
+    "pip": {
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"check", "freeze", "index", "inspect"},
+        "safe_prefixes": (),
+        "parser": "first_token",
+    },
+    "yarn": {
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"audit", "info", "licenses", "outdated", "owner", "why"},
+        "safe_prefixes": (),
+        "parser": "first_token",
+    },
+    "pnpm": {
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {"audit", "licenses", "ls", "outdated", "why"},
+        "safe_prefixes": (),
+        "parser": "first_token",
+    },
 }
 
 CLI_ALIASES: dict[str, str] = {}
@@ -735,7 +775,49 @@ def check_python(tokens: list[str]) -> bool:
     return False
 
 
+def check_tar(tokens: list[str]) -> bool:
+    """Approve tar if only listing contents (-t/--list)."""
+    # tar tvf archive.tar, tar -tf archive.tar, tar --list -f archive.tar
+    # Also: tar tf archive.tar (no dash, old-style)
+    for t in tokens[1:]:
+        if t == "-t" or t == "--list":
+            return True
+        # Check for combined short flags like -tvf, -tf, -ztf
+        if t.startswith("-") and not t.startswith("--") and "t" in t:
+            return True
+    # Check first arg for old-style (no dash) like "tf", "tvf", "ztf"
+    if len(tokens) > 1:
+        first_arg = tokens[1]
+        if not first_arg.startswith("-") and "t" in first_arg and not any(c in first_arg for c in "cxru"):
+            return True
+    return False
+
+
+def check_unzip(tokens: list[str]) -> bool:
+    """Approve unzip if only listing contents (-l)."""
+    # unzip -l archive.zip
+    for t in tokens[1:]:
+        if t == "-l":
+            return True
+        # Combined flags like -lv
+        if t.startswith("-") and not t.startswith("--") and "l" in t:
+            # But not if it has extract-related flags
+            if any(c in t for c in "xod"):
+                return False
+            return True
+    return False
+
+
+def check_7z(tokens: list[str]) -> bool:
+    """Approve 7z if only listing contents (l command)."""
+    # 7z l archive.7z
+    if len(tokens) < 2:
+        return False
+    return tokens[1] == "l"
+
+
 CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
+    "7z": check_7z,
     "awk": check_awk,
     "bash": check_shell_c,
     "curl": check_curl,
@@ -744,6 +826,8 @@ CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
     "openssl": check_openssl,
     "python": check_python,
     "sh": check_shell_c,
+    "tar": check_tar,
+    "unzip": check_unzip,
     "xargs": check_xargs,
     "zsh": check_shell_c,
 }
