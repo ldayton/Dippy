@@ -238,7 +238,7 @@ CLI_CONFIGS = {
         "flags_with_arg": {"-g", "-o", "--output", "--query", "--resource-group", "--subscription"},
     },
     "gcloud": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"get-iam-policy", "get-value"},
+        "safe_actions": COMMON_SAFE_ACTIONS | {"get-iam-policy", "get-value", "read"},
         "safe_prefixes": ("get-", "list-", "describe-"),
         "parser": "variable_depth",
         "action_depth": 2,
@@ -317,6 +317,11 @@ CLI_CONFIGS = {
     },
     "uv": {
         "safe_actions": COMMON_SAFE_ACTIONS | {"lock", "tree"},
+        "safe_prefixes": (),
+        "parser": "first_token",
+    },
+    "terraform": {
+        "safe_actions": COMMON_SAFE_ACTIONS | {"fmt", "graph", "output", "plan", "providers", "state", "validate"},
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -795,6 +800,13 @@ def is_command_safe(tokens: list[str]) -> bool:
     if "--help" in tokens:
         return True
 
+    # Allow dippy to run itself (self-executing via uv run)
+    try:
+        if Path(tokens[0]).resolve() == Path(__file__).resolve():
+            return True
+    except Exception:
+        pass
+
     cmd = tokens[0]
     args = tokens[1:]
 
@@ -921,6 +933,19 @@ def parse_commands(cmd_string: str) -> ParseResult:
 # === Entry point ===
 
 
+def get_unsafe_commands(commands: list[list[str]]) -> list[str]:
+    """Return deduplicated list of unsafe command descriptions."""
+    unsafe_descs = []
+    seen = set()
+    for cmd_tokens in commands:
+        if not is_command_safe(cmd_tokens):
+            desc = get_command_description(cmd_tokens)
+            if desc not in seen:
+                seen.add(desc)
+                unsafe_descs.append(desc)
+    return unsafe_descs
+
+
 def main() -> None:
     global log
     setup_logging()
@@ -956,11 +981,10 @@ def main() -> None:
         _log("info", event="deferred", command=command, reason="no_commands")
         defer_to_user("No commands found")
 
-    for cmd_tokens in commands:
-        if not is_command_safe(cmd_tokens):
-            desc = get_command_description(cmd_tokens)
-            _log("info", event="deferred", command=command, reason="unsafe_command", failed_tokens=cmd_tokens)
-            defer_to_user(f"Command requires approval: {desc}")
+    unsafe_descs = get_unsafe_commands(commands)
+    if unsafe_descs:
+        _log("info", event="deferred", command=command, reason="unsafe_command", unsafe_commands=unsafe_descs)
+        defer_to_user(f"Command requires approval: {', '.join(unsafe_descs)}")
 
     _log("info", event="approved", command=command)
     print(json.dumps({

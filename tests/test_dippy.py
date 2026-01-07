@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from dippy.dippy import parse_commands, is_command_safe, get_command_description, _load_custom_configs
+from dippy.dippy import parse_commands, is_command_safe, get_command_description, get_unsafe_commands, _load_custom_configs
 
 # Load custom configs (normally done in main(), but tests call functions directly)
 _load_custom_configs()
@@ -318,7 +318,7 @@ TESTS = [
     ("gcloud functions list --project foo", True),
     ("gcloud config get-value project", True),
     ("gcloud config set project foo", False),
-    ("gcloud logging read 'resource.type=cloud_run_revision'", False),  # read is not in safe_actions
+    ("gcloud logging read 'resource.type=cloud_run_revision'", True),
     ("gcloud storage buckets describe gs://mybucket", True),
     ("gcloud beta run services describe myservice", True),
     ("gcloud beta run services update myservice", False),
@@ -411,6 +411,19 @@ TESTS = [
     ("kubectl --context=foo delete pod list", False),  # deleting pod named "list"
     ("kubectl apply -f foo.yaml", False),
     ("kubectl exec -it foo -- bash", False),
+
+    # Terraform
+    ("terraform plan", True),
+    ("terraform plan -out=plan.tfplan", True),
+    ("terraform show", True),
+    ("terraform state list", True),
+    ("terraform validate", True),
+    ("terraform fmt -check", True),
+    ("terraform output", True),
+    ("terraform apply", False),
+    ("terraform destroy", False),
+    ("terraform init", False),
+    ("terraform import aws_instance.foo i-123", False),
 
     # Openssl x509 with -noout (read-only)
     ("openssl x509 -noout -text", True),
@@ -672,6 +685,17 @@ def test_python_dippy_self():
     assert is_command_safe(["python", "/tmp/dippy.py"]) is False
 
 
+def test_dippy_self_via_uv():
+    """Test that dippy allows running itself via uv run (self-executing)."""
+    import dippy.dippy as dippy_module
+    dippy_path = Path(dippy_module.__file__).resolve()
+    # After uv run wrapper stripping, just the script path remains
+    assert is_command_safe([str(dippy_path)]) is True
+    assert is_command_safe(["src/dippy/dippy.py"]) is True
+    # Wrong path should fail
+    assert is_command_safe(["/tmp/other.py"]) is False
+
+
 def test_python_bashlex_oneliner():
     """Test that dippy allows bashlex one-liners for debugging."""
     # Bashlex import allowed
@@ -731,3 +755,35 @@ EOF
     assert result2.error is None
     assert result2.commands is not None
     assert len(result2.commands) == 2
+
+
+def test_get_unsafe_commands_multiple():
+    """Test that compound commands report all unsafe commands."""
+    result = parse_commands("git add foo/ && git commit -m 'message'")
+    assert result.commands is not None
+    unsafe = get_unsafe_commands(result.commands)
+    assert unsafe == ["git add", "git commit"]
+
+
+def test_get_unsafe_commands_dedupe():
+    """Test that duplicate unsafe commands are deduplicated."""
+    result = parse_commands("source foo && source bar")
+    assert result.commands is not None
+    unsafe = get_unsafe_commands(result.commands)
+    assert unsafe == ["source"]
+
+
+def test_get_unsafe_commands_mixed():
+    """Test compound with safe and unsafe commands."""
+    result = parse_commands("ls -la && rm -rf /")
+    assert result.commands is not None
+    unsafe = get_unsafe_commands(result.commands)
+    assert unsafe == ["rm"]
+
+
+def test_get_unsafe_commands_all_safe():
+    """Test that all-safe compound returns empty list."""
+    result = parse_commands("ls && pwd && echo hello")
+    assert result.commands is not None
+    unsafe = get_unsafe_commands(result.commands)
+    assert unsafe == []
