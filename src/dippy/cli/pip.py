@@ -43,10 +43,10 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """Check if a pip/uv command should be approved or denied."""
     if len(tokens) < 2:
-        return None
+        return (None, "pip")
     
     base = tokens[0]
     action = tokens[1]
@@ -60,31 +60,31 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
                 action = rest[0]
                 rest = rest[1:] if len(rest) > 1 else []
             else:
-                return None
+                return (None, "pip")
         elif action in {"run", "tool", "sync", "lock", "add", "remove"}:
-            return None  # uv-specific unsafe commands
+            return (None, "pip")  # uv-specific unsafe commands
         elif action in {"version", "--version", "-V", "help", "--help"}:
-            return "approve"
+            return ("approve", "pip")
     
     # Check subcommands
     if action in SAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return "approve"
+                    return ("approve", "pip")
                 break
     
     if action in UNSAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in UNSAFE_SUBCOMMANDS[action]:
-                    return None
+                    return (None, "pip")
                 break
     
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", "pip")
     
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, "pip")
     
-    return None
+    return (None, "pip")

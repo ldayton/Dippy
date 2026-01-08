@@ -33,14 +33,17 @@ def check_single():
 
 def is_approved(result: dict) -> bool:
     """Check if a hook result is an approval."""
-    return result.get("decision") == "approve"
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "allow"
 
 
 def is_denied(result: dict) -> bool:
     """Check if a hook result is a denial."""
-    return result.get("decision") == "deny"
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "deny"
 
 
 def needs_confirmation(result: dict) -> bool:
     """Check if a hook result requires user confirmation."""
-    return "decision" not in result
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "ask"

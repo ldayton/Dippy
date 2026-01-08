@@ -33,7 +33,7 @@ SAFE_7Z_COMMANDS = frozenset({
 })
 
 
-def check_unzip(tokens: list[str]) -> Optional[str]:
+def check_unzip(tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an unzip command should be approved.
 
@@ -46,7 +46,7 @@ def check_unzip(tokens: list[str]) -> Optional[str]:
     # Check for explicit safe flags
     for t in tokens[1:]:
         if t in UNZIP_SAFE_FLAGS:
-            return "approve"
+            return ("approve", "7z")
         # Handle combined short flags like -lv, -tq, -Zl
         if t.startswith("-") and not t.startswith("--") and len(t) > 1:
             # Check if any safe flag char is present
@@ -54,12 +54,12 @@ def check_unzip(tokens: list[str]) -> Optional[str]:
                 if f"-{char}" in UNZIP_SAFE_FLAGS or char in "lvtZz":
                     # But not if it has extract-related flags (o=overwrite, d=dir)
                     if any(c in t for c in "od"):
-                        return None
-                    return "approve"
-    return None
+                        return (None, "7z")
+                    return ("approve", "7z")
+    return (None, "7z")
 
 
-def check_7z(tokens: list[str]) -> Optional[str]:
+def check_7z(tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a 7z command should be approved.
 
@@ -71,23 +71,23 @@ def check_7z(tokens: list[str]) -> Optional[str]:
     """
     # 7z with no args shows help
     if len(tokens) < 2:
-        return "approve"
+        return ("approve", "7z")
 
     # Check for help flags
     if tokens[1] in ("--help", "-h"):
-        return "approve"
+        return ("approve", "7z")
 
     # Check for safe commands
     if tokens[1] in SAFE_7Z_COMMANDS:
-        return "approve"
+        return ("approve", "7z")
 
-    return None
+    return (None, "7z")
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """Route to appropriate archive handler."""
     if not tokens:
-        return None
+        return (None, "7z")
 
     cmd = tokens[0]
     if cmd == "unzip":
@@ -95,4 +95,4 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     elif cmd in ("7z", "7za", "7zr", "7zz"):
         return check_7z(tokens)
 
-    return None
+    return (None, "7z")

@@ -19,7 +19,7 @@ UNSAFE_FLAGS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a dmesg command should be approved.
 
@@ -29,12 +29,12 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     """
     for token in tokens[1:]:
         if token in UNSAFE_FLAGS:
-            return None
+            return (None, "dmesg")
         # Handle combined short flags like -cT
         if token.startswith("-") and not token.startswith("--"):
             for char in token[1:]:
                 if f"-{char}" in UNSAFE_FLAGS:
-                    return None
+                    return (None, "dmesg")
 
     # No modification flags - safe to view logs
-    return "approve"
+    return ("approve", "dmesg")

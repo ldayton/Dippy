@@ -95,24 +95,30 @@ GLOBAL_FLAGS_WITH_ARG = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a docker command should be approved or denied.
+
+    Returns:
+        (decision, description) where decision is "approve", "deny", or None.
     """
+    base = tokens[0]  # "docker", "podman", "docker-compose", etc.
+
     if len(tokens) < 2:
-        return None
+        return (None, base)
 
     # Find action (skip global flags)
     action_idx = _find_action_idx(tokens)
     if action_idx >= len(tokens):
-        return None
+        return (None, base)
 
     action = tokens[action_idx]
+    desc = f"{base} {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Handle docker-compose / docker compose
     if action == "compose" or tokens[0] in {"docker-compose", "podman-compose"}:
-        return _check_compose(tokens, action_idx)
+        return _check_compose(tokens, action_idx, base)
 
     # Check subcommands for multi-level commands
     if action in SAFE_SUBCOMMANDS or action in UNSAFE_SUBCOMMANDS:
@@ -124,31 +130,31 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
                 sub_rest = rest[rest.index(subcommand) + 1:] if subcommand in rest else []
                 imagetools_action = _find_subcommand(sub_rest)
                 if imagetools_action == "inspect":
-                    return "approve"
+                    return ("approve", desc)
                 if imagetools_action == "create":
-                    return None
-                return None  # Unknown imagetools action
+                    return (None, desc)
+                return (None, desc)  # Unknown imagetools action
 
             if subcommand in SAFE_SUBCOMMANDS.get(action, set()):
                 # Special case: image save -o writes to file
                 if action == "image" and subcommand == "save" and _has_output_flag(rest):
-                    return None
-                return "approve"
+                    return (None, desc)
+                return ("approve", desc)
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
-                return None
+                return (None, desc)
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
         # export/save without -o writes to stdout (safe)
         if action in {"export", "save"} and _has_output_flag(rest):
-            return None
-        return "approve"
+            return (None, desc)
+        return ("approve", desc)
 
     # Unsafe actions need confirmation
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, desc)
 
-    return None
+    return (None, desc)
 
 
 def _find_action_idx(tokens: list[str]) -> int:
@@ -186,7 +192,7 @@ def _has_output_flag(tokens: list[str]) -> bool:
     return False
 
 
-def _check_compose(tokens: list[str], start_idx: int) -> Optional[str]:
+def _check_compose(tokens: list[str], start_idx: int, base: str) -> tuple[Optional[str], str]:
     """Check docker-compose commands."""
     # Compose flags that take arguments
     compose_flags_with_arg = {
@@ -203,10 +209,13 @@ def _check_compose(tokens: list[str], start_idx: int) -> Optional[str]:
     # For "docker-compose ..." or "podman-compose ...", start after the command itself
     if tokens[0] in {"docker-compose", "podman-compose"}:
         i = 1  # Start after the command
+        compose_base = tokens[0]
     elif start_idx < len(tokens) and tokens[start_idx] == "compose":
         i = start_idx + 1  # Start after "compose"
+        compose_base = f"{base} compose"
     else:
         i = start_idx
+        compose_base = base
 
     # Find compose action, skipping compose-specific flags
     while i < len(tokens):
@@ -221,10 +230,11 @@ def _check_compose(tokens: list[str], start_idx: int) -> Optional[str]:
             continue
 
         # Found the compose action
+        desc = f"{compose_base} {token}"
         if token in {"ps", "logs", "config", "images", "ls", "top", "version", "port", "events"}:
-            return "approve"
+            return ("approve", desc)
         if token in {"up", "down", "start", "stop", "restart", "rm", "pull", "build", "exec", "run", "create"}:
-            return None
-        break
+            return (None, desc)
+        return (None, desc)
 
-    return None
+    return (None, compose_base)

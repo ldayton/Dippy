@@ -55,16 +55,21 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a terraform command should be approved or denied.
+
+    Returns:
+        (decision, description) where decision is "approve", "deny", or None.
     """
+    base = tokens[0]  # "terraform" or "tofu"
+
     if len(tokens) < 2:
-        return None
+        return (None, base)
 
     # Check for -help flag anywhere (common pattern: terraform -help)
     if "-help" in tokens or "--help" in tokens or "-h" in tokens:
-        return "approve"
+        return ("approve", f"{base} help")
 
     # Find action (skip global flags)
     action = None
@@ -85,8 +90,9 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         break
 
     if not action:
-        return None
+        return (None, base)
 
+    desc = f"{base} {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Check subcommands
@@ -94,25 +100,25 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         subcommand = _find_subcommand(rest)
         if subcommand:
             if subcommand in SAFE_SUBCOMMANDS[action]:
-                return "approve"
+                return ("approve", desc)
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
-                return None
+                return (None, desc)
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand and subcommand in UNSAFE_SUBCOMMANDS[action]:
-            return None
+            return (None, desc)
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", desc)
 
     # Unsafe actions need confirmation
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, desc)
 
     # Unknown
-    return None
+    return (None, desc)
 
 
 def _find_subcommand(rest: list[str]) -> Optional[str]:

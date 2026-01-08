@@ -38,17 +38,17 @@ UNSAFE_ACTIONS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """Check if a cargo command should be approved or denied."""
     if len(tokens) < 2:
-        return None
+        return (None, "cargo")
     
     action = tokens[1]
     
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", "cargo")
     
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, "cargo")
     
-    return None
+    return (None, "cargo")

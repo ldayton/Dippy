@@ -121,14 +121,12 @@ def _find_action(tokens: list[str]) -> tuple[int, Optional[str]]:
     return -1, None
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a git command should be approved or denied.
 
     Returns:
-        "approve" - Safe read-only operation
-        "deny" - Dangerous operation that should be blocked
-        None - Needs user confirmation
+        (decision, description) where decision is "approve", "deny", or None.
     """
     if len(tokens) < 2:
         return None  # Just "git" with no subcommand
@@ -138,54 +136,55 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     if action is None:
         return None
 
+    desc = f"git {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Handle commands with subcommands that need special checks
     if action == "branch":
-        return _check_branch(rest)
+        return (_check_branch(rest), desc)
     elif action == "tag":
-        return _check_tag(rest)
+        return (_check_tag(rest), desc)
     elif action == "remote":
-        return _check_remote(rest)
+        return (_check_remote(rest), desc)
     elif action == "stash":
-        return _check_stash(rest)
+        return (_check_stash(rest), desc)
     elif action == "config":
-        return _check_config(rest)
+        return (_check_config(rest), desc)
     elif action == "notes":
-        return _check_notes(rest)
+        return (_check_notes(rest), desc)
     elif action == "bisect":
-        return _check_bisect(rest)
+        return (_check_bisect(rest), desc)
     elif action == "worktree":
-        return _check_worktree(rest)
+        return (_check_worktree(rest), desc)
     elif action == "submodule":
-        return _check_submodule(rest)
+        return (_check_submodule(rest), desc)
     elif action == "apply":
-        return _check_apply(rest)
+        return (_check_apply(rest), desc)
     elif action == "sparse-checkout":
-        return _check_sparse_checkout(rest)
+        return (_check_sparse_checkout(rest), desc)
     elif action == "bundle":
-        return _check_bundle(rest)
+        return (_check_bundle(rest), desc)
     elif action == "lfs":
-        return _check_lfs(rest)
+        return (_check_lfs(rest), desc)
     elif action == "hash-object":
-        return _check_hash_object(rest)
+        return (_check_hash_object(rest), desc)
     elif action == "symbolic-ref":
-        return _check_symbolic_ref(rest)
+        return (_check_symbolic_ref(rest), desc)
     elif action == "replace":
-        return _check_replace(rest)
+        return (_check_replace(rest), desc)
     elif action == "rerere":
-        return _check_rerere(rest)
+        return (_check_rerere(rest), desc)
 
     # Explicitly safe actions
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", desc)
 
     # Explicitly unsafe actions
     if action in UNSAFE_ACTIONS:
-        return None  # Needs confirmation, not outright deny
+        return (None, desc)  # Needs confirmation, not outright deny
 
     # Unknown action - ask user
-    return None
+    return (None, desc)
 
 
 def _check_branch(rest: list[str]) -> Optional[str]:

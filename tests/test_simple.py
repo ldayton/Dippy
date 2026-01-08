@@ -7,12 +7,14 @@ import pytest
 
 def is_approved(result: dict) -> bool:
     """Check if a hook result is an approval."""
-    return result.get("decision") == "approve"
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "allow"
 
 
 def needs_confirmation(result: dict) -> bool:
     """Check if a hook result requires user confirmation."""
-    return "decision" not in result
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "ask"
 
 
 class TestFileViewing:

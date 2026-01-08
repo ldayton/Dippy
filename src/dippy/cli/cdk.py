@@ -34,7 +34,7 @@ UNSAFE_ACTIONS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a CDK command should be approved.
 
@@ -43,7 +43,7 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         None - Needs user confirmation
     """
     if len(tokens) < 2:
-        return None
+        return (None, "cdk")
 
     action = tokens[1]
 
@@ -52,14 +52,14 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         # --reset and --clear modify context
         for t in tokens:
             if t in {"--reset", "--clear"}:
-                return None
-        return "approve"
+                return (None, "cdk")
+        return ("approve", "cdk")
 
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", "cdk")
 
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, "cdk")
 
     # Unknown - ask user
-    return None
+    return (None, "cdk")

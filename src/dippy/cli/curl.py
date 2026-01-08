@@ -42,7 +42,7 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a curl command should be approved.
 
@@ -55,39 +55,39 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     for i, t in enumerate(tokens):
         # Block always-unsafe flags
         if t in UNSAFE_FLAGS:
-            return None
+            return (None, "curl")
 
         # Block data/upload flags
         if t in DATA_FLAGS:
-            return None
+            return (None, "curl")
 
         # Check --flag=value variants
         for flag in DATA_FLAGS:
             if t.startswith(flag + "="):
-                return None
+                return (None, "curl")
 
         # Check -X/--request for non-safe methods
         if t in {"-X", "--request"}:
             if i + 1 < len(tokens):
                 method = tokens[i + 1].upper()
                 if method not in SAFE_METHODS:
-                    return None
+                    return (None, "curl")
 
         # Also catch --request=METHOD and -XMETHOD
         if t.startswith("--request="):
             method = t.split("=", 1)[1].upper()
             if method not in SAFE_METHODS:
-                return None
+                return (None, "curl")
         if t.startswith("-X") and len(t) > 2 and not t.startswith("-X="):
             method = t[2:].upper()
             if method not in SAFE_METHODS:
-                return None
+                return (None, "curl")
 
         # Check -Q/--quote for FTP commands
         if t in {"-Q", "--quote"}:
             if i + 1 < len(tokens):
                 ftp_cmd = tokens[i + 1].strip().strip("'\"").split()[0].upper()
                 if ftp_cmd not in SAFE_FTP_COMMANDS:
-                    return None
+                    return (None, "curl")
 
-    return "approve"
+    return ("approve", "curl")

@@ -11,7 +11,7 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a sed command should be approved.
 
@@ -24,8 +24,8 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     for t in tokens[1:]:
         # -i or -i'' or -i.bak
         if t == "-i" or t.startswith("-i"):
-            return None
+            return (None, "sed")
         if t == "--in-place" or t.startswith("--in-place"):
-            return None
+            return (None, "sed")
 
-    return "approve"
+    return ("approve", "sed")

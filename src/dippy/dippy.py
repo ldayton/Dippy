@@ -50,21 +50,40 @@ def setup_logging():
 
 # === Response Helpers ===
 
-def approve(reason: str = "") -> dict:
+def approve(reason: str = "all commands safe") -> dict:
     """Return approval response."""
     logging.info(f"APPROVED: {reason}")
-    return {"decision": "approve"}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": f"🐤 {reason}",
+        }
+    }
 
 
 def deny(reason: str = "") -> dict:
     """Return denial response."""
     logging.info(f"DENIED: {reason}")
-    return {"decision": "deny", "reason": reason}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": f"🐤 {reason}",
+        }
+    }
 
 
-def ask() -> dict:
-    """Return ask-user response (no decision, prompts user)."""
-    return {}
+def ask(reason: str = "needs approval") -> dict:
+    """Return ask-user response (prompts user for confirmation)."""
+    logging.info(f"ASK: {reason}")
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": f"🐤 {reason}",
+        }
+    }
 
 
 # === Safety Checks ===
@@ -109,14 +128,15 @@ def is_version_or_help(tokens: list[str]) -> bool:
 
 # === Main Logic ===
 
-def check_simple_command(cmd: str, tokens: list[str]) -> Optional[str]:
+def check_simple_command(cmd: str, tokens: list[str]) -> tuple[Optional[str], Optional[str]]:
     """
     Check simple commands that don't need CLI-specific handling.
 
-    Returns "approve", "deny", or None for further processing.
+    Returns (decision, description) where decision is "approve", "deny", or None.
+    Returns (None, None) if not handled by this function.
     """
     if not tokens:
-        return None
+        return (None, None)
 
     # Skip environment variable assignments (FOO=bar)
     i = 0
@@ -124,7 +144,7 @@ def check_simple_command(cmd: str, tokens: list[str]) -> Optional[str]:
         i += 1
 
     if i >= len(tokens):
-        return None  # Only env vars, no command
+        return (None, None)  # Only env vars, no command
 
     base = tokens[i]
     rest = tokens[i:]
@@ -133,7 +153,7 @@ def check_simple_command(cmd: str, tokens: list[str]) -> Optional[str]:
     if base in PREFIX_COMMANDS and len(rest) > 1:
         # Special case: "command -v" and "command -V" are safe lookups
         if base == "command" and len(rest) > 1 and rest[1] in ("-v", "-V"):
-            return "approve"
+            return ("approve", "command -v")
 
         # Some prefix commands take arguments (e.g., timeout 5)
         # Skip numeric arguments and flags until we find the actual command
@@ -158,17 +178,17 @@ def check_simple_command(cmd: str, tokens: list[str]) -> Optional[str]:
             # Use full check for inner command (it might need a handler)
             inner_cmd = " ".join(rest[j:])
             return _check_single_command(inner_cmd)
-        return None
+        return (None, base)
 
     # Simple safe commands
     if base in SIMPLE_SAFE:
-        return "approve"
+        return ("approve", base)
 
     # Version/help checks are always safe
     if is_version_or_help(rest):
-        return "approve"
+        return ("approve", base)
 
-    return None
+    return (None, None)
 
 
 def check_command(command: str) -> dict:
@@ -180,59 +200,70 @@ def check_command(command: str) -> dict:
     command = command.strip()
 
     if not command:
-        return ask()
+        return ask("empty command")
 
     # Check for output redirects first (always unsafe)
     if has_output_redirect(command):
-        return ask()  # Let user decide
+        return ask("output redirect")
 
     # Handle command lists (&&, ||) - each command must be safe
     if has_command_list(command):
         commands = split_command_list(command)
+        unsafe = []
+        safe = []
         for cmd in commands:
-            # Each part might itself be a pipeline
-            result = check_command(cmd.strip())
-            if result.get("decision") != "approve":
-                return ask()
-        return approve(f"list: {command[:50]}")
+            decision, desc = _check_single_command(cmd.strip())
+            if decision != "approve":
+                unsafe.append(desc)
+            else:
+                safe.append(desc)
+        if unsafe:
+            return ask(", ".join(unsafe))
+        return approve(", ".join(safe))
 
     # Handle pipelines - each command must be safe
     if is_piped(command):
         commands = split_pipeline(command)
+        unsafe = []
+        safe = []
         for cmd in commands:
-            result = _check_single_command(cmd.strip())
-            if result != "approve":
-                return ask()
-        return approve(f"pipeline: {command[:50]}")
+            decision, desc = _check_single_command(cmd.strip())
+            if decision != "approve":
+                unsafe.append(desc)
+            else:
+                safe.append(desc)
+        if unsafe:
+            return ask(", ".join(unsafe))
+        return approve(", ".join(safe))
 
     # Single command
-    result = _check_single_command(command)
+    decision, desc = _check_single_command(command)
 
-    if result == "approve":
-        return approve(command[:80])
-    elif result == "deny":
-        return deny(f"blocked: {command[:50]}")
+    if decision == "approve":
+        return approve(desc)
+    elif decision == "deny":
+        return deny(desc)
     else:
-        return ask()
+        return ask(desc)
 
 
-def _check_single_command(command: str) -> Optional[str]:
+def _check_single_command(command: str) -> tuple[Optional[str], str]:
     """
     Check a single (non-pipeline) command.
 
-    Returns "approve", "deny", or None.
+    Returns (decision, description) where decision is "approve", "deny", or None.
     """
     tokens = tokenize(command)
     if not tokens:
-        return None
+        return (None, command)
+
+    base = tokens[0]
 
     # Try simple command check first (fast path)
-    result = check_simple_command(command, tokens)
-    if result:
-        return result
-
-    # Get base command
-    base = tokens[0]
+    decision, desc = check_simple_command(command, tokens)
+    if decision is not None or desc is not None:
+        # check_simple_command handled this command
+        return (decision, desc if desc else base)
 
     # Try CLI-specific handler
     handler = get_handler(base)
@@ -242,10 +273,10 @@ def _check_single_command(command: str) -> Optional[str]:
     # Check unsafe patterns (fallback for unknown commands)
     # This comes after handlers so they can approve things like "aws s3 rm --help"
     if check_unsafe_patterns(command):
-        return None  # Ask user
+        return (None, base)  # Ask user
 
     # Unknown command - ask user
-    return None
+    return (None, base)
 
 
 # === Hook Entry Point ===

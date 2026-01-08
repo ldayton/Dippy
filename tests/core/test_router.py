@@ -7,17 +7,20 @@ import pytest
 
 def is_approved(result: dict) -> bool:
     """Check if a hook result is an approval."""
-    return result.get("decision") == "approve"
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "allow"
 
 
 def is_denied(result: dict) -> bool:
     """Check if a hook result is a denial."""
-    return result.get("decision") == "deny"
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "deny"
 
 
 def needs_confirmation(result: dict) -> bool:
     """Check if a hook result requires user confirmation."""
-    return "decision" not in result
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "ask"
 
 
 class TestRouterBasics:
@@ -138,8 +141,8 @@ class TestCLIRouting:
     def test_routes_kubectl_directly(self, check_single):
         """Test kubectl handler directly."""
         from dippy.cli import kubectl
-        result = kubectl.check("kubectl get pods", ["kubectl", "get", "pods"])
-        assert result == "approve"
+        decision, desc = kubectl.check("kubectl get pods", ["kubectl", "get", "pods"])
+        assert decision == "approve"
     
     def test_routes_to_docker(self, check):
         """Docker commands should route to docker handler."""

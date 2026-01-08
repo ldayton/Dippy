@@ -11,7 +11,7 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a sort command should be approved.
 
@@ -24,8 +24,8 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     for i, t in enumerate(tokens[1:]):
         # -o or -ofile or --output
         if t == "-o" or t.startswith("-o"):
-            return None
+            return (None, "sort")
         if t == "--output" or t.startswith("--output"):
-            return None
+            return (None, "sort")
 
-    return "approve"
+    return ("approve", "sort")

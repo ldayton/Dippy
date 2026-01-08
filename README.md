@@ -42,7 +42,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --directory /path/to/Dippy python -m dippy"
+            "command": "/path/to/Dippy/bin/dippy-hook"
           }
         ]
       }

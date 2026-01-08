@@ -31,26 +31,26 @@ X509_SAFE_FLAGS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """Check if an openssl command should be approved."""
     if len(tokens) < 2:
-        return None
+        return (None, "openssl")
 
     subcommand = tokens[1]
 
     # Safe subcommands
     if subcommand in SAFE_COMMANDS:
-        return "approve"
+        return ("approve", "openssl")
 
     # x509 certificate viewing
     if subcommand == "x509":
         # If -noout is present, it's just viewing
         if "-noout" in tokens:
-            return "approve"
+            return ("approve", "openssl")
 
     # s_client for connection testing (read-only)
     if subcommand == "s_client":
-        return "approve"
+        return ("approve", "openssl")
 
     # Other subcommands need confirmation
-    return None
+    return (None, "openssl")

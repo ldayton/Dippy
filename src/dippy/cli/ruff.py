@@ -22,7 +22,7 @@ UNSAFE_ACTIONS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a ruff command should be approved.
 
@@ -31,15 +31,15 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         None - Modification command like clean, needs confirmation
     """
     if len(tokens) < 2:
-        return "approve"  # Just "ruff" shows help
+        return ("approve", "ruff")  # Just "ruff" shows help
 
     action = tokens[1]
 
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, "ruff")
 
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", "ruff")
 
     # Default to safe for unknown actions (most are read-only)
-    return "approve"
+    return ("approve", "ruff")

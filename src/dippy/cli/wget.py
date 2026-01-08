@@ -12,7 +12,7 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a wget command should be approved.
 
@@ -23,5 +23,5 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         None - Downloads files, needs confirmation
     """
     if "--spider" in tokens:
-        return "approve"
-    return None
+        return ("approve", "wget")
+    return (None, "wget")

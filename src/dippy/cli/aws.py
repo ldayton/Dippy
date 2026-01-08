@@ -128,26 +128,24 @@ SAFE_COMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an AWS CLI command should be approved or denied.
-    
+
     Returns:
-        "approve" - Safe read-only operation
-        "deny" - Dangerous operation that should be blocked
-        None - Needs user confirmation
+        (decision, description) where decision is "approve", "deny", or None.
     """
     if len(tokens) < 2:
-        return None
-    
+        return (None, "aws")
+
     # Find the service and action
     # aws [global-opts] service action [opts]
     service = None
     action = None
-    
+
     # Check for --help anywhere (makes command safe)
     if "--help" in tokens or "-h" in tokens:
-        return "approve"
+        return ("approve", "aws help")
 
     # Global options that take a value
     global_opts_with_value = {
@@ -187,55 +185,58 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         i += 1
 
     if not service:
-        return None
+        return (None, "aws")
+
+    # Build description
+    desc = f"aws {service}" + (f" {action}" if action else "")
 
     # Help is always safe
     if service == "help" or action == "help":
-        return "approve"
-    
+        return ("approve", desc)
+
     # Always-safe services
     if service in ALWAYS_SAFE_SERVICES:
-        return "approve"
+        return ("approve", desc)
 
     # STS special handling
     if service == "sts":
         if action in STS_SAFE_ACTIONS:
-            return "approve"
-        return None  # assume-role variants need confirmation
+            return ("approve", desc)
+        return (None, desc)  # assume-role variants need confirmation
 
     # Configure special handling
     if service == "configure":
         if action in {"list", "list-profiles", "get"}:
-            return "approve"
-        return None  # set, sso, import, export-credentials need confirmation
+            return ("approve", desc)
+        return (None, desc)  # set, sso, import, export-credentials need confirmation
 
     # SSM special handling - --with-decryption exposes sensitive data
     if service == "ssm" and "--with-decryption" in tokens:
-        return None
+        return (None, desc)
 
     # Check specific safe commands
     if action and (service, action) in SAFE_COMMANDS:
-        return "approve"
-    
+        return ("approve", desc)
+
     # Check action patterns
     if action:
         # Check exceptions first (things that look safe but aren't)
         if action in UNSAFE_EXCEPTIONS:
-            return None
+            return (None, desc)
 
         # Exact safe actions
         if action in SAFE_ACTIONS_EXACT:
-            return "approve"
+            return ("approve", desc)
 
         # Safe prefixes
         for prefix in SAFE_ACTION_PREFIXES:
             if action.startswith(prefix):
-                return "approve"
+                return ("approve", desc)
 
         # Unsafe keywords - don't outright deny, just require confirmation
         for keyword in UNSAFE_ACTION_KEYWORDS:
             if keyword in action:
-                return None
-    
+                return (None, desc)
+
     # Default: ask user
-    return None
+    return (None, desc)

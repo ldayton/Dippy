@@ -35,7 +35,7 @@ OUTPUT_REDIRECT_PATTERN = re.compile(
 )
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an awk command should be approved.
 
@@ -48,9 +48,9 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     # Check for -f/--file flag (runs script file)
     for i, t in enumerate(tokens[1:]):
         if t == "-f" or t.startswith("-f"):
-            return None
+            return (None, "awk")
         if t == "--file" or t.startswith("--file="):
-            return None
+            return (None, "awk")
 
     # Find the awk program string (first non-flag argument)
     program = None
@@ -75,15 +75,15 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         break
 
     if not program:
-        return "approve"
+        return ("approve", "awk")
 
     # Check for system() calls
     if "system(" in program:
-        return None
+        return (None, "awk")
 
     # Check for output redirects using pattern matching
     # This is more accurate than just checking for > character
     if OUTPUT_REDIRECT_PATTERN.search(program):
-        return None
+        return (None, "awk")
 
-    return "approve"
+    return ("approve", "awk")

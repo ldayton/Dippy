@@ -139,7 +139,7 @@ def _get_subcommand(tokens: list[str]) -> Optional[str]:
     return None
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a gh command should be approved.
 
@@ -148,33 +148,34 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         None - Needs user confirmation
     """
     if len(tokens) < 2:
-        return None
+        return (None, "gh")
 
     subcommand = _get_subcommand(tokens)
     if not subcommand:
-        return None
+        return (None, "gh")
 
     # Special handlers for complex commands
     if subcommand == "api":
-        return _check_api(tokens)
+        result = _check_api(tokens)
+        return (result, "gh api") if result else (None, "gh api")
 
     if subcommand == "status":
-        return "approve"  # Always read-only
+        return ("approve", "gh")  # Always read-only
 
     if subcommand == "browse":
-        return "approve"  # Opens browser, no mutations
+        return ("approve", "gh")  # Opens browser, no mutations
 
     if subcommand == "search":
-        return "approve"  # All search subcommands are read-only
+        return ("approve", "gh")  # All search subcommands are read-only
 
     # Get the action (second meaningful token)
     action = _get_action(tokens)
 
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", "gh")
 
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, "gh")
 
     # Unknown - ask user
-    return None
+    return (None, "gh")

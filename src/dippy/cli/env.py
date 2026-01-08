@@ -19,14 +19,14 @@ FLAGS_WITH_ARG = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an env command should be approved.
 
     Extracts the inner command and checks it.
     """
     if len(tokens) < 2:
-        return "approve"  # Just "env" prints environment
+        return ("approve", "env")  # Just "env" prints environment
 
     # Find where the inner command starts
     i = 1
@@ -57,11 +57,13 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         break
 
     if i >= len(tokens):
-        return "approve"  # Just env with no command
+        return ("approve", "env")  # Just env with no command
 
     # Check the inner command
     inner_tokens = tokens[i:]
     inner_cmd = " ".join(inner_tokens)
 
     from dippy.dippy import _check_single_command
-    return _check_single_command(inner_cmd)
+    decision, inner_desc = _check_single_command(inner_cmd)
+    desc = f"env {inner_desc}"
+    return (decision, desc)

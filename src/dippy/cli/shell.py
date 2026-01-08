@@ -16,18 +16,17 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a shell -c command should be approved.
 
-    Approves if the inner command passed to -c is safe.
-
     Returns:
-        "approve" - Inner command is safe
-        None - Needs user confirmation
+        (decision, description) where decision is "approve", "deny", or None.
     """
+    shell = tokens[0]
+
     if len(tokens) < 2:
-        return None
+        return (None, shell)
 
     # Find -c flag (standalone or combined like -lc, -cl, -xcl, etc.)
     c_idx = None
@@ -38,22 +37,28 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
 
     if c_idx is None:
         # No -c flag - not running inline command, needs review
-        return None
+        return (None, shell)
 
     if c_idx + 1 >= len(tokens):
-        return None  # No command after -c
+        return (None, shell)  # No command after -c
 
     inner_cmd = tokens[c_idx + 1]
 
     if not inner_cmd:
-        return None
+        return (None, shell)
 
     # Import here to avoid circular dependency
     from dippy.dippy import check_command
 
-    # Check the inner command
+    # Check the inner command - returns dict with hookSpecificOutput
     result = check_command(inner_cmd)
-    if result.get("decision") == "approve":
-        return "approve"
+    output = result.get("hookSpecificOutput", {})
+    decision = output.get("permissionDecision")
+    inner_reason = output.get("permissionDecisionReason", "").removeprefix("🐤 ")
 
-    return None
+    desc = f"{shell} -c {inner_reason}" if inner_reason else shell
+
+    if decision == "allow":
+        return ("approve", desc)
+
+    return (None, desc)

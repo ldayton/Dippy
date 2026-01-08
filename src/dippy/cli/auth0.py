@@ -52,7 +52,7 @@ def _check_api(tokens: list[str]) -> Optional[str]:
     return "approve"
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an auth0 command should be approved.
 
@@ -61,31 +61,32 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         None - Needs user confirmation
     """
     if len(tokens) < 2:
-        return None
+        return (None, "auth0")
 
     # Extract parts, skipping global flags
     parts = _extract_parts(tokens[1:])
 
     if not parts:
-        return None
+        return (None, "auth0")
 
     subcommand = parts[0]
 
     # Special handling for api command
     if subcommand == "api":
-        return _check_api(tokens)
+        result = _check_api(tokens)
+        return (result, "auth0 api") if result else (None, "auth0 api")
 
     # Check all parts for safe/unsafe action keywords
     for part in parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return "approve"
+            return ("approve", "auth0")
 
     for part in parts:
         if part in UNSAFE_ACTION_KEYWORDS:
-            return None
+            return (None, "auth0")
 
     # Unknown - ask user
-    return None
+    return (None, "auth0")
 
 
 def _extract_parts(tokens: list[str]) -> list[str]:

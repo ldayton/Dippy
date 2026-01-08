@@ -17,9 +17,12 @@ class CLIHandler(Protocol):
     """Protocol for CLI handler modules."""
     SAFE_ACTIONS: set[str]
     UNSAFE_ACTIONS: set[str]
-    
-    def check(self, command: str, tokens: list[str]) -> Optional[str]:
-        """Check if command should be approved, denied, or needs user input."""
+
+    def check(self, command: str, tokens: list[str]) -> tuple[Optional[str], str]:
+        """Check if command should be approved, denied, or needs user input.
+
+        Returns (decision, description) where decision is "approve", "deny", or None.
+        """
         ...
 
 

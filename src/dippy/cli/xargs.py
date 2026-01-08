@@ -68,59 +68,46 @@ def _skip_flags(tokens: list[str], flags_with_arg: frozenset, stop_at_double_das
     return i
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an xargs command should be approved.
 
-    Xargs is approved if:
-    1. No interactive flags (-p, -o)
-    2. The inner command being run is safe
-
     Returns:
-        "approve" - Inner command is safe
-        None - Needs user confirmation
+        (decision, description) where decision is "approve", "deny", or None.
     """
     if len(tokens) < 2:
-        return None
+        return (None, "xargs")
 
     # Check for unsafe flags (interactive mode)
     for token in tokens[1:]:
         if token == "--":
             break
         if token in UNSAFE_FLAGS:
-            return None
+            return (None, "xargs")
         if token.startswith(("--interactive", "--open-tty")):
-            return None
+            return (None, "xargs")
 
     # Find the inner command (skip xargs and its flags)
     inner_start = 1 + _skip_flags(tokens[1:], FLAGS_WITH_ARG, stop_at_double_dash=True)
 
     if inner_start >= len(tokens):
-        return None  # No inner command found
+        return (None, "xargs")  # No inner command found
 
     inner_tokens = tokens[inner_start:]
 
     if not inner_tokens:
-        return None
+        return (None, "xargs")
 
     # Import here to avoid circular dependency
-    from dippy.cli import get_handler
-    from dippy.dippy import check_simple_command
+    from dippy.dippy import _check_single_command
+    import shlex
 
-    inner_cmd = " ".join(inner_tokens)
-    base = inner_tokens[0]
+    # Quote tokens that need it to preserve original structure
+    inner_cmd = " ".join(shlex.quote(t) if ' ' in t or not t else t for t in inner_tokens)
 
-    # Try simple command check first
-    result = check_simple_command(inner_cmd, inner_tokens)
-    if result == "approve":
-        return "approve"
-    if result == "deny":
-        return None
+    # Check the inner command - returns (decision, desc)
+    decision, inner_desc = _check_single_command(inner_cmd)
 
-    # Try CLI-specific handler
-    handler = get_handler(base)
-    if handler:
-        return handler.check(inner_cmd, inner_tokens)
-
-    # Unknown inner command - ask user
-    return None
+    # Return xargs with inner command description
+    desc = f"xargs {inner_desc}"
+    return (decision, desc)

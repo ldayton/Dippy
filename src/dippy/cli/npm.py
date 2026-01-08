@@ -84,72 +84,72 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """Check if an npm/yarn/pnpm command should be approved or denied."""
     if len(tokens) < 2:
-        return None
+        return (None, "npm")
 
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
 
     # Handle "npm run" without arguments (just lists scripts)
     if action == "run" and not rest:
-        return "approve"
+        return ("approve", "npm")
 
     # Handle "npm run --list" (safe)
     if action == "run" and "--list" in rest:
-        return "approve"
+        return ("approve", "npm")
 
     # Handle "npm version" - without arguments shows version, with args modifies
     if action == "version":
         if not rest:
-            return "approve"  # Just shows versions
+            return ("approve", "npm")  # Just shows versions
         # Any argument means it's modifying version
-        return None
+        return (None, "npm")
 
     # Handle "npm audit" - safe for viewing, but "audit fix" is unsafe
     if action == "audit":
         if rest and rest[0] == "fix":
-            return None
-        return "approve"
+            return (None, "npm")
+        return ("approve", "npm")
 
     # Handle "npm config" / "npm c"
     if action in ("config", "c"):
         if rest:
             subaction = rest[0]
             if subaction in SAFE_SUBCOMMANDS.get("config", set()):
-                return "approve"
+                return ("approve", "npm")
             if subaction in UNSAFE_SUBCOMMANDS.get("config", set()):
-                return None
-        return "approve"  # "npm config" alone shows help
+                return (None, "npm")
+        return ("approve", "npm")  # "npm config" alone shows help
 
     # Check commands with safe/unsafe subcommands
     if action in SAFE_SUBCOMMANDS:
         if rest:
             subaction = rest[0]
             if subaction in SAFE_SUBCOMMANDS[action]:
-                return "approve"
+                return ("approve", "npm")
             if action in UNSAFE_SUBCOMMANDS and subaction in UNSAFE_SUBCOMMANDS[action]:
-                return None
+                return (None, "npm")
         # No subcommand - depends on the action
         if action in ("owner",):
-            return "approve"  # "npm owner" alone lists
-        return None
+            return ("approve", "npm")  # "npm owner" alone lists
+        return (None, "npm")
 
     if action in UNSAFE_SUBCOMMANDS and action not in SAFE_SUBCOMMANDS:
         if rest:
             subaction = rest[0]
             if subaction in UNSAFE_SUBCOMMANDS[action]:
-                return None
+                return (None, "npm")
         # Check if it's a version number (npm version 1.2.3)
         if action == "version" and rest:
-            return None
-        return None
+            return (None, "npm")
+        return (None, "npm")
 
     if action in SAFE_ACTIONS:
-        return "approve"
+        return ("approve", "npm")
 
     if action in UNSAFE_ACTIONS:
-        return None
+        return (None, "npm")
 
-    return None
+    return (None, "npm")

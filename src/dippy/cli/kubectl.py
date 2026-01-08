@@ -64,25 +64,23 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a kubectl command should be approved or denied.
-    
+
     Returns:
-        "approve" - Safe read-only operation
-        "deny" - Dangerous operation that should be blocked
-        None - Needs user confirmation
+        (decision, description) where decision is "approve", "deny", or None.
     """
     if len(tokens) < 2:
-        return None
-    
+        return (None, "kubectl")
+
     # Find the action (skip global flags)
     action = None
     action_idx = 1
-    
+
     while action_idx < len(tokens):
         token = tokens[action_idx]
-        
+
         # Skip flags
         if token.startswith("-"):
             # Skip flag values for known flags
@@ -92,38 +90,39 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
                 continue
             action_idx += 1
             continue
-        
+
         action = token
         break
-    
+
     if not action:
-        return None
-    
+        return (None, "kubectl")
+
+    desc = f"kubectl {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
-    
+
     # Check for subcommands first
     if action in SAFE_SUBCOMMANDS and rest:
         # Find first non-flag token
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return "approve"
+                    return ("approve", desc)
                 break
-    
+
     if action in UNSAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in UNSAFE_SUBCOMMANDS[action]:
-                    return None  # Needs confirmation
+                    return (None, desc)  # Needs confirmation
                 break
-    
+
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return "approve"
-    
+        return ("approve", desc)
+
     # Unsafe actions need confirmation
     if action in UNSAFE_ACTIONS:
-        return None
-    
+        return (None, desc)
+
     # Unknown - ask user
-    return None
+    return (None, desc)

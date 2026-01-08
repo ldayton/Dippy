@@ -12,7 +12,7 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a tar command should be approved.
 
@@ -24,10 +24,10 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     """
     for t in tokens[1:]:
         if t == "-t" or t == "--list":
-            return "approve"
+            return ("approve", "tar")
         # Check for combined short flags like -tvf, -tf, -ztf
         if t.startswith("-") and not t.startswith("--") and "t" in t:
-            return "approve"
+            return ("approve", "tar")
 
     # Check first arg for old-style (no dash) like "tf", "tvf", "ztf"
     if len(tokens) > 1:
@@ -37,6 +37,6 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
             and "t" in first_arg
             and not any(c in first_arg for c in "cxru")
         ):
-            return "approve"
+            return ("approve", "tar")
 
-    return None
+    return (None, "tar")

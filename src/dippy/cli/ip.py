@@ -43,7 +43,7 @@ GLOBAL_FLAGS_WITH_ARG = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if an ip command should be approved.
 
@@ -52,7 +52,7 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         None - Modification command, needs confirmation
     """
     if len(tokens) < 2:
-        return None
+        return (None, "ip")
 
     # Find subcommand and actions, skipping global flags with arguments
     parts = []
@@ -71,17 +71,17 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         i += 1
 
     if not parts:
-        return "approve"  # Just "ip" or "ip -flags"
+        return ("approve", "ip")  # Just "ip" or "ip -flags"
 
     subcommand = parts[0]
 
     # Check if there's a modifying action
     for part in parts[1:]:
         if part in MODIFY_ACTIONS:
-            return None
+            return (None, "ip")
 
     # "ip addr" (show), "ip route" (show), etc. are safe
     if subcommand in SAFE_SUBCOMMANDS:
-        return "approve"
+        return ("approve", "ip")
 
-    return None
+    return (None, "ip")

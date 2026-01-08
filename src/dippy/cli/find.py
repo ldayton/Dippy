@@ -22,7 +22,7 @@ SAFE_ACTIONS = frozenset()
 UNSAFE_ACTIONS = frozenset()
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a find command should be approved.
 
@@ -35,7 +35,7 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     # Check for unsafe flags
     for token in tokens:
         if token in UNSAFE_FLAGS:
-            return None
+            return (None, "find")
 
     # No dangerous flags - approve
-    return "approve"
+    return ("approve", "find")

@@ -20,7 +20,7 @@ UNSAFE_FLAGS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a journalctl command should be approved.
 
@@ -31,10 +31,10 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     for token in tokens[1:]:
         # Check for unsafe flags (exact match or starts with for =value flags)
         if token in UNSAFE_FLAGS:
-            return None
+            return (None, "journalctl")
         for flag in UNSAFE_FLAGS:
             if token.startswith(flag + "="):
-                return None
+                return (None, "journalctl")
 
     # No modification flags - safe to view logs
-    return "approve"
+    return ("approve", "journalctl")

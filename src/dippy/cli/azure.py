@@ -81,70 +81,70 @@ FLAGS_WITH_ARG = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """Check if an az command should be approved or denied."""
     if len(tokens) < 2:
-        return None
+        return (None, "azure")
 
     # Collect command parts (service, subgroup, action), skipping flags and their args
     parts = _extract_parts(tokens[1:])
 
     if not parts:
-        return None
+        return (None, "azure")
 
     # Help is always safe
     if "help" in parts or "-h" in tokens or "--help" in tokens:
-        return "approve"
+        return ("approve", "azure")
 
     # Check first part for unsafe groups
     if parts[0] in UNSAFE_GROUPS:
-        return None
+        return (None, "azure")
 
     # Check first part for safe groups
     if parts[0] in SAFE_GROUPS:
-        return "approve"
+        return ("approve", "azure")
 
     # Handle account specially
     if parts[0] == "account":
         if len(parts) > 1:
             if parts[1] in ACCOUNT_SAFE_COMMANDS:
-                return "approve"
+                return ("approve", "azure")
             if parts[1] in ACCOUNT_UNSAFE_COMMANDS:
-                return None
-        return "approve"  # Just 'az account' shows current
+                return (None, "azure")
+        return ("approve", "azure")  # Just 'az account' shows current
 
     # Handle devops configure --list
     if parts[0] == "devops" and len(parts) > 1 and parts[1] == "configure":
         if "--list" in tokens:
-            return "approve"
-        return None
+            return ("approve", "azure")
+        return (None, "azure")
 
     # Check commands with safe subcommands (e.g., az bicep version)
     if parts[0] in SAFE_SUBCOMMANDS and len(parts) > 1:
         if parts[1] in SAFE_SUBCOMMANDS[parts[0]]:
-            return "approve"
+            return ("approve", "azure")
 
     # Check unsafe keywords FIRST (they take precedence)
     # This prevents "az vm delete list" from being approved just because "list" is safe
     for part in parts:
         if part in UNSAFE_ACTION_KEYWORDS:
-            return None
+            return (None, "azure")
         if part in UNSAFE_EXCEPTIONS:
-            return None
+            return (None, "azure")
         # set-policy, set-secret, etc.
         if part.startswith("set-"):
-            return None
+            return (None, "azure")
 
     # Check if any part is a safe action keyword
     for part in parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return "approve"
+            return ("approve", "azure")
         for prefix in SAFE_ACTION_PREFIXES:
             if part.startswith(prefix):
-                return "approve"
+                return ("approve", "azure")
 
     # Unknown - ask user
-    return None
+    return (None, "azure")
 
 
 def _extract_parts(tokens: list[str]) -> list[str]:
