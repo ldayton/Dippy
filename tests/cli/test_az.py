@@ -179,8 +179,8 @@ TESTS = [
     ("az aks show --name mycluster -g mygroup", True),
     ("az aks show --name mycluster -g mygroup --output json", True),
     ("az aks get-versions --location eastus", True),
-    ("az aks get-credentials --name mycluster -g mygroup", True),
-    ("az aks get-credentials --name mycluster -g mygroup --overwrite-existing", True),
+    ("az aks get-credentials --name mycluster -g mygroup", False),  # modifies kubeconfig
+    ("az aks get-credentials --name mycluster -g mygroup --overwrite-existing", False),
     ("az aks get-upgrades --name mycluster -g mygroup", True),
     ("az aks nodepool list --cluster-name mycluster -g mygroup", True),
     ("az aks nodepool show --cluster-name mycluster --name nodepool1 -g mygroup", True),

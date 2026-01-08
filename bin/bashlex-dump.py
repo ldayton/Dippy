@@ -10,7 +10,6 @@ when adding new patterns to Dippy.
 """
 
 import sys
-import json
 
 try:
     import bashlex

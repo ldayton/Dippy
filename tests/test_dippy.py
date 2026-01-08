@@ -2318,8 +2318,8 @@ TESTS = [
     ("az aks show --name mycluster -g mygroup", True),
     ("az aks show --name mycluster -g mygroup --output json", True),
     ("az aks get-versions --location eastus", True),
-    ("az aks get-credentials --name mycluster -g mygroup", True),
-    ("az aks get-credentials --name mycluster -g mygroup --overwrite-existing", True),
+    ("az aks get-credentials --name mycluster -g mygroup", False),  # modifies kubeconfig
+    ("az aks get-credentials --name mycluster -g mygroup --overwrite-existing", False),
     ("az aks get-upgrades --name mycluster -g mygroup", True),
     ("az aks nodepool list --cluster-name mycluster -g mygroup", True),
     ("az aks nodepool show --cluster-name mycluster --name nodepool1 -g mygroup", True),
@@ -3539,7 +3539,7 @@ TESTS = [
     ("ifconfig eth0", True),
     ("ifconfig eth0 up", False),
     ("ifconfig eth0 down", False),
-    ("ifconfig eth0 192.168.1.1", True),  # viewing, not setting without netmask
+    ("ifconfig eth0 192.168.1.1", False),  # setting IP address
     ("ifconfig eth0 192.168.1.1 netmask 255.255.255.0", False),
     ("journalctl", True),
     ("journalctl -f", True),

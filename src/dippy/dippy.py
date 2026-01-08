@@ -82,9 +82,28 @@ def is_version_or_help(tokens: list[str]) -> bool:
 
     Only considers explicit --version/--help flags as universal.
     Short flags like -v and -V are ambiguous (could be verbose).
+
+    To avoid false positives (e.g., "cargo install --version 1.0.0"),
+    only match if:
+    - It's the only argument after the command (e.g., "foo --help")
+    - It's "help" or "version" as a subcommand in position 1 (e.g., "cargo help")
     """
-    help_flags = {"--version", "--help", "-h", "help", "version"}
-    return bool(set(tokens) & help_flags)
+    if len(tokens) < 2:
+        return False
+
+    # "cmd help" or "cmd version" as subcommand
+    if tokens[1] in ("help", "version"):
+        return True
+
+    # "cmd --help" or "cmd --version" or "cmd -h" as the ONLY argument
+    if len(tokens) == 2 and tokens[1] in ("--version", "--help", "-h"):
+        return True
+
+    # Also allow "cmd subcmd --help" pattern where --help is the last arg
+    if tokens[-1] in ("--help", "-h") and len(tokens) <= 4:
+        return True
+
+    return False
 
 
 # === Main Logic ===

@@ -13,11 +13,11 @@ UNSAFE_ACTIONS = frozenset()
 
 # Safe ip subcommands (read-only)
 SAFE_SUBCOMMANDS = frozenset({
-    "addr", "address",
-    "link",
+    "addr", "address", "a",  # "a" is common alias for addr
+    "link", "l",  # "l" is alias for link
     "route", "r",
     "rule",
-    "neigh", "neighbor",
+    "neigh", "neighbor", "n",  # "n" is alias for neigh
     "tunnel",
     "tuntap",
     "maddr", "maddress",

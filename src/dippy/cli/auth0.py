@@ -12,16 +12,25 @@ UNSAFE_ACTIONS = frozenset()
 
 # Safe Auth0 actions (read-only)
 SAFE_ACTION_KEYWORDS = frozenset({
-    "list", "show", "get",
+    "list", "ls", "show", "get",
     "search", "search-by-email",
     "tail",  # logs tail
     "diff",  # actions diff
     "stats",  # event-streams stats
+    "--help", "-h",  # help flags
 })
 
 UNSAFE_ACTION_KEYWORDS = frozenset({
     "create", "delete", "update",
     "import", "export",
+    "rm",  # alias for delete
+    "add", "remove",  # for permissions
+    "download",  # quickstarts download
+    "use",  # tenants use
+    "customize",  # universal-login customize
+    "verify",  # domains verify
+    "deploy",  # actions deploy
+    "enable", "disable",  # rules enable/disable
 })
 
 # Global flags that take an argument
@@ -80,16 +89,19 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
 
 
 def _extract_parts(tokens: list[str]) -> list[str]:
-    """Extract command parts, skipping global flags."""
+    """Extract command parts, keeping help flags but skipping other flags."""
     parts = []
     i = 0
     while i < len(tokens):
         token = tokens[i]
         if token.startswith("-"):
-            if token in GLOBAL_FLAGS_WITH_ARG and i + 1 < len(tokens):
+            # Keep help flags as they affect safety decision
+            if token in {"--help", "-h"}:
+                parts.append(token)
+            elif token in GLOBAL_FLAGS_WITH_ARG and i + 1 < len(tokens):
                 i += 2
-            else:
-                i += 1
+                continue
+            i += 1
             continue
         parts.append(token)
         i += 1

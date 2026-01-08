@@ -19,6 +19,11 @@ SAFE_ACTION_KEYWORDS = frozenset({
 # Safe action prefixes - if command contains action starting with these
 SAFE_ACTION_PREFIXES = ("list-", "show-", "get-")
 
+# Exceptions: things that look safe but aren't (e.g., get- prefix but modifies state)
+UNSAFE_EXCEPTIONS = frozenset({
+    "get-credentials",  # az aks get-credentials modifies kubeconfig
+})
+
 # Unsafe action keywords - operations that modify state
 UNSAFE_ACTION_KEYWORDS = frozenset({
     "create", "delete", "update", "set",
@@ -113,6 +118,8 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
     # This prevents "az vm delete list" from being approved just because "list" is safe
     for part in parts:
         if part in UNSAFE_ACTION_KEYWORDS:
+            return None
+        if part in UNSAFE_EXCEPTIONS:
             return None
         # set-policy, set-secret, etc.
         if part.startswith("set-"):
