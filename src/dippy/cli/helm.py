@@ -6,6 +6,8 @@ Helm is the Kubernetes package manager. Safe operations are read-only queries
 mutate cluster state, local files, or remote registries.
 """
 
+COMMANDS = ["helm"]
+
 # Safe top-level commands (read-only)
 SAFE_COMMANDS = frozenset(
     {

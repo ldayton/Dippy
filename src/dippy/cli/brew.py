@@ -2,6 +2,7 @@
 Homebrew CLI handler for Dippy.
 """
 
+COMMANDS = ["brew"]
 
 # Actions that only read data
 SAFE_ACTIONS = frozenset({

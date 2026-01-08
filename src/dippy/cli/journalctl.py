@@ -4,6 +4,7 @@ Journalctl command handler for Dippy.
 Journalctl is safe for viewing logs, but modification flags need confirmation.
 """
 
+COMMANDS = ["journalctl"]
 
 UNSAFE_FLAGS = frozenset({
     "--rotate",

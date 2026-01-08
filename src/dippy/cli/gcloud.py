@@ -4,6 +4,7 @@ Google Cloud CLI handler for Dippy.
 Handles gcloud, gsutil, and bq commands.
 """
 
+COMMANDS = ["gcloud", "gsutil"]
 
 # Safe action keywords - these are read-only operations
 SAFE_ACTION_KEYWORDS = frozenset({

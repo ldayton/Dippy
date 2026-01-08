@@ -4,6 +4,7 @@ Kubectl command handler for Dippy.
 Handles kubectl and similar Kubernetes CLI tools.
 """
 
+COMMANDS = ["kubectl", "k"]
 
 # Safe read-only actions
 SAFE_ACTIONS = frozenset({

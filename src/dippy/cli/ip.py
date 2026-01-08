@@ -5,6 +5,7 @@ The ip command is safe for viewing network info, but modification
 commands need confirmation.
 """
 
+COMMANDS = ["ip"]
 
 # Safe ip subcommands (read-only)
 SAFE_SUBCOMMANDS = frozenset({

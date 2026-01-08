@@ -5,6 +5,7 @@ Handles bash, sh, zsh with -c flag (inline commands).
 We approve if the inner command is safe.
 """
 
+COMMANDS = ["bash", "sh", "zsh", "dash", "ksh", "fish"]
 
 # Shells we handle
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish"})

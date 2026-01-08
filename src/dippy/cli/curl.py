@@ -4,6 +4,7 @@ Curl command handler for Dippy.
 Approves GET/HEAD requests, blocks data-sending operations.
 """
 
+COMMANDS = ["curl"]
 
 # Flags that send data (always unsafe unless explicit GET)
 DATA_FLAGS = frozenset({

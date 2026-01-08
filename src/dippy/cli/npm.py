@@ -4,6 +4,7 @@ Node package manager CLI handler for Dippy.
 Handles npm, yarn, and pnpm commands.
 """
 
+COMMANDS = ["npm", "yarn", "pnpm"]
 
 SAFE_ACTIONS = frozenset({
     "list", "ls", "ll", "la",
