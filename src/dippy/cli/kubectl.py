@@ -36,6 +36,9 @@ UNSAFE_ACTIONS = frozenset({
     "label", "annotate", "taint",
     "cordon", "uncordon", "drain",
     "port-forward",  # Creates a network tunnel
+    "proxy",  # Creates proxy to API server
+    "debug",  # Debug running pods
+    "certificate",  # Certificate management (approve/deny)
 })
 
 

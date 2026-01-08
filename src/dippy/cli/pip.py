@@ -15,6 +15,8 @@ SAFE_ACTIONS = frozenset({
     "version", "-V", "--version",
     "debug", "cache",
     "index",
+    "inspect",  # Read-only environment inspection
+    "hash",  # Read-only hash computation
 })
 
 
@@ -22,7 +24,7 @@ UNSAFE_ACTIONS = frozenset({
     "install", "uninstall", "remove",
     "download",
     "wheel",
-    "hash",
+    "lock",  # Experimental lock file creation
 })
 
 
@@ -36,7 +38,7 @@ SAFE_SUBCOMMANDS = {
 
 UNSAFE_SUBCOMMANDS = {
     "cache": {"purge", "remove"},
-    "config": {"set", "unset"},
+    "config": {"set", "unset", "edit"},
     "pip": {"install", "uninstall"},
 }
 

@@ -41,6 +41,11 @@ SAFE_GROUPS = frozenset({
     "version", "find",
 })
 
+# Commands with safe/unsafe subcommands
+SAFE_SUBCOMMANDS = {
+    "bicep": {"version", "list-versions"},
+}
+
 # Groups that need confirmation
 UNSAFE_GROUPS = frozenset({
     "login", "logout", "configure",
@@ -113,6 +118,11 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         if "--list" in tokens:
             return "approve"
         return None
+
+    # Check commands with safe subcommands (e.g., az bicep version)
+    if parts[0] in SAFE_SUBCOMMANDS and len(parts) > 1:
+        if parts[1] in SAFE_SUBCOMMANDS[parts[0]]:
+            return "approve"
 
     # Check unsafe keywords FIRST (they take precedence)
     # This prevents "az vm delete list" from being approved just because "list" is safe

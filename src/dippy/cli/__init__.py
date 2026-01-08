@@ -73,6 +73,7 @@ KNOWN_HANDLERS = {
     "ip": "ip",
     "ifconfig": "ifconfig",
     "uv": "uv",
+    "uvx": "uv",
     "openssl": "openssl",
     "env": "env",
     "journalctl": "journalctl",
