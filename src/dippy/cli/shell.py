@@ -21,7 +21,7 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     Check if a shell -c command should be approved.
 
     Returns:
-        (decision, description) where decision is "approve", "deny", or None.
+        (decision, description) where decision is "approve" or None.
     """
     shell = tokens[0]
 

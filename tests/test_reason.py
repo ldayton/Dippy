@@ -24,9 +24,9 @@ class TestOutputFormat:
         assert result["hookSpecificOutput"]["permissionDecisionReason"].startswith("🐤")
 
     def test_ask_format(self, check):
+        """Ask returns empty dict to let Claude's normal permission flow handle it."""
         result = check("rm foo")
-        assert result["hookSpecificOutput"]["permissionDecision"] == "ask"
-        assert result["hookSpecificOutput"]["permissionDecisionReason"].startswith("🐤")
+        assert result == {}
 
 
 class TestApproveReasons:
@@ -66,61 +66,35 @@ class TestApproveReasons:
         assert get_reason(check("git status && git log")) == "git status, git log"
 
 
-class TestAskReasons:
-    """Verify unsafe commands list matched commands."""
+class TestAskCommands:
+    """Verify unsafe commands return empty dict (no Dippy decision)."""
 
-    def test_rm(self, check):
-        assert get_reason(check("rm foo")) == "rm"
+    @pytest.mark.parametrize("cmd", [
+        "rm foo",
+        "rm -rf /tmp/foo",
+        "mv foo bar",
+        "chmod 755 file",
+        "git push",
+        "git commit -m 'msg'",
+        "git add .",
+        "kubectl delete pod foo",
+        "aws s3 rm s3://bucket/key",
+        "terraform apply",
+        "echo foo > file.txt",
+        "echo foo >> file.txt",
+    ])
+    def test_unsafe_returns_empty(self, check, cmd):
+        """Unsafe commands return {} to let Claude handle permission."""
+        assert check(cmd) == {}
 
-    def test_rm_rf(self, check):
-        assert get_reason(check("rm -rf /tmp/foo")) == "rm"
-
-    def test_mv(self, check):
-        assert get_reason(check("mv foo bar")) == "mv"
-
-    def test_chmod(self, check):
-        assert get_reason(check("chmod 755 file")) == "chmod"
-
-    def test_git_push(self, check):
-        assert get_reason(check("git push")) == "git push"
-
-    def test_git_commit(self, check):
-        assert get_reason(check("git commit -m 'msg'")) == "git commit"
-
-    def test_git_add(self, check):
-        assert get_reason(check("git add .")) == "git add"
-
-    def test_git_add_commit(self, check):
-        assert get_reason(check("git add . && git commit -m 'x'")) == "git add, git commit"
-
-    def test_kubectl_delete(self, check):
-        assert get_reason(check("kubectl delete pod foo")) == "kubectl delete"
-
-    def test_aws_s3_rm(self, check):
-        assert get_reason(check("aws s3 rm s3://bucket/key")) == "aws s3 rm"
-
-    def test_terraform_apply(self, check):
-        assert get_reason(check("terraform apply")) == "terraform apply"
-
-    def test_redirect(self, check):
-        assert get_reason(check("echo foo > file.txt")) == "output redirect"
-
-    def test_append_redirect(self, check):
-        assert get_reason(check("echo foo >> file.txt")) == "output redirect"
-
-    def test_rm_mv(self, check):
-        assert get_reason(check("rm foo && mv bar baz")) == "rm, mv"
-
-    def test_chmod_chown(self, check):
-        assert get_reason(check("chmod 755 f && chown root f")) == "chmod, chown"
-
-    def test_rm_git_push_docker_rm(self, check):
-        assert get_reason(check("rm x && git push && docker rm y")) == "rm, git push, docker rm"
-
-    def test_mixed_safe_unsafe(self, check):
-        # ls is safe, rm is not - only list unsafe
-        assert get_reason(check("ls && rm foo")) == "rm"
-
-    def test_mixed_pipeline(self, check):
-        # cat is safe, tee writes
-        assert get_reason(check("cat file | tee output")) == "tee"
+    @pytest.mark.parametrize("cmd", [
+        "git add . && git commit -m 'x'",
+        "rm foo && mv bar baz",
+        "chmod 755 f && chown root f",
+        "rm x && git push && docker rm y",
+        "ls && rm foo",
+        "cat file | tee output",
+    ])
+    def test_mixed_returns_empty(self, check, cmd):
+        """Commands with any unsafe part return {} to let Claude handle permission."""
+        assert check(cmd) == {}

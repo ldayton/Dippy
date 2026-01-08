@@ -60,7 +60,7 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     Check if a terraform command should be approved or denied.
 
     Returns:
-        (decision, description) where decision is "approve", "deny", or None.
+        (decision, description) where decision is "approve" or None.
     """
     base = tokens[0]  # "terraform" or "tofu"
 

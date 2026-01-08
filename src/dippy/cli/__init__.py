@@ -5,7 +5,7 @@ Each handler module exports:
 - SAFE_ACTIONS: set of action names that are always safe
 - UNSAFE_ACTIONS: set of action names that should be blocked
 - check(command: str, tokens: list[str]) -> str | None
-    Returns "approve", "deny", or None (ask user)
+    Returns "approve" or None (ask user)
 """
 
 import importlib
@@ -21,7 +21,7 @@ class CLIHandler(Protocol):
     def check(self, command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         """Check if command should be approved, denied, or needs user input.
 
-        Returns (decision, description) where decision is "approve", "deny", or None.
+        Returns (decision, description) where decision is "approve" or None.
         """
         ...
 

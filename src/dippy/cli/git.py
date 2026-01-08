@@ -126,7 +126,7 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     Check if a git command should be approved or denied.
 
     Returns:
-        (decision, description) where decision is "approve", "deny", or None.
+        (decision, description) where decision is "approve" or None.
     """
     if len(tokens) < 2:
         return None  # Just "git" with no subcommand

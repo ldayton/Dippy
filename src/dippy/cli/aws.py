@@ -133,7 +133,7 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     Check if an AWS CLI command should be approved or denied.
 
     Returns:
-        (decision, description) where decision is "approve", "deny", or None.
+        (decision, description) where decision is "approve" or None.
     """
     if len(tokens) < 2:
         return (None, "aws")

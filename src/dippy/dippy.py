@@ -62,28 +62,10 @@ def approve(reason: str = "all commands safe") -> dict:
     }
 
 
-def deny(reason: str = "") -> dict:
-    """Return denial response."""
-    logging.info(f"DENIED: {reason}")
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": f"🐤 {reason}",
-        }
-    }
-
-
 def ask(reason: str = "needs approval") -> dict:
-    """Return ask-user response (prompts user for confirmation)."""
+    """Return empty response to let Claude's normal permission flow handle it."""
     logging.info(f"ASK: {reason}")
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": f"🐤 {reason}",
-        }
-    }
+    return {}
 
 
 # === Safety Checks ===
@@ -132,7 +114,7 @@ def check_simple_command(cmd: str, tokens: list[str]) -> tuple[Optional[str], Op
     """
     Check simple commands that don't need CLI-specific handling.
 
-    Returns (decision, description) where decision is "approve", "deny", or None.
+    Returns (decision, description) where decision is "approve" or None.
     Returns (None, None) if not handled by this function.
     """
     if not tokens:
@@ -241,17 +223,14 @@ def check_command(command: str) -> dict:
 
     if decision == "approve":
         return approve(desc)
-    elif decision == "deny":
-        return deny(desc)
-    else:
-        return ask(desc)
+    return ask(desc)
 
 
 def _check_single_command(command: str) -> tuple[Optional[str], str]:
     """
     Check a single (non-pipeline) command.
 
-    Returns (decision, description) where decision is "approve", "deny", or None.
+    Returns (decision, description) where decision is "approve" or None.
     """
     tokens = tokenize(command)
     if not tokens:

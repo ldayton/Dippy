@@ -37,13 +37,6 @@ def is_approved(result: dict) -> bool:
     return output.get("permissionDecision") == "allow"
 
 
-def is_denied(result: dict) -> bool:
-    """Check if a hook result is a denial."""
-    output = result.get("hookSpecificOutput", {})
-    return output.get("permissionDecision") == "deny"
-
-
 def needs_confirmation(result: dict) -> bool:
-    """Check if a hook result requires user confirmation."""
-    output = result.get("hookSpecificOutput", {})
-    return output.get("permissionDecision") == "ask"
+    """Check if a hook result requires user confirmation (empty response)."""
+    return result == {}
