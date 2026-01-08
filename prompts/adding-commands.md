@@ -14,11 +14,19 @@ This document describes the process for adding support for a new CLI tool or rev
 
 ## Process
 
+### 0. Create a Feature Branch
+
+Before making any changes, create a feature branch:
+
+```bash
+git checkout -b add-<command>-support
+```
+
 ### 1. Write Aspirational Tests First
 
 **Important**: Tests describe *desired* behavior, not current behavior. Write tests for how the command *should* work, then implement to make them pass. Do not modify tests to match current (possibly wrong) behavior.
 
-Add tests to `tests/test_dippy.py` that describe the desired behavior. Group them under a section header:
+For comprehensively covered commands, create a dedicated test file `tests/test_<command>.py`. For smaller additions, add to `tests/test_dippy.py` under a section header:
 
 ```python
 #
@@ -116,6 +124,14 @@ uv run ruff check src/ tests/
 
 ### 6. Create a Pull Request
 
+Commit your changes and push the feature branch:
+
+```bash
+git add -A
+git commit -m "Expand <Command> support with comprehensive coverage"
+git push -u origin add-<command>-support
+```
+
 Create a PR with a clear title and description:
 
 ```bash
@@ -131,6 +147,14 @@ gh pr create --title "Expand <Command> support with comprehensive coverage" --bo
 - [ ] Existing tests still pass
 EOF
 )"
+```
+
+### 7. Merge the PR
+
+After review, merge the PR:
+
+```bash
+gh pr merge --squash --delete-branch
 ```
 
 ## Test Organization
