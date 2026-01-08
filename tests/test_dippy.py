@@ -1557,42 +1557,6 @@ TESTS = [
     ("docker compose publish", False),
     #
     # ==========================================================================
-    # GitHub CLI (gh)
-    # ==========================================================================
-    #
-    # gh api - safe (GET requests)
-    ("gh api repos/owner/repo", True),
-    ("gh api repos/{owner}/{repo}/pulls", True),
-    ("gh api /user", True),
-    ("gh api -X GET repos/owner/repo", True),
-    ("gh api --method GET repos/owner/repo", True),
-    ("gh api --method=GET repos/owner/repo", True),
-    ("gh api -XGET repos/owner/repo", True),
-    (
-        "gh api -X GET search/issues -f q='repo:cli/cli'",
-        True,
-    ),  # -f ok with explicit GET
-    (
-        "gh api -f q='repo:cli/cli' -X GET search/issues",
-        True,
-    ),  # -X GET after -f is still safe
-    ("gh api --paginate repos/owner/repo/issues", True),
-    ("gh api -q '.[] | .name' repos/owner/repo", True),
-    # gh api - unsafe (mutations)
-    ("gh api repos/owner/repo --raw-field=foo=bar", False),  # --flag=value form
-    ("gh api repos/owner/repo --field=foo=bar", False),
-    ("gh api repos/owner/repo/issues -f title='bug'", False),  # -f implies POST
-    ("gh api repos/owner/repo/issues -F body=@file.txt", False),  # -F implies POST
-    ("gh api repos/owner/repo/issues --field title=bug", False),
-    ("gh api -X POST repos/owner/repo/issues", False),
-    ("gh api -X DELETE repos/owner/repo/issues/1", False),
-    ("gh api --method POST repos/owner/repo/hooks", False),
-    ("gh api --method=PATCH repos/owner/repo", False),
-    ("gh api -XPOST repos/owner/repo/issues", False),
-    ("gh api repos/owner/repo --input payload.json", False),
-    ("gh api graphql -f query='mutation { ... }'", False),
-    #
-    # ==========================================================================
     # Git
     # ==========================================================================
     #

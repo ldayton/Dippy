@@ -644,7 +644,26 @@ CLI_CONFIGS = {
         },
     },
     "gh": {
-        "safe_actions": COMMON_SAFE_ACTIONS | {"checks"},
+        "safe_actions": COMMON_SAFE_ACTIONS
+        | {
+            # Core read-only actions
+            "checks",
+            "download",
+            "watch",
+            "verify",
+            "verify-asset",
+            "trusted-root",
+            # gh auth
+            "token",
+            # gh codespace
+            "logs",
+            "ports",
+            # gh project
+            "field-list",
+            "item-list",
+            # gh ruleset
+            "check",
+        },
         "safe_prefixes": (),
         "parser": "second_token",
         "flags_with_arg": {"-R", "--repo"},
@@ -857,6 +876,15 @@ CLI_CONFIGS = {
         "safe_prefixes": (),
         "parser": "first_token",
     },
+}
+
+# gh has several built-in aliases that map to subcommands
+# cs -> codespace, at -> attestation, rs -> ruleset, ext -> extension
+GH_SUBCOMMAND_ALIASES: dict[str, str] = {
+    "cs": "codespace",
+    "at": "attestation",
+    "rs": "ruleset",
+    "ext": "extension",
 }
 
 CLI_ALIASES: dict[str, str] = {}
@@ -1101,7 +1129,29 @@ def check_gh_api(tokens: list[str]) -> bool:
     if method is not None and method != "GET":
         return False
 
-    # Second pass: check for params that imply POST (unless explicit GET)
+    # Check for graphql queries vs mutations
+    # -f query='query {...}' is safe, -f query='mutation {...}' is not
+    is_graphql_query = False
+    for i, arg in enumerate(args):
+        if arg in {"-f", "--raw-field"} and i + 1 < len(args):
+            val = args[i + 1]
+            if val.startswith("query="):
+                query_content = val[6:]  # Remove "query=" prefix
+                if "mutation" in query_content.lower():
+                    return False
+                # It's a graphql query (not mutation)
+                is_graphql_query = "query" in query_content.lower() or "{" in query_content
+        if arg.startswith(("--raw-field=query=", "-f=query=")):
+            query_content = arg.split("=", 2)[2] if arg.count("=") >= 2 else ""
+            if "mutation" in query_content.lower():
+                return False
+            is_graphql_query = "query" in query_content.lower() or "{" in query_content
+
+    # If it's a graphql query (not mutation), it's safe even with -f flag
+    if is_graphql_query:
+        return True
+
+    # Check for params that imply POST (unless explicit GET)
     has_mutation_flags = False
     for arg in args:
         if arg in {"-f", "--raw-field", "-F", "--field", "--input"}:
@@ -1115,6 +1165,22 @@ def check_gh_api(tokens: list[str]) -> bool:
     if has_mutation_flags and method != "GET":
         return False
 
+    return True
+
+
+def check_gh_status(tokens: list[str]) -> bool:
+    """Approve gh status (always read-only)."""
+    return True
+
+
+def check_gh_browse(tokens: list[str]) -> bool:
+    """Approve gh browse (opens browser, no mutations)."""
+    return True
+
+
+def check_gh_search(tokens: list[str]) -> bool:
+    """Approve gh search (all subcommands are read-only)."""
+    # gh search repos, gh search issues, gh search prs, gh search commits, gh search code
     return True
 
 
@@ -1623,6 +1689,9 @@ COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("docker", "image", "save"): check_docker_image_save,
     ("docker", "save"): check_docker_save,
     ("gh", "api"): check_gh_api,
+    ("gh", "browse"): check_gh_browse,
+    ("gh", "search"): check_gh_search,
+    ("gh", "status"): check_gh_status,
     ("git", "branch"): check_git_branch,
     ("git", "config"): check_git_config,
     ("git", "notes"): check_git_notes,
@@ -1883,6 +1952,17 @@ def is_command_safe(tokens: list[str]) -> bool:
     cmd = tokens[0]
     args = tokens[1:]
 
+    # Expand gh subcommand aliases (cs -> codespace, at -> attestation, etc.)
+    if cmd == "gh" and args:
+        # Skip global flags to find the subcommand
+        config = CLI_CONFIGS.get("gh", {})
+        flags_with_arg = config.get("flags_with_arg", set())
+        i = skip_flags(args, flags_with_arg)
+        if i < len(args) and args[i] in GH_SUBCOMMAND_ALIASES:
+            expanded = GH_SUBCOMMAND_ALIASES[args[i]]
+            args = args[:i] + [expanded] + args[i + 1 :]
+            tokens = [cmd] + args
+
     if cmd in SAFE_COMMANDS:
         return True
 
@@ -1912,6 +1992,14 @@ def is_command_safe(tokens: list[str]) -> bool:
     for prefix, checker in COMPOUND_CHECKS.items():
         if tuple(tokens[: len(prefix)]) == prefix:
             return checker(tokens)
+        # For gh, also check after skipping global flags like -R
+        if prefix[0] == "gh" and cmd == "gh" and len(prefix) >= 2:
+            config = CLI_CONFIGS.get("gh", {})
+            flags_with_arg = config.get("flags_with_arg", set())
+            i = skip_flags(args, flags_with_arg)
+            if i > 0 and i < len(args) and args[i] == prefix[1]:
+                # Reconstruct tokens with flags removed for the check
+                return checker([cmd] + args[i:])
 
     cmd = CLI_ALIASES.get(cmd, cmd)
 
