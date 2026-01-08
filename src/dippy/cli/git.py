@@ -10,7 +10,7 @@ from typing import Optional
 # Actions that only read data (no subcommands to check)
 SAFE_ACTIONS = frozenset({
     # Status and info
-    "status", "log", "show", "diff", "blame",
+    "status", "log", "show", "diff", "blame", "annotate",
     "shortlog", "describe", "rev-parse", "rev-list",
 
     # History navigation
@@ -18,7 +18,7 @@ SAFE_ACTIONS = frozenset({
 
     # Diff and comparison
     "diff-tree", "diff-files", "diff-index",
-    "range-diff", "format-patch",
+    "range-diff", "format-patch", "difftool",
 
     # Search
     "grep",
@@ -27,10 +27,15 @@ SAFE_ACTIONS = frozenset({
     "ls-files", "ls-tree", "ls-remote",
     "cat-file", "verify-commit", "verify-tag",
     "name-rev", "merge-base",
+    "show-ref", "show-branch",
 
     # Read-only utilities
     "check-ignore", "cherry", "for-each-ref",
     "count-objects", "fsck",
+    "var", "request-pull",
+
+    # Export (read-only, creates archive from repo content)
+    "archive",
 
     # Fetch is read-only (downloads from remote but doesn't merge)
     "fetch",
@@ -154,6 +159,22 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
         return _check_worktree(rest)
     elif action == "submodule":
         return _check_submodule(rest)
+    elif action == "apply":
+        return _check_apply(rest)
+    elif action == "sparse-checkout":
+        return _check_sparse_checkout(rest)
+    elif action == "bundle":
+        return _check_bundle(rest)
+    elif action == "lfs":
+        return _check_lfs(rest)
+    elif action == "hash-object":
+        return _check_hash_object(rest)
+    elif action == "symbolic-ref":
+        return _check_symbolic_ref(rest)
+    elif action == "replace":
+        return _check_replace(rest)
+    elif action == "rerere":
+        return _check_rerere(rest)
 
     # Explicitly safe actions
     if action in SAFE_ACTIONS:
@@ -374,6 +395,127 @@ def _check_submodule(rest: list[str]) -> Optional[str]:
 
     # Unsafe subcommands
     unsafe = {"add", "init", "update", "deinit", "set-branch", "set-url", "sync", "absorbgitdirs"}
+    if subcommand in unsafe:
+        return None
+
+    return None
+
+
+def _check_apply(rest: list[str]) -> Optional[str]:
+    """Check git apply subcommand."""
+    # --check is a dry run, safe
+    if "--check" in rest:
+        return "approve"
+    # Without --check, apply modifies working tree
+    return None
+
+
+def _check_sparse_checkout(rest: list[str]) -> Optional[str]:
+    """Check git sparse-checkout subcommand."""
+    if not rest:
+        return None
+
+    subcommand = rest[0]
+
+    # Safe subcommands
+    if subcommand == "list":
+        return "approve"
+
+    # Unsafe subcommands
+    unsafe = {"init", "set", "add", "reapply", "disable"}
+    if subcommand in unsafe:
+        return None
+
+    return None
+
+
+def _check_bundle(rest: list[str]) -> Optional[str]:
+    """Check git bundle subcommand."""
+    if not rest:
+        return None
+
+    subcommand = rest[0]
+
+    # Safe subcommands (read-only inspection)
+    safe = {"verify", "list-heads"}
+    if subcommand in safe:
+        return "approve"
+
+    # Unsafe subcommands
+    unsafe = {"create", "unbundle"}
+    if subcommand in unsafe:
+        return None
+
+    return None
+
+
+def _check_lfs(rest: list[str]) -> Optional[str]:
+    """Check git lfs subcommand."""
+    if not rest:
+        return None
+
+    subcommand = rest[0]
+
+    # Safe subcommands (read-only)
+    safe = {"fetch", "ls-files", "status", "env", "version"}
+    if subcommand in safe:
+        return "approve"
+
+    # Unsafe subcommands (modify LFS tracking or repo)
+    unsafe = {"install", "uninstall", "track", "untrack", "pull", "push",
+              "clone", "migrate", "prune", "dedup", "logs"}
+    if subcommand in unsafe:
+        return None
+
+    return None
+
+
+def _check_hash_object(rest: list[str]) -> Optional[str]:
+    """Check git hash-object subcommand."""
+    # -w writes the object to the database
+    if "-w" in rest or "--write" in rest:
+        return None
+    # Without -w, just computes hash (read-only)
+    return "approve"
+
+
+def _check_symbolic_ref(rest: list[str]) -> Optional[str]:
+    """Check git symbolic-ref subcommand."""
+    # Count positional arguments (non-flags)
+    positional = [t for t in rest if not t.startswith("-")]
+
+    # Reading: git symbolic-ref HEAD (1 positional)
+    # Writing: git symbolic-ref HEAD refs/heads/main (2 positional)
+    if len(positional) <= 1:
+        return "approve"
+
+    return None
+
+
+def _check_replace(rest: list[str]) -> Optional[str]:
+    """Check git replace subcommand."""
+    # Listing is safe
+    if "-l" in rest or "--list" in rest or not rest:
+        return "approve"
+
+    # All other operations modify replace refs
+    return None
+
+
+def _check_rerere(rest: list[str]) -> Optional[str]:
+    """Check git rerere subcommand."""
+    if not rest:
+        return "approve"  # Just "git rerere" shows status
+
+    subcommand = rest[0]
+
+    # Safe subcommands (read-only)
+    safe = {"status", "diff"}
+    if subcommand in safe:
+        return "approve"
+
+    # Unsafe subcommands
+    unsafe = {"clear", "forget", "gc"}
     if subcommand in unsafe:
         return None
 

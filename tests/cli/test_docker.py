@@ -282,6 +282,214 @@ TESTS = [
     ("docker compose commit web myimage", False),
     ("docker compose export web", False),
     ("docker compose publish", False),
+    #
+    # Docker Swarm
+    #
+    # docker swarm - unsafe (cluster management)
+    ("docker swarm init", False),
+    ("docker swarm init --advertise-addr eth0", False),
+    ("docker swarm join --token SWMTKN-xxx manager:2377", False),
+    ("docker swarm join-token worker", False),
+    ("docker swarm join-token manager", False),
+    ("docker swarm leave", False),
+    ("docker swarm leave --force", False),
+    ("docker swarm update", False),
+    ("docker swarm update --cert-expiry 24h", False),
+    ("docker swarm ca", False),
+    ("docker swarm ca --rotate", False),
+    ("docker swarm unlock", False),
+    ("docker swarm unlock-key", False),
+    #
+    # Docker Service
+    #
+    # docker service - safe (inspection)
+    ("docker service ls", True),
+    ("docker service list", True),
+    ("docker service inspect myservice", True),
+    ("docker service inspect --pretty myservice", True),
+    ("docker service ps myservice", True),
+    ("docker service logs myservice", True),
+    ("docker service logs -f myservice", True),
+    # docker service - unsafe (lifecycle)
+    ("docker service create --name myservice nginx", False),
+    ("docker service create --replicas 3 nginx", False),
+    ("docker service rm myservice", False),
+    ("docker service scale myservice=3", False),
+    ("docker service update myservice --image nginx:latest", False),
+    ("docker service rollback myservice", False),
+    #
+    # Docker Secret
+    #
+    # docker secret - safe (inspection)
+    ("docker secret ls", True),
+    ("docker secret inspect mysecret", True),
+    ("docker secret inspect --pretty mysecret", True),
+    # docker secret - unsafe (management)
+    ("docker secret create mysecret file.txt", False),
+    ("docker secret rm mysecret", False),
+    #
+    # Docker Config
+    #
+    # docker config - safe (inspection)
+    ("docker config ls", True),
+    ("docker config inspect myconfig", True),
+    # docker config - unsafe (management)
+    ("docker config create myconfig file.txt", False),
+    ("docker config rm myconfig", False),
+    #
+    # Docker Stack
+    #
+    # docker stack - safe (inspection)
+    ("docker stack ls", True),
+    ("docker stack ps mystack", True),
+    ("docker stack services mystack", True),
+    # docker stack - unsafe (management)
+    ("docker stack deploy -c docker-compose.yml mystack", False),
+    ("docker stack rm mystack", False),
+    #
+    # Docker Node
+    #
+    # docker node - safe (inspection)
+    ("docker node ls", True),
+    ("docker node inspect node1", True),
+    ("docker node ps node1", True),
+    # docker node - unsafe (management)
+    ("docker node update --availability drain node1", False),
+    ("docker node rm node1", False),
+    ("docker node promote node1", False),
+    ("docker node demote node1", False),
+    #
+    # Docker Plugin
+    #
+    # docker plugin - safe (inspection)
+    ("docker plugin ls", True),
+    ("docker plugin inspect myplugin", True),
+    # docker plugin - unsafe (management)
+    ("docker plugin install myplugin", False),
+    ("docker plugin enable myplugin", False),
+    ("docker plugin disable myplugin", False),
+    ("docker plugin rm myplugin", False),
+    ("docker plugin upgrade myplugin", False),
+    ("docker plugin create myplugin", False),
+    ("docker plugin push myplugin", False),
+    #
+    # Docker Buildx
+    #
+    # docker buildx - safe (inspection)
+    ("docker buildx ls", True),
+    ("docker buildx inspect", True),
+    ("docker buildx inspect mybuilder", True),
+    ("docker buildx du", True),
+    ("docker buildx version", True),
+    ("docker buildx imagetools inspect nginx", True),
+    # docker buildx - unsafe (builds and modifications)
+    ("docker buildx build .", False),
+    ("docker buildx build -t myimage .", False),
+    ("docker buildx bake", False),
+    ("docker buildx create", False),
+    ("docker buildx create --use", False),
+    ("docker buildx rm mybuilder", False),
+    ("docker buildx use mybuilder", False),
+    ("docker buildx prune", False),
+    ("docker buildx imagetools create", False),
+    #
+    # Docker Manifest
+    #
+    # docker manifest - safe (inspection)
+    ("docker manifest inspect nginx:latest", True),
+    # docker manifest - unsafe (modifications)
+    ("docker manifest create myimage:latest myimage:amd64 myimage:arm64", False),
+    ("docker manifest push myimage:latest", False),
+    ("docker manifest annotate myimage:latest myimage:arm64 --arch arm64", False),
+    ("docker manifest rm myimage:latest", False),
+    #
+    # Docker Trust
+    #
+    # docker trust - safe (inspection)
+    ("docker trust inspect nginx", True),
+    ("docker trust inspect --pretty nginx", True),
+    # docker trust - unsafe (signing)
+    ("docker trust sign nginx:latest", False),
+    ("docker trust revoke nginx:latest", False),
+    #
+    # docker-compose standalone
+    #
+    # docker-compose - safe (inspection)
+    ("docker-compose ps", True),
+    ("docker-compose logs", True),
+    ("docker-compose logs -f", True),
+    ("docker-compose config", True),
+    ("docker-compose images", True),
+    ("docker-compose top", True),
+    ("docker-compose version", True),
+    ("docker-compose port web 80", True),
+    ("docker-compose events", True),
+    ("docker-compose -f docker-compose.yml ps", True),
+    ("docker-compose -p myproject logs", True),
+    # docker-compose - unsafe (lifecycle)
+    ("docker-compose up", False),
+    ("docker-compose up -d", False),
+    ("docker-compose down", False),
+    ("docker-compose start", False),
+    ("docker-compose stop", False),
+    ("docker-compose restart", False),
+    ("docker-compose exec web bash", False),
+    ("docker-compose run web echo hello", False),
+    ("docker-compose build", False),
+    ("docker-compose pull", False),
+    ("docker-compose push", False),
+    ("docker-compose rm", False),
+    ("docker-compose create", False),
+    #
+    # Podman
+    #
+    # podman - safe (inspection)
+    ("podman ps", True),
+    ("podman ps -a", True),
+    ("podman images", True),
+    ("podman image ls", True),
+    ("podman inspect mycontainer", True),
+    ("podman logs mycontainer", True),
+    ("podman top mycontainer", True),
+    ("podman stats", True),
+    ("podman version", True),
+    ("podman info", True),
+    ("podman system info", True),
+    ("podman system df", True),
+    ("podman network ls", True),
+    ("podman volume ls", True),
+    ("podman search nginx", True),
+    ("podman export mycontainer", True),
+    ("podman save myimage", True),
+    # podman - unsafe (lifecycle)
+    ("podman run ubuntu", False),
+    ("podman run -it ubuntu bash", False),
+    ("podman start mycontainer", False),
+    ("podman stop mycontainer", False),
+    ("podman kill mycontainer", False),
+    ("podman restart mycontainer", False),
+    ("podman exec mycontainer ls", False),
+    ("podman rm mycontainer", False),
+    ("podman rmi myimage", False),
+    ("podman build -t myimage .", False),
+    ("podman pull nginx", False),
+    ("podman push myrepo/myimage", False),
+    ("podman cp mycontainer:/path /local", False),
+    ("podman create ubuntu", False),
+    ("podman commit mycontainer myimage", False),
+    ("podman tag myimage myrepo:tag", False),
+    ("podman system prune", False),
+    ("podman image prune", False),
+    ("podman container prune", False),
+    #
+    # podman-compose
+    #
+    ("podman-compose ps", True),
+    ("podman-compose logs", True),
+    ("podman-compose config", True),
+    ("podman-compose up", False),
+    ("podman-compose down", False),
+    ("podman-compose exec web bash", False),
 ]
 
 

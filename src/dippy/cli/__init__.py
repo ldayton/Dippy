@@ -36,6 +36,7 @@ KNOWN_HANDLERS = {
     "docker": "docker",
     "docker-compose": "docker",
     "podman": "docker",  # Similar interface
+    "podman-compose": "docker",
     "az": "azure",
     "brew": "brew",
     "npm": "npm",

@@ -91,8 +91,9 @@ def is_version_or_help(tokens: list[str]) -> bool:
     if len(tokens) < 2:
         return False
 
-    # "cmd help" or "cmd version" as subcommand
-    if tokens[1] in ("help", "version"):
+    # "cmd help" or "cmd version" as subcommand (with no additional args)
+    # "npm version" shows versions, but "npm version minor" modifies
+    if len(tokens) == 2 and tokens[1] in ("help", "version"):
         return True
 
     # "cmd --help" or "cmd --version" or "cmd -h" as the ONLY argument
