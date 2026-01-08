@@ -5,6 +5,7 @@ Ruff is a Python linter/formatter. Most commands are safe,
 but "ruff clean" modifies files by removing cached data.
 """
 
+COMMANDS = ["ruff"]
 
 UNSAFE_ACTIONS = frozenset({
     "clean",  # Removes cache files

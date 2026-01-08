@@ -6,6 +6,20 @@ ansible-inventory, ansible-doc, ansible-pull, ansible-config,
 ansible-console, ansible-lint, and ansible-test commands.
 """
 
+COMMANDS = [
+    "ansible",
+    "ansible-playbook",
+    "ansible-vault",
+    "ansible-galaxy",
+    "ansible-inventory",
+    "ansible-doc",
+    "ansible-pull",
+    "ansible-config",
+    "ansible-console",
+    "ansible-lint",
+    "ansible-test",
+]
+
 # Commands that are entirely safe (read-only)
 SAFE_COMMANDS = frozenset(
     {

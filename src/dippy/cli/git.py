@@ -4,6 +4,7 @@ Git command handler for Dippy.
 Approves read-only git operations, blocks mutations.
 """
 
+COMMANDS = ["git"]
 
 # Actions that only read data (no subcommands to check)
 SAFE_ACTIONS = frozenset({

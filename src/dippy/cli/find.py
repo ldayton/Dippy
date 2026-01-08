@@ -7,6 +7,7 @@ Find is mostly safe for searching, but has dangerous flags:
 - -delete: Delete found files
 """
 
+COMMANDS = ["find"]
 
 UNSAFE_FLAGS = frozenset({
     "-exec", "-execdir",

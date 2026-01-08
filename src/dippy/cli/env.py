@@ -5,6 +5,7 @@ Env is used to set environment variables and run commands.
 We need to extract and check the inner command.
 """
 
+COMMANDS = ["env"]
 
 # Env flags that take an argument
 FLAGS_WITH_ARG = frozenset({

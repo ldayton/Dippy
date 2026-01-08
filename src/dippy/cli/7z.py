@@ -5,6 +5,7 @@ Handles unzip, 7z, 7za, 7zr, 7zz commands.
 Read-only operations (list, test, info) are safe, extraction/modification is not.
 """
 
+COMMANDS = ["unzip", "7z", "7za", "7zr", "7zz"]
 
 # Unzip flags that are safe (read-only operations)
 UNZIP_SAFE_FLAGS = frozenset({

@@ -7,6 +7,8 @@ and the program can contain output redirects.
 
 import re
 
+COMMANDS = ["awk", "gawk", "mawk", "nawk"]
+
 
 # Patterns that indicate file output or command execution
 # These match awk's print/printf redirection syntax: print > "file" or print | "cmd"

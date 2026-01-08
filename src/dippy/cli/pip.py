@@ -4,6 +4,7 @@ Python package manager CLI handler for Dippy.
 Handles pip, pip3, and uv commands.
 """
 
+COMMANDS = ["pip", "pip3"]
 
 SAFE_ACTIONS = frozenset({
     "list", "freeze", "show",

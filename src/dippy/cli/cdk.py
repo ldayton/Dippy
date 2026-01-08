@@ -5,6 +5,7 @@ CDK commands for infrastructure as code.
 Most commands modify infrastructure, only a few are safe.
 """
 
+COMMANDS = ["cdk"]
 
 # Safe CDK commands (read-only)
 SAFE_ACTIONS = frozenset({

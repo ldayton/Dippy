@@ -5,6 +5,8 @@ Wget downloads files by default, so most operations are unsafe.
 Only --spider mode (check availability without downloading) is safe.
 """
 
+COMMANDS = ["wget"]
+
 
 def check(tokens: list[str]) -> bool:
     """Check if wget command is safe (spider mode only)."""

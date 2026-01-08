@@ -4,6 +4,7 @@ Terraform command handler for Dippy.
 Handles terraform and tofu (OpenTofu) commands.
 """
 
+COMMANDS = ["terraform", "tf"]
 
 # Safe read-only actions
 SAFE_ACTIONS = frozenset({

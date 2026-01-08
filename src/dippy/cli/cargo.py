@@ -2,6 +2,7 @@
 Cargo (Rust) CLI handler for Dippy.
 """
 
+COMMANDS = ["cargo"]
 
 SAFE_ACTIONS = frozenset({
     "help", "-h", "--help",

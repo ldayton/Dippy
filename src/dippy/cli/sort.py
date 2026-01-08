@@ -4,6 +4,8 @@ Sort command handler for Dippy.
 Sort is safe for text processing, but -o flag writes to a file.
 """
 
+COMMANDS = ["sort"]
+
 
 def check(tokens: list[str]) -> bool:
     """Check if sort command is safe (no output to file)."""

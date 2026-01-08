@@ -5,6 +5,7 @@ OpenSSL has various commands, some are read-only (viewing certs)
 and some modify files or do crypto operations.
 """
 
+COMMANDS = ["openssl"]
 
 SAFE_COMMANDS = frozenset({
     "version",

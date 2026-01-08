@@ -4,6 +4,7 @@ Azure CLI handler for Dippy.
 Handles az commands.
 """
 
+COMMANDS = ["az"]
 
 # Safe action keywords - if command contains these as action verbs, it's read-only
 SAFE_ACTION_KEYWORDS = frozenset({

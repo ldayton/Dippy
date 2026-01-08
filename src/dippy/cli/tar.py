@@ -5,6 +5,8 @@ Tar can list, create, or extract archives.
 Only listing (-t/--list) is safe.
 """
 
+COMMANDS = ["tar"]
+
 
 def check(tokens: list[str]) -> bool:
     """Check if tar command is safe (list mode only)."""

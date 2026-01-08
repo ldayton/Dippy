@@ -4,6 +4,7 @@ AWS CLI handler for Dippy.
 Handles aws, aws-vault, and similar AWS tools.
 """
 
+COMMANDS = ["aws"]
 
 # Safe action prefixes that appear in AWS CLI commands
 SAFE_ACTION_PREFIXES = frozenset({

@@ -4,6 +4,7 @@ Auth0 CLI command handler for Dippy.
 Auth0 commands for identity management.
 """
 
+COMMANDS = ["auth0"]
 
 # Safe Auth0 actions (read-only)
 SAFE_ACTION_KEYWORDS = frozenset({

@@ -4,6 +4,8 @@ Ifconfig command handler for Dippy.
 Ifconfig is safe for viewing, but modification commands need confirmation.
 """
 
+COMMANDS = ["ifconfig"]
+
 
 def check(tokens: list[str]) -> bool:
     """Check if ifconfig command is safe (viewing only)."""

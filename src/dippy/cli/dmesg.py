@@ -4,6 +4,7 @@ Dmesg command handler for Dippy.
 Dmesg is safe for viewing kernel messages, but -c/--clear clears the ring buffer.
 """
 
+COMMANDS = ["dmesg"]
 
 UNSAFE_FLAGS = frozenset({
     "-c", "--clear",

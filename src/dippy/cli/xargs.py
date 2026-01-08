@@ -5,6 +5,7 @@ Xargs executes commands with arguments from stdin.
 We approve xargs if the inner command it runs is safe.
 """
 
+COMMANDS = ["xargs"]
 
 # Flags that take an argument (skip these when finding the inner command)
 FLAGS_WITH_ARG = frozenset({

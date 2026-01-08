@@ -2,12 +2,13 @@
 CLI-specific command handlers for Dippy.
 
 Each handler module exports:
-- check(tokens: list[str]) -> bool
-    Returns True to approve, False to ask user.
+- COMMANDS: list[str] - command names this handler supports
+- check(tokens: list[str]) -> bool - returns True to approve, False to ask user
 """
 
 import importlib
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional, Protocol
 
 
@@ -40,88 +41,37 @@ def get_description(tokens: list[str], handler_name: str = None) -> str:
     return " ".join(tokens[:depth])
 
 
-# Known CLI handlers - maps command name to module name
-KNOWN_HANDLERS = {
-    "git": "git",
-    "aws": "aws",
-    "kubectl": "kubectl",
-    "k": "kubectl",  # Common alias
-    "gcloud": "gcloud",
-    "gsutil": "gcloud",
-    "terraform": "terraform",
-    "tf": "terraform",
-    "docker": "docker",
-    "docker-compose": "docker",
-    "podman": "docker",  # Similar interface
-    "podman-compose": "docker",
-    "az": "azure",
-    "brew": "brew",
-    "npm": "npm",
-    "yarn": "npm",
-    "pnpm": "npm",
-    "pip": "pip",
-    "pip3": "pip",
-    "cargo": "cargo",
-    "gh": "gh",
-    "curl": "curl",
-    "xargs": "xargs",
-    "find": "find",
-    "sed": "sed",
-    "sort": "sort",
-    "wget": "wget",
-    "tar": "tar",
-    "unzip": "7z",
-    "7z": "7z",
-    "7za": "7z",
-    "7zr": "7z",
-    "7zz": "7z",
-    "cdk": "cdk",
-    "auth0": "auth0",
-    "bash": "shell",
-    "sh": "shell",
-    "zsh": "shell",
-    "dash": "shell",
-    "ksh": "shell",
-    "fish": "shell",
-    "awk": "awk",
-    "gawk": "awk",
-    "mawk": "awk",
-    "nawk": "awk",
-    "ip": "ip",
-    "ifconfig": "ifconfig",
-    "uv": "uv",
-    "uvx": "uv",
-    "openssl": "openssl",
-    "env": "env",
-    "journalctl": "journalctl",
-    "dmesg": "dmesg",
-    "ruff": "ruff",
-    "helm": "helm",
-    "ansible": "ansible",
-    "ansible-playbook": "ansible",
-    "ansible-vault": "ansible",
-    "ansible-galaxy": "ansible",
-    "ansible-inventory": "ansible",
-    "ansible-doc": "ansible",
-    "ansible-pull": "ansible",
-    "ansible-config": "ansible",
-    "ansible-console": "ansible",
-    "ansible-lint": "ansible",
-    "ansible-test": "ansible",
-}
+def _discover_handlers() -> dict[str, str]:
+    """Discover handler modules and build command -> module mapping."""
+    handlers = {}
+    cli_dir = Path(__file__).parent
+    for file in cli_dir.glob("*.py"):
+        if file.name.startswith("_"):
+            continue
+        module_name = file.stem
+        try:
+            module = importlib.import_module(f".{module_name}", package="dippy.cli")
+            for cmd in getattr(module, "COMMANDS", []):
+                handlers[cmd] = module_name
+        except ImportError:
+            continue
+    return handlers
+
+
+# Build handler mapping at import time
+KNOWN_HANDLERS = _discover_handlers()
 
 
 def get_handler(command_name: str) -> Optional[CLIHandler]:
     """
     Get the handler module for a CLI command.
-    
+
     Returns None if no handler exists for the command.
     """
-    # Check if we have a handler for this command
     module_name = KNOWN_HANDLERS.get(command_name)
     if not module_name:
         return None
-    
+
     return _load_handler(module_name)
 
 

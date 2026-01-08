@@ -4,6 +4,7 @@ Docker command handler for Dippy.
 Handles docker, docker-compose, and podman commands.
 """
 
+COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]
 
 # Safe read-only actions (at the top level)
 SAFE_ACTIONS = frozenset({

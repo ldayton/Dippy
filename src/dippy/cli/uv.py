@@ -5,6 +5,7 @@ UV is a Python package manager with various commands.
 Some commands need special handling for inner command checking.
 """
 
+COMMANDS = ["uv", "uvx"]
 
 # Safe uv commands
 SAFE_COMMANDS = frozenset({

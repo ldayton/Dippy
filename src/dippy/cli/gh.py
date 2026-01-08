@@ -4,6 +4,7 @@ GitHub CLI (gh) command handler for Dippy.
 Approves read-only gh operations, blocks mutations.
 """
 
+COMMANDS = ["gh"]
 
 # Actions that only read data (second token after gh)
 SAFE_ACTIONS = frozenset({
