@@ -1,273 +1,250 @@
-# Adding or Revising CLI Command Support
+# Adding CLI Command Support
 
-This document describes the process for adding support for a new CLI tool or revising an existing one in Dippy.
+This document describes how to add support for a new CLI tool in Dippy.
 
 ## Before You Start
 
-1. **Read the tldr page** for the command at `~/source/tldr/pages/common/<command>.md`
-   - Understand common usage patterns and subcommands
+1. **Read the tldr pages** for the command:
+   - `~/source/tldr/pages/common/<command>.md` - cross-platform commands
+   - `~/source/tldr/pages/linux/<command>.md` - Linux-specific
+   - `~/source/tldr/pages/osx/<command>.md` - macOS-specific
+   - `~/source/tldr/pages/*/<command>-<subcommand>.md` - subcommand pages (e.g., `git-status.md`)
    - Note which operations are read-only vs mutations
-2. **Read the man page** (`man <command>`) or help output (`<command> --help`)
+2. **Read the man pages** and help output:
+   - `man <command>` for the main page
+   - `man <command>-<subcommand>` for subcommand pages (e.g., `man git-status`)
+   - `<command> --help` and `<command> <subcommand> --help`
    - Identify ALL flags, especially those that take arguments
    - Look for platform-specific flags (BSD vs GNU)
-3. **Understand the safety model**: Dippy auto-approves commands that won't cause harm or unintended consequences. A command creating a cache directory is fine; a command deleting user files is not. The question is: "Could this change something the user would care about?"
+3. **Understand the safety model**: Dippy auto-approves commands that won't cause harm. The question is: "Could this change something the user would care about?"
 
 ## Process
 
-### 0. Create a Feature Branch
-
-Before making any changes, create a feature branch:
+### 1. Create a Feature Branch
 
 ```bash
 git checkout -b add-<command>-support
 ```
 
-### 1. Write Aspirational Tests First
+### 2. Write Tests First
 
-**Important**: Tests describe *desired* behavior, not current behavior. Write tests for how the command *should* work, then implement to make them pass. Do not modify tests to match current (possibly wrong) behavior.
-
-For comprehensively covered commands, create a dedicated test file `tests/test_<command>.py`. For smaller additions, add to `tests/test_dippy.py` under a section header:
+Create `tests/cli/test_<command>.py`:
 
 ```python
-#
-# ==========================================================================
-# <Command Name>
-# ==========================================================================
-#
-# <Brief description of what makes commands safe/unsafe>
-("command safe-subcommand", True),
-("command unsafe-subcommand", False),
+"""Test cases for <command>."""
+
+import pytest
+from conftest import is_approved, needs_confirmation
+
+TESTS = [
+    # Safe operations
+    ("command read-subcommand", True),
+    ("command --help", True),
+    # Unsafe operations
+    ("command write-subcommand", False),
+    ("command --delete", False),
+]
+
+@pytest.fixture
+def check():
+    from dippy.dippy import check_command
+    return check_command
+
+@pytest.mark.parametrize("command,expected", TESTS)
+def test_command(check, command: str, expected: bool):
+    result = check(command)
+    if expected:
+        assert is_approved(result), f"Expected approve: {command}"
+    else:
+        assert needs_confirmation(result), f"Expected confirmation: {command}"
 ```
 
 Categories to cover:
 - **Safe operations**: Listing, describing, querying, local inspection
-- **Unsafe operations**: Creating, deleting, or modifying user data; external mutations (push, deploy, send)
+- **Unsafe operations**: Creating, deleting, modifying data; external mutations
 - **Flag variations**: Short flags (`-v`), long flags (`--verbose`), combined flags (`-rf`)
-- **Global flags**: Flags that appear before the subcommand
 - **Edge cases**: No arguments, help flags, version flags
 
-### 2. Run Tests to See Failures
+### 3. Run Tests to See Failures
 
 ```bash
-uv run pytest tests/test_dippy.py -v -k "<command>" 2>&1 | tail -50
+uv run pytest tests/cli/test_<command>.py -v
 ```
 
-### 3. Update the Implementation
+### 4. Create the Handler
 
-Edit `src/dippy/dippy.py`. Depending on the command structure:
-
-#### Simple Commands (no subcommands)
-Add to `SAFE_COMMANDS` if always safe, or add specific unsafe flags to check.
-
-#### CLI Tools with Service/Action Pattern (aws, gcloud, az, kubectl)
-Update or add to `CLI_CONFIGS`:
+Create `src/dippy/cli/<command>.py`:
 
 ```python
-"<command>": {
-    "service_depth": <int>,           # Depth to find the service name
-    "subservice_depths": {            # Variable depth for specific services
-        ("service",): <int>,
-        ("service", "subservice"): <int>,
-    },
-    "safe_actions": {                 # Actions that are always safe
-        "list", "describe", "get", "show",
-    },
-    "unsafe_prefixes": {              # Action prefixes that are always unsafe
-        "create", "delete", "update", "set",
-    },
-    "flags_with_arg": {               # Flags that consume the next token
-        "-o", "--output", "-n", "--namespace",
-    },
+"""
+<Command> handler for Dippy.
+
+<Brief description of what makes commands safe/unsafe>
+"""
+
+from typing import Optional
+
+# Actions that only read data
+SAFE_ACTIONS = frozenset({
+    "list", "show", "get", "describe",
+})
+
+# Actions that modify state
+UNSAFE_ACTIONS = frozenset({
+    "create", "delete", "update", "apply",
+})
+
+def check(command: str, tokens: list[str]) -> Optional[str]:
+    """
+    Check if a <command> command should be approved or denied.
+
+    Returns:
+        "approve" - Safe read-only operation
+        "deny" - Dangerous operation (rarely used)
+        None - Needs user confirmation
+    """
+    if len(tokens) < 2:
+        return None
+
+    action = tokens[1]
+
+    if action in SAFE_ACTIONS:
+        return "approve"
+
+    if action in UNSAFE_ACTIONS:
+        return None  # Needs confirmation
+
+    return None  # Unknown - ask user
+```
+
+### 5. Register the Handler
+
+Add to `KNOWN_HANDLERS` in `src/dippy/cli/__init__.py`:
+
+```python
+KNOWN_HANDLERS = {
+    # ...existing handlers...
+    "<command>": "<command>",
+    "<alias>": "<command>",  # If the command has common aliases
 }
 ```
 
-#### Commands Requiring Compound Checks
-For commands where safety depends on subcommand + flags combination:
-
-```python
-def check_<command>_<subcommand>(tokens: list[str]) -> bool:
-    """Approve <command> <subcommand> only for safe operations."""
-    # Parse flags and arguments
-    # Return True only if the specific combination is safe
-    return False
-
-# Add to COMPOUND_CHECKS dict:
-COMPOUND_CHECKS = {
-    "<command>": {
-        "<subcommand>": check_<command>_<subcommand>,
-    },
-}
-```
-
-#### Commands with Inner Commands (xargs, shell -c, env)
-These need special handling to extract and evaluate the inner command:
-
-```python
-def check_<wrapper>(tokens: list[str]) -> bool:
-    """Approve <wrapper> if the inner command is safe."""
-    # Skip wrapper-specific flags
-    # Extract inner command tokens
-    # Return is_command_safe(inner_tokens)
-```
-
-### 4. Run Tests Until All Pass
+### 6. Run Tests Until All Pass
 
 ```bash
-uv run pytest tests/test_dippy.py -v 2>&1 | tail -20
+uv run pytest tests/cli/test_<command>.py -v
 ```
 
-### 5. Run Linter
+### 7. Run Linter
 
 ```bash
 uv run ruff check src/ tests/
 ```
 
-### 6. Create a Pull Request
-
-Commit your changes and push the feature branch:
+### 8. Create a Pull Request
 
 ```bash
 git add -A
-git commit -m "Expand <Command> support with comprehensive coverage"
+git commit -m "Add <command> CLI support"
 git push -u origin add-<command>-support
-```
-
-Create a PR with a clear title and description:
-
-```bash
-gh pr create --title "Expand <Command> support with comprehensive coverage" --body "$(cat <<'EOF'
+gh pr create --title "Add <command> CLI support" --body "$(cat <<'EOF'
 ## Summary
-- Add <N>+ tests covering <command> CLI commands
-- Add safe actions: <list of safe actions>
-- Add compound checks for <subcommands with special handling>
+- Add handler for <command> CLI
+- Add tests covering safe/unsafe operations
 
 ## Test plan
 - [ ] All new tests pass
 - [ ] Linter passes
-- [ ] Existing tests still pass
 EOF
 )"
 ```
 
-### 7. Merge the PR
-
-After review, merge the PR:
+### 9. Merge the PR
 
 ```bash
 gh pr merge --squash --delete-branch
 ```
 
-## Test Organization
+## Handler Patterns
 
-**Comprehensive coverage requires a dedicated test file.** When adding comprehensive support for a CLI tool:
+### Simple Action-Based
 
-1. Create `tests/test_<command>.py` with the standard structure:
-   ```python
-   """Test cases for <Command> CLI (<command>)."""
+For CLIs with flat subcommand structure (e.g., `git`, `docker`):
 
-   import pytest
-
-   from dippy.dippy import (
-       is_command_safe,
-       parse_commands,
-       _load_custom_configs,
-   )
-
-   _load_custom_configs()
-
-   TESTS = [
-       # Test cases here
-       ("command subcommand", True),
-       ("command unsafe-subcommand", False),
-   ]
-
-   @pytest.mark.parametrize("command,expected", TESTS)
-   def test_<command>_command(command: str, expected: bool):
-       """Test <command> command safety classification."""
-       result = parse_commands(command)
-       assert result.commands is not None, f"Failed to parse: {command}"
-       assert len(result.commands) == 1
-       actual = is_command_safe(result.commands[0])
-       assert actual == expected, f"Command '{command}': expected {expected}, got {actual}"
-   ```
-
-2. **Move any existing tests** from `test_dippy.py` to the new dedicated file to avoid duplication.
-
-3. Organize tests within the file by:
-   - Safe operations (True cases)
-   - Unsafe operations (False cases)
-   - Edge cases (no args, help, version)
-   - Flag combinations
-
-For smaller additions that don't warrant a dedicated file, add to `tests/test_dippy.py` under a section header:
 ```python
-#
-# ==========================================================================
-# <Tool Name>
-# ==========================================================================
-#
+SAFE_ACTIONS = frozenset({"status", "list", "show"})
+UNSAFE_ACTIONS = frozenset({"delete", "create", "update"})
+
+def check(command: str, tokens: list[str]) -> Optional[str]:
+    action = tokens[1] if len(tokens) > 1 else None
+    if action in SAFE_ACTIONS:
+        return "approve"
+    return None
 ```
 
-Avoid duplicate tests. When reorganizing, remove duplicates rather than keeping them.
+### Nested Subcommands
+
+For CLIs with nested structure (e.g., `aws s3 ls`, `kubectl get pods`):
+
+```python
+def check(command: str, tokens: list[str]) -> Optional[str]:
+    if len(tokens) < 3:
+        return None
+
+    service = tokens[1]
+    action = tokens[2]
+
+    if action in {"list", "describe", "get"}:
+        return "approve"
+    return None
+```
+
+### Flag-Dependent Safety
+
+When flags determine safety (e.g., `git apply --check`):
+
+```python
+def check(command: str, tokens: list[str]) -> Optional[str]:
+    if "--check" in tokens or "--dry-run" in tokens:
+        return "approve"
+    return None
+```
+
+### Commands That Wrap Other Commands
+
+For wrappers like `xargs`, `env`, `time`:
+
+```python
+def check(command: str, tokens: list[str]) -> Optional[str]:
+    # Skip wrapper flags to find inner command
+    inner_tokens = extract_inner_command(tokens)
+    if not inner_tokens:
+        return None
+
+    # Check the inner command
+    from dippy.dippy import _check_single_command
+    return _check_single_command(inner_tokens)
+```
 
 ## Safety Principles
 
 The core question: **"Could this change something the user would care about?"**
 
-1. **When in doubt, reject**: Better to require manual approval than auto-approve something harmful
-2. **Harmless side effects are OK**: Creating cache dirs, writing logs, updating timestamps - these don't matter
-3. **User data/state changes are not OK**: Deleting files, modifying configs, pushing to remote, deploying code
-4. **External effects are not OK**: Sending emails, making API calls that mutate state, network requests with side effects
-5. **Interactive commands are unsafe**: Commands requiring user input (`-i`, `-p`, `--interactive`) - we can't provide that input
-6. **Arbitrary code execution is unsafe**: `source`, `.`, `eval` - we can't know what they'll do
-7. **Consider flag combinations**: Some commands are safe by default but unsafe with certain flags
+1. **When in doubt, require confirmation**: Better to ask than auto-approve something harmful
+2. **Harmless side effects are OK**: Creating cache dirs, writing logs, updating timestamps
+3. **User data/state changes are not OK**: Deleting files, modifying configs, pushing to remote
+4. **External effects are not OK**: Sending emails, mutating APIs, deploying code
+5. **Interactive commands need confirmation**: `-i`, `-p`, `--interactive` require user input
+6. **Consider flag combinations**: Some commands are safe by default but unsafe with certain flags
 
-## Common Patterns
-
-### Flags That Make Safe Commands Unsafe
+### Flags That Make Commands Unsafe
 - `--force`, `-f`: Bypasses safety checks
 - `--delete`, `-d`: Enables deletion
 - `--write`, `-w`: Enables writing
 - `--execute`, `-e`: Enables execution
-- `--interactive`, `-i`: Requires user input
 
 ### Flags That Are Always Safe
-- `--help`, `-h`, `-help`: Show help
-- `--version`, `-v`, `-V`: Show version
+- `--help`, `-h`: Show help
+- `--version`, `-v`: Show version
 - `--dry-run`, `-n`: Preview without executing
 - `--list`, `-l`: List mode
-- `--verbose`: More output (doesn't change behavior)
-
-### Commands That Wrap Other Commands
-These need to extract and evaluate the inner command:
-- `xargs <command>`: Evaluate `<command>`
-- `bash -c '<command>'`: Parse and evaluate the shell command
-- `env [VAR=val...] <command>`: Evaluate `<command>`
-- `time <command>`: Evaluate `<command>`
-- `nice <command>`: Evaluate `<command>`
-
-### Commands That Are Never Safe
-Some commands execute arbitrary code and cannot be safely auto-approved:
-- `source`, `.`: Execute file contents in current shell
-- `eval`: Execute arbitrary shell code
-- `exec`: Replace current shell with command
-
-## Examples from History
-
-### xargs
-- Read the tldr and man page to find ALL flags
-- Flags with arguments: `-I`, `-J`, `-L`, `-n`, `-P`, `-R`, `-S`, `-a`, `-d`, `-E`, `-e`, `-s`
-- Unsafe flags (interactive): `-p`, `-o` (require user input)
-- BSD-specific flags: `-J`, `-R`, `-S`
-- Safety depends on the inner command being safe
-
-### git
-- Most operations are unsafe (add, commit, push, pull, checkout, reset, etc.)
-- Safe operations: status, log, diff, show, blame, branch --list, tag --list, remote -v
-- Compound checks needed for: branch, config, notes, remote, stash, tag, worktree
-
-### Cloud CLIs (aws, gcloud, az, kubectl)
-- Use `CLI_CONFIGS` with service/action pattern
-- Variable depth for nested services (e.g., `az storage account keys`)
-- Safe actions typically: list, describe, get, show
-- Unsafe prefixes typically: create, delete, update, set, apply, run

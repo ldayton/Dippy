@@ -1,21 +1,26 @@
-# 🐤 Dippy
+<p align="center">
+  <img src="images/dippy.gif" width="200">
+</p>
 
-*Because `ls` shouldn't need approval*
+<h1 align="center">🐤 Dippy</h1>
+<p align="center"><em>Because <code>ls</code> shouldn't need approval</em></p>
 
 ---
 
-> **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` — destroying your flow state. You check Slack, come back, and Claude's just sitting there waiting.
+> **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` - destroying your flow state. You check Slack, come back, and Claude's just sitting there waiting.
 
 Dippy is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) that auto-approves safe commands while still prompting for anything destructive. Get up to **40% faster development** without `--dangerously-skip-permissions`.
 
-## ✅ What Gets Approved
+![Screenshot](images/screenshot.png)
+
+## ✅ What gets approved
 
 - **Read-only commands**: `ls`, `cat`, `head`, `tail`, `grep`, `find`, `wc`, `stat`
 - **Git reads**: `git status`, `git log`, `git diff`, `git branch`
 - **Cloud CLI reads**: `aws s3 ls`, `kubectl get`, `gcloud describe`, `az show`
 - **Safe tools**: `jq`, `curl` (GET only), `docker ps`, `brew list`
 
-## 🚫 What Gets Blocked
+## 🚫 What gets blocked
 
 - **Destructive ops**: `rm`, `mv`, `chmod`, file writes
 - **Git mutations**: `git push`, `git commit`, `git reset`
@@ -24,19 +29,7 @@ Dippy is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hook
 
 ---
 
-## Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/ldayton/Dippy.git
-cd Dippy
-
-# Install with uv (recommended)
-uv pip install -e .
-
-# Or with pip
-pip install -e .
-```
+## Add to Claude
 
 Add to `~/.claude/settings.json`:
 
@@ -49,7 +42,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python -m dippy"
+            "command": "uv run --directory /path/to/Dippy python -m dippy"
           }
         ]
       }
@@ -64,61 +57,9 @@ All decisions are logged to `~/.claude/hook-approvals.log`.
 
 ---
 
-## Project Structure
-
-```
-src/dippy/
-├── dippy.py          # Main router + entry point
-├── cli/              # CLI-specific handlers
-│   ├── __init__.py   # Dynamic loader
-│   ├── git.py
-│   ├── aws.py
-│   ├── kubectl.py
-│   ├── gcloud.py
-│   ├── terraform.py
-│   ├── docker.py
-│   └── ...
-└── core/
-    ├── parser.py     # bashlex helpers
-    └── patterns.py   # Safe commands, patterns, config
-
-tests/
-├── conftest.py       # Shared fixtures
-├── test_router.py    # Integration tests
-├── test_simple.py    # Simple command tests
-├── test_parser.py    # Parser tests
-├── cli/              # CLI handler tests
-│   ├── test_git.py
-│   ├── test_aws.py
-│   ├── test_kubectl.py
-│   └── ...
-└── local/            # User's local tests (gitignored)
-```
-
----
-
 ## Contributing
 
-PRs welcome! To add support for a new CLI tool:
-
-1. Create `src/dippy/cli/mycli.py` with:
-   - `SAFE_ACTIONS`: set of safe action names
-   - `UNSAFE_ACTIONS`: set of unsafe action names  
-   - `check(command, tokens)`: returns `"approve"`, `"deny"`, or `None`
-
-2. Add to `KNOWN_HANDLERS` in `src/dippy/cli/__init__.py`
-
-3. Create `tests/cli/test_mycli.py` with test cases
-
-4. Run tests: `uv run pytest`
-
-### Workflow for Adding Patterns
-
-1. User reports "Hook PreToolUse:Bash requires confirmation" for a command
-2. Use `bin/bashlex-dump.py 'command'` to inspect parsing
-3. Add pattern to appropriate handler
-4. Add test case
-5. Run `uv run pytest`
+PRs welcome! See [prompts/adding-commands.md](prompts/adding-commands.md) for instructions on adding support for new CLI tools.
 
 ---
 
@@ -128,6 +69,36 @@ Remove the hook entry from `~/.claude/settings.json`.
 
 ---
 
-## License
+<details>
+<summary><strong>Claude Instructions</strong></summary>
 
-MIT
+Structure:
+```
+src/dippy/
+├── dippy.py          # Main router + entry point
+├── cli/              # CLI-specific handlers
+│   ├── git.py
+│   ├── aws.py
+│   ├── kubectl.py
+│   └── ...
+└── core/
+    ├── parser.py     # bashlex helpers
+    └── patterns.py   # Safe commands and patterns
+
+tests/
+├── test_dippy.py     # Integration tests
+├── test_simple.py    # Simple command tests
+└── cli/              # CLI handler tests
+    ├── test_git.py
+    ├── test_aws.py
+    └── ...
+```
+
+Workflow:
+1. User pastes "Hook PreToolUse:Bash requires confirmation" output
+2. Use `bin/bashlex-dump.py 'command'` to inspect parsing
+3. Add pattern to appropriate handler in `src/dippy/cli/`
+4. Add test case to `tests/cli/test_*.py`
+5. Run `uv run pytest`
+
+</details>
