@@ -96,6 +96,7 @@ KNOWN_HANDLERS = {
     "journalctl": "journalctl",
     "dmesg": "dmesg",
     "ruff": "ruff",
+    "helm": "helm",
 }
 
 
