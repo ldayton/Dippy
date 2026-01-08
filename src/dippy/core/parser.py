@@ -183,3 +183,44 @@ def split_pipeline(command: str) -> list[str]:
         return commands if commands else [command]
     except Exception:
         return [cmd.strip() for cmd in command.split("|") if cmd.strip()]
+
+
+def get_command_substitutions(command: str) -> list[tuple[str, bool, int]]:
+    """
+    Extract command substitutions from a command.
+
+    Returns list of (inner_command, is_pure, position) tuples where:
+    - inner_command: the command inside $()
+    - is_pure: True if word is entirely $(...), False if embedded like foo-$(...)
+    - position: argument position (0=command, 1=first arg, etc.)
+    """
+    try:
+        nodes = parse(command)
+        results = []
+        _extract_cmdsubs(nodes, results)
+        return results
+    except Exception:
+        return []
+
+
+def _extract_cmdsubs(nodes: list, results: list):
+    """Recursively extract command substitutions from AST."""
+    for node in nodes:
+        if node.kind == "command":
+            for i, word in enumerate(node.words):
+                if not word.parts:
+                    continue
+                for part in word.parts:
+                    if part.kind == "cmdsub":
+                        inner_cmd = _reconstruct_command(part.command)
+                        # Pure if word value starts with $( and ends with )
+                        is_pure = (
+                            word.value.startswith("$(") or word.value.startswith("`")
+                        )
+                        results.append((inner_cmd, is_pure, i))
+        elif node.kind == "pipeline":
+            _extract_cmdsubs(node.commands, results)
+        elif node.kind == "list":
+            for part in node.parts:
+                if part.kind != "operator":
+                    _extract_cmdsubs([part], results)

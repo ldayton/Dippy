@@ -1205,6 +1205,41 @@ TESTS = [
     ("zsh <<EOF\necho hi\nEOF", False),
     # Heredocs with redirects - blocked
     ("cat <<EOF > output.txt\nhello\nEOF", False),
+    # Command substitution - safe for SIMPLE_SAFE commands
+    ("ls $(pwd)", True),
+    ("echo $(whoami)", True),
+    ("cat $(ls *.txt)", True),
+    ("head -10 $(find . -name '*.py')", True),
+    # Command substitution - embedded in args is safe
+    ("git diff foo-$(date -u).txt", True),
+    ("aws s3 ls s3://$(echo bucket)/path", True),
+    ("docker logs app-$(date +%Y%m%d)", True),
+    # Command substitution - pure cmdsub in handler CLIs blocked (injection risk)
+    ("git $(echo status)", False),
+    ("git $(echo rm) foo.txt", False),
+    ("docker $(echo run) alpine", False),
+    ("kubectl $(echo delete) pod foo", False),
+    # Command substitution - unsafe inner command blocked
+    ("echo $(rm -rf /)", False),
+    ("ls $(docker run alpine)", False),
+    ("cat $(git push origin main)", False),
+    # Command substitution - nested cmdsubs must check inner
+    ("echo $(cat $(rm -rf /))", False),
+    ("ls $(head $(git push))", False),
+    ("cat $(echo $(docker run alpine))", False),
+    # Command substitution - position 0 (command itself is cmdsub)
+    ("$(echo ls)", False),
+    ("$(echo rm) file.txt", False),
+    # Command substitution - backtick syntax
+    ("echo `whoami`", True),
+    ("echo `rm -rf /`", False),
+    ("ls `pwd`", True),
+    # Command substitution - multiple cmdsubs
+    ("echo $(whoami) $(date)", True),
+    ("ls $(pwd) $(echo /tmp)", True),
+    # Command substitution - cmdsub in flag value (embedded, safe)
+    ("git --git-dir=$(pwd)/.git status", True),
+    ("grep --include=$(echo '*.py') pattern .", True),
     # Mixed chains with redirects
     ("ls && cat foo > out.txt", False),
     ("cat < in.txt && ls", True),

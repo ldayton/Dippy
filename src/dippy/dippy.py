@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from dippy.core.parser import (
+    get_command_substitutions,
     has_command_list,
     has_output_redirect,
     is_piped,
@@ -179,6 +180,50 @@ def check_simple_command(cmd: str, tokens: list[str]) -> tuple[Optional[str], Op
     return (None, None)
 
 
+def _check_command_substitutions(command: str) -> Optional[dict]:
+    """
+    Check command substitutions in a command.
+
+    Returns None if all cmdsubs are safe, or a response dict if blocked.
+
+    Rules:
+    - Inner commands must be safe (recursively checked)
+    - Pure cmdsubs ($(cmd) as entire arg) in subcommand position are blocked
+      for CLIs with handlers (git, docker, etc.) to prevent injection
+    - Embedded cmdsubs (foo-$(cmd)) only need inner command to be safe
+    - SIMPLE_SAFE commands allow pure cmdsubs in any position
+    """
+    cmdsubs = get_command_substitutions(command)
+    if not cmdsubs:
+        return None
+
+    tokens = tokenize(command)
+    if not tokens:
+        return None
+
+    base = tokens[0]
+    has_handler = get_handler(base) is not None
+    is_simple_safe = base in SIMPLE_SAFE
+
+    for inner_cmd, is_pure, position in cmdsubs:
+        # Recursively check inner command's cmdsubs first
+        inner_cmdsub_result = _check_command_substitutions(inner_cmd)
+        if inner_cmdsub_result is not None:
+            return inner_cmdsub_result
+
+        # Check inner command itself is safe
+        inner_decision, inner_desc = _check_single_command(inner_cmd)
+        if inner_decision != "approve":
+            return ask(f"cmdsub: {inner_desc}")
+
+        # For pure cmdsubs in arg positions of handler-based CLIs, block
+        # (they could inject subcommands like git $(echo rm))
+        if is_pure and has_handler and not is_simple_safe and position >= 1:
+            return ask(f"cmdsub injection risk: {inner_cmd}")
+
+    return None
+
+
 def check_command(command: str) -> dict:
     """
     Main entry point: check if a command should be approved.
@@ -193,6 +238,11 @@ def check_command(command: str) -> dict:
     # Check for output redirects first (always unsafe)
     if has_output_redirect(command):
         return ask("output redirect")
+
+    # Check command substitutions - inner commands must be safe
+    cmdsub_result = _check_command_substitutions(command)
+    if cmdsub_result is not None:
+        return cmdsub_result
 
     # Handle command lists (&&, ||) - each command must be safe
     if has_command_list(command):

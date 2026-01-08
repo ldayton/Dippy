@@ -22,9 +22,11 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 - **Cloud inspection**: `aws ec2 describe-instances --filters "Name=tag:Environment,Values=prod"`
 - **Container debugging**: `docker logs --tail 100 api-server 2>&1 | grep ERROR`
 - **Safe redirects**: `grep -r "TODO" src/ 2>/dev/null`, `ls &>/dev/null`
+- **Command substitution**: `ls $(pwd)`, `git diff foo-$(date).txt`
 
 ## 🚫 What gets blocked
 
+- **Subshell injection**: `git $(echo rm) foo.txt`, `echo $(rm -rf /)`
 - **Subtle file writes**: `curl https://example.com > script.sh`, `tee output.log`
 - **Hidden mutations**: `git stash drop`, `npm unpublish`, `brew unlink`
 - **Cloud danger**: `aws s3 rm s3://bucket --recursive`, `kubectl delete pod`
