@@ -114,15 +114,23 @@ uv run pytest tests/test_dippy.py -v 2>&1 | tail -20
 uv run ruff check src/ tests/
 ```
 
-### 6. Commit
+### 6. Create a Pull Request
 
-Follow the commit message pattern:
-```
-Expand <Command> support with comprehensive command coverage
+Create a PR with a clear title and description:
 
+```bash
+gh pr create --title "Expand <Command> support with comprehensive coverage" --body "$(cat <<'EOF'
+## Summary
 - Add <N>+ tests covering <command> CLI commands
 - Add safe actions: <list of safe actions>
 - Add compound checks for <subcommands with special handling>
+
+## Test plan
+- [ ] All new tests pass
+- [ ] Linter passes
+- [ ] Existing tests still pass
+EOF
+)"
 ```
 
 ## Test Organization
