@@ -57,13 +57,6 @@ SIMPLE_SAFE = frozenset({
     "pre-commit",
 })
 
-# Commands that need version/help flags to be safe
-VERSION_SAFE = frozenset({
-    "python", "python3", "node", "npm", "yarn", "pnpm",
-    "ruby", "go", "cargo", "rustc", "java", "javac",
-    "gcc", "g++", "clang", "make", "cmake",
-})
-
 
 # === Unsafe Patterns ===
 # These patterns indicate destructive operations
@@ -71,7 +64,6 @@ VERSION_SAFE = frozenset({
 # which uses bashlex for proper parsing (handles quotes correctly)
 
 UNSAFE_PATTERNS = [
-    re.compile(r'\brm\s+-'),       # rm with flags
     re.compile(r'\brm\s+\S'),      # rm anything
     re.compile(r'\bmv\s+'),        # mv (move/rename)
     re.compile(r'\bcp\s+'),        # cp (copy, but can overwrite)
