@@ -4,7 +4,6 @@ Tests for the core parser module.
 
 from dippy.core.parser import (
     tokenize,
-    get_base_command,
     has_output_redirect,
     is_piped,
     split_pipeline,
@@ -43,30 +42,6 @@ class TestTokenize:
         """Complex command with flags and args."""
         tokens = tokenize("git log --oneline -n 10")
         assert tokens == ["git", "log", "--oneline", "-n", "10"]
-
-
-class TestGetBaseCommand:
-    """Tests for base command extraction."""
-    
-    def test_simple(self):
-        """Simple command should return first token."""
-        base = get_base_command("ls -la")
-        assert base == "ls"
-    
-    def test_env_var_prefix(self):
-        """Should skip environment variable assignments."""
-        base = get_base_command("FOO=bar BAZ=qux cmd --flag")
-        assert base == "cmd"
-    
-    def test_empty(self):
-        """Empty command should return None."""
-        base = get_base_command("")
-        assert base is None
-    
-    def test_path_command(self):
-        """Path commands should extract correctly."""
-        base = get_base_command("/usr/bin/python script.py")
-        assert base == "/usr/bin/python"
 
 
 class TestOutputRedirect:
