@@ -4,8 +4,6 @@ Terraform command handler for Dippy.
 Handles terraform and tofu (OpenTofu) commands.
 """
 
-from typing import Optional
-
 
 # Safe read-only actions
 SAFE_ACTIONS = frozenset({
@@ -55,21 +53,14 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a terraform command should be approved or denied.
-
-    Returns:
-        (decision, description) where decision is "approve" or None.
-    """
-    base = tokens[0]  # "terraform" or "tofu"
-
+def check(tokens: list[str]) -> bool:
+    """Check if terraform command is safe."""
     if len(tokens) < 2:
-        return (None, base)
+        return False
 
     # Check for -help flag anywhere (common pattern: terraform -help)
     if "-help" in tokens or "--help" in tokens or "-h" in tokens:
-        return ("approve", f"{base} help")
+        return True
 
     # Find action (skip global flags)
     action = None
@@ -79,7 +70,6 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         token = tokens[action_idx]
 
         if token.startswith("-"):
-            # Skip flag values for known flags
             if token in {"-chdir", "-var", "-var-file"}:
                 action_idx += 2
                 continue
@@ -90,9 +80,8 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         break
 
     if not action:
-        return (None, base)
+        return False
 
-    desc = f"{base} {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Check subcommands
@@ -100,28 +89,24 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         subcommand = _find_subcommand(rest)
         if subcommand:
             if subcommand in SAFE_SUBCOMMANDS[action]:
-                return ("approve", desc)
+                return True
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
-                return (None, desc)
+                return False
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand and subcommand in UNSAFE_SUBCOMMANDS[action]:
-            return (None, desc)
+            return False
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return ("approve", desc)
+        return True
 
-    # Unsafe actions need confirmation
-    if action in UNSAFE_ACTIONS:
-        return (None, desc)
-
-    # Unknown
-    return (None, desc)
+    # Unsafe actions or unknown
+    return False
 
 
-def _find_subcommand(rest: list[str]) -> Optional[str]:
+def _find_subcommand(rest: list[str]) -> str | None:
     """Find the first non-flag token (the subcommand)."""
     for token in rest:
         if not token.startswith("-"):

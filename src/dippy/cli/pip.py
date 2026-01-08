@@ -4,8 +4,6 @@ Python package manager CLI handler for Dippy.
 Handles pip, pip3, and uv commands.
 """
 
-from typing import Optional
-
 
 SAFE_ACTIONS = frozenset({
     "list", "freeze", "show",
@@ -43,48 +41,44 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """Check if a pip/uv command should be approved or denied."""
+def check(tokens: list[str]) -> bool:
+    """Check if pip command is safe."""
     if len(tokens) < 2:
-        return (None, "pip")
-    
+        return False
+
     base = tokens[0]
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
-    
+
     # Handle uv which wraps pip
     if base == "uv":
         if action == "pip":
-            # Treat rest as pip command
             if rest:
                 action = rest[0]
                 rest = rest[1:] if len(rest) > 1 else []
             else:
-                return (None, "pip")
+                return False
         elif action in {"run", "tool", "sync", "lock", "add", "remove"}:
-            return (None, "pip")  # uv-specific unsafe commands
+            return False  # uv-specific unsafe commands
         elif action in {"version", "--version", "-V", "help", "--help"}:
-            return ("approve", "pip")
-    
+            return True
+
     # Check subcommands
     if action in SAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return ("approve", "pip")
+                    return True
                 break
-    
+
     if action in UNSAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in UNSAFE_SUBCOMMANDS[action]:
-                    return (None, "pip")
+                    return False
                 break
-    
+
     if action in SAFE_ACTIONS:
-        return ("approve", "pip")
-    
-    if action in UNSAFE_ACTIONS:
-        return (None, "pip")
-    
-    return (None, "pip")
+        return True
+
+    return False

@@ -6,7 +6,6 @@ and the program can contain output redirects.
 """
 
 import re
-from typing import Optional
 
 
 # Patterns that indicate file output or command execution
@@ -32,22 +31,14 @@ OUTPUT_REDIRECT_PATTERN = re.compile(
 )
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if an awk command should be approved.
-
-    Rejects awk with -f (script file) or programs that write to files.
-
-    Returns:
-        "approve" - Read-only text processing
-        None - Uses script file or writes to file, needs confirmation
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if awk command is safe (no script files or output redirects)."""
     # Check for -f/--file flag (runs script file)
-    for i, t in enumerate(tokens[1:]):
+    for t in tokens[1:]:
         if t == "-f" or t.startswith("-f"):
-            return (None, "awk")
+            return False
         if t == "--file" or t.startswith("--file="):
-            return (None, "awk")
+            return False
 
     # Find the awk program string (first non-flag argument)
     program = None
@@ -72,15 +63,14 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         break
 
     if not program:
-        return ("approve", "awk")
+        return True
 
     # Check for system() calls
     if "system(" in program:
-        return (None, "awk")
+        return False
 
     # Check for output redirects using pattern matching
-    # This is more accurate than just checking for > character
     if OUTPUT_REDIRECT_PATTERN.search(program):
-        return (None, "awk")
+        return False
 
-    return ("approve", "awk")
+    return True

@@ -5,24 +5,15 @@ Handles bash, sh, zsh with -c flag (inline commands).
 We approve if the inner command is safe.
 """
 
-from typing import Optional
-
 
 # Shells we handle
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish"})
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a shell -c command should be approved.
-
-    Returns:
-        (decision, description) where decision is "approve" or None.
-    """
-    shell = tokens[0]
-
+def check(tokens: list[str]) -> bool:
+    """Check if shell -c command is safe."""
     if len(tokens) < 2:
-        return (None, shell)
+        return False
 
     # Find -c flag (standalone or combined like -lc, -cl, -xcl, etc.)
     c_idx = None
@@ -32,16 +23,14 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
             break
 
     if c_idx is None:
-        # No -c flag - not running inline command, needs review
-        return (None, shell)
+        return False  # No -c flag - not running inline command
 
     if c_idx + 1 >= len(tokens):
-        return (None, shell)  # No command after -c
+        return False  # No command after -c
 
     inner_cmd = tokens[c_idx + 1]
-
     if not inner_cmd:
-        return (None, shell)
+        return False
 
     # Import here to avoid circular dependency
     from dippy.dippy import check_command
@@ -49,12 +38,4 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     # Check the inner command - returns dict with hookSpecificOutput
     result = check_command(inner_cmd)
     output = result.get("hookSpecificOutput", {})
-    decision = output.get("permissionDecision")
-    inner_reason = output.get("permissionDecisionReason", "").removeprefix("🐤 ")
-
-    desc = f"{shell} -c {inner_reason}" if inner_reason else shell
-
-    if decision == "allow":
-        return ("approve", desc)
-
-    return (None, desc)
+    return output.get("permissionDecision") == "allow"

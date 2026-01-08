@@ -2,8 +2,6 @@
 Homebrew CLI handler for Dippy.
 """
 
-from typing import Optional
-
 
 # Actions that only read data
 SAFE_ACTIONS = frozenset({
@@ -74,60 +72,54 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """Check if a brew command should be approved or denied."""
+def check(tokens: list[str]) -> bool:
+    """Check if brew command is safe."""
     if len(tokens) < 2:
-        return (None, "brew")
+        return False
 
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
 
     # Check global flags that act like commands
     if action in SAFE_GLOBAL_FLAGS:
-        return ("approve", "brew")
+        return True
 
     # Check subcommands for multi-level commands
     if action in SAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand in SAFE_SUBCOMMANDS[action]:
-            return ("approve", "brew")
+            return True
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand in UNSAFE_SUBCOMMANDS[action]:
-            return (None, "brew")
-        # services without a recognized subcommand needs confirmation
+            return False
         if action == "services":
-            return (None, "brew")
+            return False
 
-    # services without subcommand needs confirmation
     if action == "services":
-        return (None, "brew")
+        return False
 
-    # bundle without recognized subcommand needs confirmation
     if action == "bundle":
-        return (None, "brew")
+        return False
 
     # analytics: 'state' is safe, 'on'/'off' modify settings
     if action == "analytics":
         if rest:
             subcommand = _find_subcommand(rest)
             if subcommand in {"on", "off"}:
-                return (None, "brew")  # Modifies settings
-        return ("approve", "brew")  # Just viewing state
+                return False
+        return True
 
     if action in SAFE_ACTIONS:
-        return ("approve", "brew")
+        return True
 
-    if action in UNSAFE_ACTIONS:
-        return (None, "brew")
-
-    return (None, "brew")
+    return False
 
 
-def _find_subcommand(rest: list[str]) -> tuple[Optional[str], str]:
+def _find_subcommand(rest: list[str]) -> str | None:
     """Find the first non-flag token (the subcommand)."""
     for token in rest:
         if not token.startswith("-"):
             return token
-    return (None, "brew")
+    return None

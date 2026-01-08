@@ -4,8 +4,6 @@ Curl command handler for Dippy.
 Approves GET/HEAD requests, blocks data-sending operations.
 """
 
-from typing import Optional
-
 
 # Flags that send data (always unsafe unless explicit GET)
 DATA_FLAGS = frozenset({
@@ -37,52 +35,44 @@ SAFE_FTP_COMMANDS = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a curl command should be approved.
-
-    Approves GET/HEAD requests without data-sending flags.
-
-    Returns:
-        "approve" - Safe read-only request
-        None - Needs user confirmation
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if curl command is safe (GET/HEAD without data flags)."""
     for i, t in enumerate(tokens):
         # Block always-unsafe flags
         if t in UNSAFE_FLAGS:
-            return (None, "curl")
+            return False
 
         # Block data/upload flags
         if t in DATA_FLAGS:
-            return (None, "curl")
+            return False
 
         # Check --flag=value variants
         for flag in DATA_FLAGS:
             if t.startswith(flag + "="):
-                return (None, "curl")
+                return False
 
         # Check -X/--request for non-safe methods
         if t in {"-X", "--request"}:
             if i + 1 < len(tokens):
                 method = tokens[i + 1].upper()
                 if method not in SAFE_METHODS:
-                    return (None, "curl")
+                    return False
 
         # Also catch --request=METHOD and -XMETHOD
         if t.startswith("--request="):
             method = t.split("=", 1)[1].upper()
             if method not in SAFE_METHODS:
-                return (None, "curl")
+                return False
         if t.startswith("-X") and len(t) > 2 and not t.startswith("-X="):
             method = t[2:].upper()
             if method not in SAFE_METHODS:
-                return (None, "curl")
+                return False
 
         # Check -Q/--quote for FTP commands
         if t in {"-Q", "--quote"}:
             if i + 1 < len(tokens):
                 ftp_cmd = tokens[i + 1].strip().strip("'\"").split()[0].upper()
                 if ftp_cmd not in SAFE_FTP_COMMANDS:
-                    return (None, "curl")
+                    return False
 
-    return ("approve", "curl")
+    return True

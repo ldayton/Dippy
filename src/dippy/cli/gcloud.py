@@ -4,8 +4,6 @@ Google Cloud CLI handler for Dippy.
 Handles gcloud, gsutil, and bq commands.
 """
 
-from typing import Optional
-
 
 # Safe action keywords - these are read-only operations
 SAFE_ACTION_KEYWORDS = frozenset({
@@ -52,12 +50,10 @@ PROJECTS_SAFE_COMMANDS = frozenset({"list", "describe", "get-ancestors", "get-ia
 PROJECTS_UNSAFE_COMMANDS = frozenset({"create", "delete", "undelete", "update"})
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a gcloud command should be approved or denied.
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if gcloud command is safe."""
     if len(tokens) < 2:
-        return (None, "gcloud")
+        return False
 
     base = tokens[0]
 
@@ -65,82 +61,71 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     if base == "gsutil":
         return _check_gsutil(tokens)
 
-    # Collect command parts (skip flags)
     parts = _extract_parts(tokens[1:])
-
     if not parts:
-        return (None, "gcloud")
+        return False
 
     # Help is always safe
     if "help" in parts or "--help" in tokens or "-h" in tokens:
-        return ("approve", "gcloud")
+        return True
 
     # gcloud version/info/topic are safe
     if parts[0] in {"version", "info", "topic"}:
-        return ("approve", "gcloud")
+        return True
 
     # Handle config group
     if parts[0] == "config":
         if len(parts) > 1:
-            # "config set" is unsafe
             if parts[1] == "set":
-                return (None, "gcloud")
-            # "config configurations create/activate/delete" is unsafe
+                return False
             if parts[1] == "configurations" and len(parts) > 2:
                 if parts[2] in {"create", "activate", "delete"}:
-                    return (None, "gcloud")
-                return ("approve", "gcloud")  # configurations list is safe
-            # config get/list is safe
+                    return False
+                return True
             if parts[1] in CONFIG_SAFE_COMMANDS:
-                return ("approve", "gcloud")
-        return ("approve", "gcloud")  # Just "gcloud config" shows help
+                return True
+        return True
 
     # Handle auth group - most commands modify state
     if parts[0] == "auth":
-        if len(parts) > 1 and parts[1] in AUTH_SAFE_COMMANDS:
-            return ("approve", "gcloud")
-        return (None, "gcloud")  # Most auth commands need confirmation
+        return len(parts) > 1 and parts[1] in AUTH_SAFE_COMMANDS
 
     # Handle projects group
     if parts[0] == "projects":
         if len(parts) > 1:
             action = parts[1]
             if action in PROJECTS_SAFE_COMMANDS:
-                return ("approve", "gcloud")
+                return True
             if action in PROJECTS_UNSAFE_COMMANDS:
-                return (None, "gcloud")
-            # Check for IAM policy binding commands
+                return False
             if "iam-policy-binding" in action or "iam-policy" in action:
-                return (None, "gcloud")
-            return (None, "gcloud")  # Unknown projects command - ask user
-        return ("approve", "gcloud")  # Just "gcloud projects" shows help
+                return False
+            return False
+        return True
 
     # Skip beta/alpha prefix for action checking
     action_parts = [p for p in parts if p not in {"beta", "alpha"}]
-    action = action_parts[-1] if action_parts else ""
 
     # Check for unsafe patterns in any part (takes precedence)
     for part in action_parts:
         for pattern in UNSAFE_ACTION_PATTERNS:
             if pattern in part:
-                return (None, "gcloud")
+                return False
 
     # Check ALL parts for unsafe keywords (takes precedence over safe)
-    # This catches cases like "gcloud compute instances delete list"
     for part in action_parts:
         if part in UNSAFE_ACTION_KEYWORDS:
-            return (None, "gcloud")
+            return False
 
     # Check all parts for safe keywords
     for part in action_parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return ("approve", "gcloud")
+            return True
         for prefix in SAFE_ACTION_PREFIXES:
             if part.startswith(prefix):
-                return ("approve", "gcloud")
+                return True
 
-    # Unknown - ask user
-    return (None, "gcloud")
+    return False
 
 
 def _extract_parts(tokens: list[str]) -> list[str]:
@@ -202,12 +187,11 @@ def _looks_like_value(token: str) -> bool:
     return False
 
 
-def _check_gsutil(tokens: list[str]) -> tuple[Optional[str], str]:
+def _check_gsutil(tokens: list[str]) -> bool:
     """Check gsutil commands."""
     if len(tokens) < 2:
-        return (None, "gcloud")
+        return False
 
-    # Find the action
     action = None
     for token in tokens[1:]:
         if not token.startswith("-"):
@@ -215,14 +199,6 @@ def _check_gsutil(tokens: list[str]) -> tuple[Optional[str], str]:
             break
 
     if not action:
-        return (None, "gcloud")
+        return False
 
-    # Safe gsutil commands
-    if action in {"ls", "cat", "stat", "du", "hash", "version", "help"}:
-        return ("approve", "gcloud")
-
-    # Unsafe gsutil commands
-    if action in {"cp", "mv", "rm", "mb", "rb", "rsync", "setmeta", "acl", "iam"}:
-        return (None, "gcloud")
-
-    return (None, "gcloud")
+    return action in {"ls", "cat", "stat", "du", "hash", "version", "help"}

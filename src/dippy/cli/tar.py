@@ -5,27 +5,17 @@ Tar can list, create, or extract archives.
 Only listing (-t/--list) is safe.
 """
 
-from typing import Optional
 
-
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a tar command should be approved.
-
-    Only approves tar with list mode (-t/--list).
-
-    Returns:
-        "approve" - List mode (read-only)
-        None - Create/extract mode, needs confirmation
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if tar command is safe (list mode only)."""
     for t in tokens[1:]:
         if t == "-t" or t == "--list":
-            return ("approve", "tar")
-        # Check for combined short flags like -tvf, -tf, -ztf
+            return True
+        # Combined short flags like -tvf, -tf, -ztf
         if t.startswith("-") and not t.startswith("--") and "t" in t:
-            return ("approve", "tar")
+            return True
 
-    # Check first arg for old-style (no dash) like "tf", "tvf", "ztf"
+    # Old-style (no dash) like "tf", "tvf", "ztf"
     if len(tokens) > 1:
         first_arg = tokens[1]
         if (
@@ -33,6 +23,6 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
             and "t" in first_arg
             and not any(c in first_arg for c in "cxru")
         ):
-            return ("approve", "tar")
+            return True
 
-    return (None, "tar")
+    return False

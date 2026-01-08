@@ -135,8 +135,8 @@ class TestCLIRouting:
     def test_routes_kubectl_directly(self, check_single):
         """Test kubectl handler directly."""
         from dippy.cli import kubectl
-        decision, desc = kubectl.check("kubectl get pods", ["kubectl", "get", "pods"])
-        assert decision == "approve"
+        result = kubectl.check(["kubectl", "get", "pods"])
+        assert result is True
     
     def test_routes_to_docker(self, check):
         """Docker commands should route to docker handler."""

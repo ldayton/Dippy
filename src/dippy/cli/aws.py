@@ -4,8 +4,6 @@ AWS CLI handler for Dippy.
 Handles aws, aws-vault, and similar AWS tools.
 """
 
-from typing import Optional
-
 
 # Safe action prefixes that appear in AWS CLI commands
 SAFE_ACTION_PREFIXES = frozenset({
@@ -128,26 +126,19 @@ SAFE_COMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if an AWS CLI command should be approved or denied.
-
-    Returns:
-        (decision, description) where decision is "approve" or None.
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if AWS CLI command is safe."""
     if len(tokens) < 2:
-        return (None, "aws")
-
-    # Find the service and action
-    # aws [global-opts] service action [opts]
-    service = None
-    action = None
+        return False
 
     # Check for --help anywhere (makes command safe)
     if "--help" in tokens or "-h" in tokens:
-        return ("approve", "aws help")
+        return True
 
-    # Global options that take a value
+    # Find the service and action
+    service = None
+    action = None
+
     global_opts_with_value = {
         "--region", "--profile", "--output", "--endpoint-url",
         "--cli-connect-timeout", "--cli-read-timeout",
@@ -158,26 +149,21 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     while i < len(tokens):
         token = tokens[i]
 
-        # Skip global options
         if token.startswith("--"):
-            # Check if option takes a value
             if token in global_opts_with_value:
                 i += 2
                 continue
-            # Handle --option=value format
             if "=" in token:
                 i += 1
                 continue
             i += 1
             continue
 
-        # First non-option is service
         if service is None:
             service = token
             i += 1
             continue
 
-        # Second non-option is action
         if action is None:
             action = token
             break
@@ -185,58 +171,51 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         i += 1
 
     if not service:
-        return (None, "aws")
-
-    # Build description
-    desc = f"aws {service}" + (f" {action}" if action else "")
+        return False
 
     # Help is always safe
     if service == "help" or action == "help":
-        return ("approve", desc)
+        return True
 
     # Always-safe services
     if service in ALWAYS_SAFE_SERVICES:
-        return ("approve", desc)
+        return True
 
     # STS special handling
     if service == "sts":
-        if action in STS_SAFE_ACTIONS:
-            return ("approve", desc)
-        return (None, desc)  # assume-role variants need confirmation
+        return action in STS_SAFE_ACTIONS
 
     # Configure special handling
     if service == "configure":
-        if action in {"list", "list-profiles", "get"}:
-            return ("approve", desc)
-        return (None, desc)  # set, sso, import, export-credentials need confirmation
+        return action in {"list", "list-profiles", "get"}
 
     # SSM special handling - --with-decryption exposes sensitive data
     if service == "ssm" and "--with-decryption" in tokens:
-        return (None, desc)
+        return False
 
     # Check specific safe commands
     if action and (service, action) in SAFE_COMMANDS:
-        return ("approve", desc)
+        return True
 
     # Check action patterns
     if action:
         # Check exceptions first (things that look safe but aren't)
         if action in UNSAFE_EXCEPTIONS:
-            return (None, desc)
+            return False
 
         # Exact safe actions
         if action in SAFE_ACTIONS_EXACT:
-            return ("approve", desc)
+            return True
 
         # Safe prefixes
         for prefix in SAFE_ACTION_PREFIXES:
             if action.startswith(prefix):
-                return ("approve", desc)
+                return True
 
-        # Unsafe keywords - don't outright deny, just require confirmation
+        # Unsafe keywords
         for keyword in UNSAFE_ACTION_KEYWORDS:
             if keyword in action:
-                return (None, desc)
+                return False
 
     # Default: ask user
-    return (None, desc)
+    return False

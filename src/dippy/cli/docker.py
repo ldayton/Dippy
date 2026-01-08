@@ -4,8 +4,6 @@ Docker command handler for Dippy.
 Handles docker, docker-compose, and podman commands.
 """
 
-from typing import Optional
-
 
 # Safe read-only actions (at the top level)
 SAFE_ACTIONS = frozenset({
@@ -95,25 +93,19 @@ GLOBAL_FLAGS_WITH_ARG = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a docker command should be approved or denied.
-
-    Returns:
-        (decision, description) where decision is "approve" or None.
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if docker command is safe."""
     base = tokens[0]  # "docker", "podman", "docker-compose", etc.
 
     if len(tokens) < 2:
-        return (None, base)
+        return False
 
     # Find action (skip global flags)
     action_idx = _find_action_idx(tokens)
     if action_idx >= len(tokens):
-        return (None, base)
+        return False
 
     action = tokens[action_idx]
-    desc = f"{base} {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Handle docker-compose / docker compose
@@ -126,35 +118,27 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         if subcommand:
             # Handle nested subcommands (e.g., buildx imagetools inspect)
             if action == "buildx" and subcommand == "imagetools":
-                # Find the imagetools action
                 sub_rest = rest[rest.index(subcommand) + 1:] if subcommand in rest else []
                 imagetools_action = _find_subcommand(sub_rest)
-                if imagetools_action == "inspect":
-                    return ("approve", desc)
-                if imagetools_action == "create":
-                    return (None, desc)
-                return (None, desc)  # Unknown imagetools action
+                return imagetools_action == "inspect"
 
             if subcommand in SAFE_SUBCOMMANDS.get(action, set()):
                 # Special case: image save -o writes to file
                 if action == "image" and subcommand == "save" and _has_output_flag(rest):
-                    return (None, desc)
-                return ("approve", desc)
+                    return False
+                return True
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
-                return (None, desc)
+                return False
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
         # export/save without -o writes to stdout (safe)
         if action in {"export", "save"} and _has_output_flag(rest):
-            return (None, desc)
-        return ("approve", desc)
+            return False
+        return True
 
-    # Unsafe actions need confirmation
-    if action in UNSAFE_ACTIONS:
-        return (None, desc)
-
-    return (None, desc)
+    # Unsafe actions or unknown
+    return False
 
 
 def _find_action_idx(tokens: list[str]) -> int:
@@ -174,7 +158,7 @@ def _find_action_idx(tokens: list[str]) -> int:
     return len(tokens)
 
 
-def _find_subcommand(rest: list[str]) -> Optional[str]:
+def _find_subcommand(rest: list[str]) -> str | None:
     """Find the first non-flag token (the subcommand)."""
     for token in rest:
         if not token.startswith("-"):
@@ -192,9 +176,8 @@ def _has_output_flag(tokens: list[str]) -> bool:
     return False
 
 
-def _check_compose(tokens: list[str], start_idx: int, base: str) -> tuple[Optional[str], str]:
+def _check_compose(tokens: list[str], start_idx: int, base: str) -> bool:
     """Check docker-compose commands."""
-    # Compose flags that take arguments
     compose_flags_with_arg = {
         "-f", "--file",
         "-p", "--project-name",
@@ -204,20 +187,13 @@ def _check_compose(tokens: list[str], start_idx: int, base: str) -> tuple[Option
         "--ansi",
     }
 
-    # Determine starting position based on command type
-    # For "docker compose ...", start after "compose"
-    # For "docker-compose ..." or "podman-compose ...", start after the command itself
     if tokens[0] in {"docker-compose", "podman-compose"}:
-        i = 1  # Start after the command
-        compose_base = tokens[0]
+        i = 1
     elif start_idx < len(tokens) and tokens[start_idx] == "compose":
-        i = start_idx + 1  # Start after "compose"
-        compose_base = f"{base} compose"
+        i = start_idx + 1
     else:
         i = start_idx
-        compose_base = base
 
-    # Find compose action, skipping compose-specific flags
     while i < len(tokens):
         token = tokens[i]
         if token.startswith("-"):
@@ -230,11 +206,6 @@ def _check_compose(tokens: list[str], start_idx: int, base: str) -> tuple[Option
             continue
 
         # Found the compose action
-        desc = f"{compose_base} {token}"
-        if token in {"ps", "logs", "config", "images", "ls", "top", "version", "port", "events"}:
-            return ("approve", desc)
-        if token in {"up", "down", "start", "stop", "restart", "rm", "pull", "build", "exec", "run", "create"}:
-            return (None, desc)
-        return (None, desc)
+        return token in {"ps", "logs", "config", "images", "ls", "top", "version", "port", "events"}
 
-    return (None, compose_base)
+    return False

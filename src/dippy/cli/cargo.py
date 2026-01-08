@@ -2,8 +2,6 @@
 Cargo (Rust) CLI handler for Dippy.
 """
 
-from typing import Optional
-
 
 SAFE_ACTIONS = frozenset({
     "help", "-h", "--help",
@@ -24,31 +22,10 @@ SAFE_ACTIONS = frozenset({
 })
 
 
-UNSAFE_ACTIONS = frozenset({
-    "build", "b",
-    "run", "r",
-    "test", "t",
-    "bench",
-    "install", "uninstall",
-    "publish", "yank",
-    "clean",
-    "new", "init",
-    "add", "remove", "rm",
-    "fix",
-})
-
-
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """Check if a cargo command should be approved or denied."""
+def check(tokens: list[str]) -> bool:
+    """Check if cargo command is safe."""
     if len(tokens) < 2:
-        return (None, "cargo")
-    
+        return False
+
     action = tokens[1]
-    
-    if action in SAFE_ACTIONS:
-        return ("approve", "cargo")
-    
-    if action in UNSAFE_ACTIONS:
-        return (None, "cargo")
-    
-    return (None, "cargo")
+    return action in SAFE_ACTIONS

@@ -2,8 +2,8 @@
 CLI-specific command handlers for Dippy.
 
 Each handler module exports:
-- check(command: str, tokens: list[str]) -> tuple[Optional[str], str]
-    Returns (decision, description) where decision is "approve" or None.
+- check(tokens: list[str]) -> bool
+    Returns True to approve, False to ask user.
 """
 
 import importlib
@@ -14,12 +14,30 @@ from typing import Optional, Protocol
 class CLIHandler(Protocol):
     """Protocol for CLI handler modules."""
 
-    def check(self, command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-        """Check if command should be approved or needs user input.
+    def check(self, tokens: list[str]) -> bool:
+        """Check if command should be approved.
 
-        Returns (decision, description) where decision is "approve" or None.
+        Returns True to approve, False to ask user.
         """
         ...
+
+
+# How many tokens to include in description (base + action + ...)
+# Default is 2 (e.g., "git status", "docker ps")
+DESCRIPTION_DEPTH = {
+    "aws": 3,      # aws s3 ls
+    "gcloud": 3,   # gcloud compute instances
+    "gsutil": 2,   # gsutil ls
+    "az": 3,       # az vm list
+}
+
+
+def get_description(tokens: list[str], handler_name: str = None) -> str:
+    """Compute description from tokens based on handler type."""
+    if not tokens:
+        return "unknown"
+    depth = DESCRIPTION_DEPTH.get(handler_name or tokens[0], 2)
+    return " ".join(tokens[:depth])
 
 
 # Known CLI handlers - maps command name to module name

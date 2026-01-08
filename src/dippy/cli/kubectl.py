@@ -4,8 +4,6 @@ Kubectl command handler for Dippy.
 Handles kubectl and similar Kubernetes CLI tools.
 """
 
-from typing import Optional
-
 
 # Safe read-only actions
 SAFE_ACTIONS = frozenset({
@@ -64,15 +62,10 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a kubectl command should be approved or denied.
-
-    Returns:
-        (decision, description) where decision is "approve" or None.
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if kubectl command is safe."""
     if len(tokens) < 2:
-        return (None, "kubectl")
+        return False
 
     # Find the action (skip global flags)
     action = None
@@ -81,9 +74,7 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     while action_idx < len(tokens):
         token = tokens[action_idx]
 
-        # Skip flags
         if token.startswith("-"):
-            # Skip flag values for known flags
             if token in {"-n", "--namespace", "-l", "--selector", "-o", "--output",
                         "--context", "--cluster", "-f", "--filename"}:
                 action_idx += 2
@@ -95,34 +86,28 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         break
 
     if not action:
-        return (None, "kubectl")
+        return False
 
-    desc = f"kubectl {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Check for subcommands first
     if action in SAFE_SUBCOMMANDS and rest:
-        # Find first non-flag token
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return ("approve", desc)
+                    return True
                 break
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in UNSAFE_SUBCOMMANDS[action]:
-                    return (None, desc)  # Needs confirmation
+                    return False
                 break
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return ("approve", desc)
+        return True
 
-    # Unsafe actions need confirmation
-    if action in UNSAFE_ACTIONS:
-        return (None, desc)
-
-    # Unknown - ask user
-    return (None, desc)
+    # Unsafe actions or unknown
+    return False

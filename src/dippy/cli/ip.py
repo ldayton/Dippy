@@ -5,8 +5,6 @@ The ip command is safe for viewing network info, but modification
 commands need confirmation.
 """
 
-from typing import Optional
-
 
 # Safe ip subcommands (read-only)
 SAFE_SUBCOMMANDS = frozenset({
@@ -40,27 +38,18 @@ GLOBAL_FLAGS_WITH_ARG = frozenset({
 })
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if an ip command should be approved.
-
-    Returns:
-        "approve" - Read-only operation
-        None - Modification command, needs confirmation
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if ip command is safe."""
     if len(tokens) < 2:
-        return (None, "ip")
+        return False
 
-    # Find subcommand and actions, skipping global flags with arguments
     parts = []
     i = 1
     while i < len(tokens):
         token = tokens[i]
-        # Skip global flags that take an argument
         if token in GLOBAL_FLAGS_WITH_ARG:
-            i += 2  # Skip flag and its argument
+            i += 2
             continue
-        # Skip other flags
         if token.startswith("-"):
             i += 1
             continue
@@ -68,17 +57,13 @@ def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
         i += 1
 
     if not parts:
-        return ("approve", "ip")  # Just "ip" or "ip -flags"
+        return True  # Just "ip" or "ip -flags"
 
     subcommand = parts[0]
 
     # Check if there's a modifying action
     for part in parts[1:]:
         if part in MODIFY_ACTIONS:
-            return (None, "ip")
+            return False
 
-    # "ip addr" (show), "ip route" (show), etc. are safe
-    if subcommand in SAFE_SUBCOMMANDS:
-        return ("approve", "ip")
-
-    return (None, "ip")
+    return subcommand in SAFE_SUBCOMMANDS

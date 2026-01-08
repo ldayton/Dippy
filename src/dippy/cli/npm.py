@@ -4,8 +4,6 @@ Node package manager CLI handler for Dippy.
 Handles npm, yarn, and pnpm commands.
 """
 
-from typing import Optional
-
 
 SAFE_ACTIONS = frozenset({
     "list", "ls", "ll", "la",
@@ -84,72 +82,56 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """Check if an npm/yarn/pnpm command should be approved or denied."""
+def check(tokens: list[str]) -> bool:
+    """Check if npm/yarn/pnpm command is safe."""
     if len(tokens) < 2:
-        return (None, "npm")
+        return False
 
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
 
     # Handle "npm run" without arguments (just lists scripts)
     if action == "run" and not rest:
-        return ("approve", "npm")
+        return True
 
     # Handle "npm run --list" (safe)
     if action == "run" and "--list" in rest:
-        return ("approve", "npm")
+        return True
 
     # Handle "npm version" - without arguments shows version, with args modifies
     if action == "version":
-        if not rest:
-            return ("approve", "npm")  # Just shows versions
-        # Any argument means it's modifying version
-        return (None, "npm")
+        return not rest
 
     # Handle "npm audit" - safe for viewing, but "audit fix" is unsafe
     if action == "audit":
-        if rest and rest[0] == "fix":
-            return (None, "npm")
-        return ("approve", "npm")
+        return not (rest and rest[0] == "fix")
 
     # Handle "npm config" / "npm c"
     if action in ("config", "c"):
         if rest:
             subaction = rest[0]
             if subaction in SAFE_SUBCOMMANDS.get("config", set()):
-                return ("approve", "npm")
+                return True
             if subaction in UNSAFE_SUBCOMMANDS.get("config", set()):
-                return (None, "npm")
-        return ("approve", "npm")  # "npm config" alone shows help
+                return False
+        return True  # "npm config" alone shows help
 
     # Check commands with safe/unsafe subcommands
     if action in SAFE_SUBCOMMANDS:
         if rest:
             subaction = rest[0]
             if subaction in SAFE_SUBCOMMANDS[action]:
-                return ("approve", "npm")
+                return True
             if action in UNSAFE_SUBCOMMANDS and subaction in UNSAFE_SUBCOMMANDS[action]:
-                return (None, "npm")
-        # No subcommand - depends on the action
+                return False
         if action in ("owner",):
-            return ("approve", "npm")  # "npm owner" alone lists
-        return (None, "npm")
+            return True  # "npm owner" alone lists
+        return False
 
     if action in UNSAFE_SUBCOMMANDS and action not in SAFE_SUBCOMMANDS:
-        if rest:
-            subaction = rest[0]
-            if subaction in UNSAFE_SUBCOMMANDS[action]:
-                return (None, "npm")
-        # Check if it's a version number (npm version 1.2.3)
-        if action == "version" and rest:
-            return (None, "npm")
-        return (None, "npm")
+        return False
 
     if action in SAFE_ACTIONS:
-        return ("approve", "npm")
+        return True
 
-    if action in UNSAFE_ACTIONS:
-        return (None, "npm")
-
-    return (None, "npm")
+    return False

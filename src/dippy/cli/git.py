@@ -4,8 +4,6 @@ Git command handler for Dippy.
 Approves read-only git operations, blocks mutations.
 """
 
-from typing import Optional
-
 
 # Actions that only read data (no subcommands to check)
 SAFE_ACTIONS = frozenset({
@@ -81,9 +79,8 @@ GLOBAL_FLAGS_NO_ARG = frozenset({
 })
 
 
-def _find_action(tokens: list[str]) -> tuple[int, Optional[str]]:
-    """
-    Find the git action (subcommand) accounting for global flags.
+def _find_action(tokens: list[str]) -> tuple[int, str | None]:
+    """Find the git action (subcommand) accounting for global flags.
 
     Returns (index, action) or (-1, None) if not found.
     """
@@ -121,401 +118,256 @@ def _find_action(tokens: list[str]) -> tuple[int, Optional[str]]:
     return -1, None
 
 
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a git command should be approved or denied.
-
-    Returns:
-        (decision, description) where decision is "approve" or None.
-    """
+def check(tokens: list[str]) -> bool:
+    """Check if git command is safe."""
     if len(tokens) < 2:
-        return None  # Just "git" with no subcommand
+        return False  # Just "git" with no subcommand
 
     # Find the actual action, skipping global flags
     action_idx, action = _find_action(tokens)
     if action is None:
-        return None
+        return False
 
-    desc = f"git {action}"
     rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
 
     # Handle commands with subcommands that need special checks
     if action == "branch":
-        return (_check_branch(rest), desc)
+        return _check_branch(rest)
     elif action == "tag":
-        return (_check_tag(rest), desc)
+        return _check_tag(rest)
     elif action == "remote":
-        return (_check_remote(rest), desc)
+        return _check_remote(rest)
     elif action == "stash":
-        return (_check_stash(rest), desc)
+        return _check_stash(rest)
     elif action == "config":
-        return (_check_config(rest), desc)
+        return _check_config(rest)
     elif action == "notes":
-        return (_check_notes(rest), desc)
+        return _check_notes(rest)
     elif action == "bisect":
-        return (_check_bisect(rest), desc)
+        return _check_bisect(rest)
     elif action == "worktree":
-        return (_check_worktree(rest), desc)
+        return _check_worktree(rest)
     elif action == "submodule":
-        return (_check_submodule(rest), desc)
+        return _check_submodule(rest)
     elif action == "apply":
-        return (_check_apply(rest), desc)
+        return _check_apply(rest)
     elif action == "sparse-checkout":
-        return (_check_sparse_checkout(rest), desc)
+        return _check_sparse_checkout(rest)
     elif action == "bundle":
-        return (_check_bundle(rest), desc)
+        return _check_bundle(rest)
     elif action == "lfs":
-        return (_check_lfs(rest), desc)
+        return _check_lfs(rest)
     elif action == "hash-object":
-        return (_check_hash_object(rest), desc)
+        return _check_hash_object(rest)
     elif action == "symbolic-ref":
-        return (_check_symbolic_ref(rest), desc)
+        return _check_symbolic_ref(rest)
     elif action == "replace":
-        return (_check_replace(rest), desc)
+        return _check_replace(rest)
     elif action == "rerere":
-        return (_check_rerere(rest), desc)
+        return _check_rerere(rest)
 
     # Explicitly safe actions
     if action in SAFE_ACTIONS:
-        return ("approve", desc)
+        return True
 
-    # Explicitly unsafe actions
-    if action in UNSAFE_ACTIONS:
-        return (None, desc)  # Needs confirmation, not outright deny
-
-    # Unknown action - ask user
-    return (None, desc)
+    # Explicitly unsafe actions or unknown - ask user
+    return False
 
 
-def _check_branch(rest: list[str]) -> Optional[str]:
+def _check_branch(rest: list[str]) -> bool:
     """Check git branch subcommand."""
-    # Unsafe flags
     unsafe_flags = {"-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy"}
-
-    # Listing/query flags that take an argument
     listing_flags_with_arg = {"--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
 
     for token in rest:
         if token in unsafe_flags:
-            return None
-        # --set-upstream-to modifies tracking
+            return False
         if token.startswith("--set-upstream-to") or token == "-u":
-            return None
+            return False
 
-    # If we have listing flags that consume the next argument, it's a read operation
     has_listing_flag = any(t in listing_flags_with_arg or t.startswith("--list") for t in rest)
     if has_listing_flag:
-        return "approve"
+        return True
 
-    # If there's a non-flag argument, it's creating a branch
     for token in rest:
         if not token.startswith("-"):
-            # This is a branch name for creation, not safe
-            return None
+            return False  # Branch name for creation
 
-    # Pure listing is safe
-    return "approve"
+    return True  # Pure listing
 
 
-def _check_tag(rest: list[str]) -> Optional[str]:
+def _check_tag(rest: list[str]) -> bool:
     """Check git tag subcommand."""
-    # Unsafe flags for deletion
     unsafe_flags = {"-d", "--delete"}
-
-    # Listing/query flags (that take an argument, so next non-flag is not a tag name)
     listing_flags = {"-l", "--list", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
 
     for token in rest:
         if token in unsafe_flags:
-            return None
+            return False
 
-    # If we have listing flags, it's a read operation
     has_listing_flag = any(t in listing_flags or t.startswith("--list") for t in rest)
     if has_listing_flag:
-        return "approve"
+        return True
 
-    # If there's a non-flag argument, it's creating a tag
     for token in rest:
         if not token.startswith("-"):
-            # This is a tag name for creation
-            return None
+            return False  # Tag name for creation
 
-    # Pure listing is safe
-    return "approve"
+    return True  # Pure listing
 
 
-def _check_remote(rest: list[str]) -> Optional[str]:
+def _check_remote(rest: list[str]) -> bool:
     """Check git remote subcommand."""
     if not rest:
-        return "approve"  # Just "git remote" lists remotes
+        return True  # Just "git remote" lists remotes
 
     subcommand = rest[0]
-
-    # Safe subcommands
     safe = {"show", "-v", "--verbose", "get-url"}
     if subcommand in safe:
-        return "approve"
+        return True
 
-    # Unsafe subcommands
     unsafe = {"add", "remove", "rm", "rename", "set-url", "prune", "set-head", "set-branches"}
     if subcommand in unsafe:
-        return None
+        return False
 
-    # Unknown - could be a remote name for listing
-    return "approve"
+    return True  # Unknown - could be a remote name for listing
 
 
-def _check_stash(rest: list[str]) -> Optional[str]:
+def _check_stash(rest: list[str]) -> bool:
     """Check git stash subcommand."""
     if not rest:
-        return None  # "git stash" alone creates a stash
+        return False  # "git stash" alone creates a stash
 
     subcommand = rest[0]
-
-    # Safe subcommands (read-only)
     safe = {"list", "show"}
     if subcommand in safe:
-        return "approve"
+        return True
 
-    # Unsafe subcommands (mutate stash or working tree)
     unsafe = {"push", "pop", "apply", "drop", "clear", "branch", "create", "store"}
     if subcommand in unsafe:
-        return None
+        return False
 
-    # If it looks like a flag (e.g., git stash -u), it's creating a stash
     if subcommand.startswith("-"):
-        return None
+        return False  # Flag means creating a stash
 
-    # Unknown subcommand
-    return None
+    return False
 
 
-def _check_config(rest: list[str]) -> Optional[str]:
+def _check_config(rest: list[str]) -> bool:
     """Check git config subcommand."""
-    # Editing flags
     edit_flags = {"-e", "--edit"}
-
-    # Unsafe flags
     unsafe_flags = {"--unset", "--unset-all", "--add", "--replace-all", "--remove-section", "--rename-section"}
 
     for token in rest:
-        if token in edit_flags:
-            return None
-        if token in unsafe_flags:
-            return None
+        if token in edit_flags or token in unsafe_flags:
+            return False
 
-    # Safe flags (reading)
     safe_flags = {"--get", "--get-all", "--list", "-l", "--get-regexp", "--get-urlmatch"}
-
     for token in rest:
         if token in safe_flags:
-            return "approve"
+            return True
 
-    # Count non-flag arguments (excluding --global/--local/--system)
     scope_flags = {"--global", "--local", "--system", "--worktree"}
     positional = [t for t in rest if not t.startswith("-") or t in scope_flags]
     actual_positional = [t for t in positional if t not in scope_flags]
 
-    # "git config key" is reading, "git config key value" is writing
-    if len(actual_positional) <= 1:
-        return "approve"  # Reading a config value
-
-    # Setting a config value
-    return None
+    return len(actual_positional) <= 1  # Reading vs writing
 
 
-def _check_notes(rest: list[str]) -> Optional[str]:
+def _check_notes(rest: list[str]) -> bool:
     """Check git notes subcommand."""
     if not rest:
-        return "approve"  # "git notes" lists notes
+        return True  # Lists notes
 
     subcommand = rest[0]
-
-    # Safe subcommands
     safe = {"list", "show"}
     if subcommand in safe:
-        return "approve"
+        return True
 
-    # Unsafe subcommands
     unsafe = {"add", "copy", "append", "edit", "merge", "remove", "prune"}
-    if subcommand in unsafe:
-        return None
-
-    # Unknown
-    return None
+    return subcommand not in unsafe
 
 
-def _check_bisect(rest: list[str]) -> Optional[str]:
+def _check_bisect(rest: list[str]) -> bool:
     """Check git bisect subcommand."""
     if not rest:
-        return None  # "git bisect" alone is ambiguous
+        return False
 
     subcommand = rest[0]
-
-    # Safe subcommands (read-only)
     safe = {"log", "visualize", "view"}
-    if subcommand in safe:
-        return "approve"
-
-    # Unsafe subcommands (modify bisect state)
-    unsafe = {"start", "bad", "new", "good", "old", "terms", "skip", "reset", "run"}
-    if subcommand in unsafe:
-        return None
-
-    return None
+    return subcommand in safe
 
 
-def _check_worktree(rest: list[str]) -> Optional[str]:
+def _check_worktree(rest: list[str]) -> bool:
     """Check git worktree subcommand."""
     if not rest:
-        return None
-
-    subcommand = rest[0]
-
-    # Safe subcommands
-    if subcommand == "list":
-        return "approve"
-
-    # All other subcommands modify worktrees
-    return None
+        return False
+    return rest[0] == "list"
 
 
-def _check_submodule(rest: list[str]) -> Optional[str]:
+def _check_submodule(rest: list[str]) -> bool:
     """Check git submodule subcommand."""
     if not rest:
-        return None  # "git submodule" alone shows status but can be confusing
+        return False
 
     subcommand = rest[0]
-
-    # Safe subcommands
     safe = {"status", "summary", "foreach"}
-    if subcommand in safe:
-        return "approve"
-
-    # Unsafe subcommands
-    unsafe = {"add", "init", "update", "deinit", "set-branch", "set-url", "sync", "absorbgitdirs"}
-    if subcommand in unsafe:
-        return None
-
-    return None
+    return subcommand in safe
 
 
-def _check_apply(rest: list[str]) -> Optional[str]:
+def _check_apply(rest: list[str]) -> bool:
     """Check git apply subcommand."""
-    # --check is a dry run, safe
-    if "--check" in rest:
-        return "approve"
-    # Without --check, apply modifies working tree
-    return None
+    return "--check" in rest
 
 
-def _check_sparse_checkout(rest: list[str]) -> Optional[str]:
+def _check_sparse_checkout(rest: list[str]) -> bool:
     """Check git sparse-checkout subcommand."""
     if not rest:
-        return None
-
-    subcommand = rest[0]
-
-    # Safe subcommands
-    if subcommand == "list":
-        return "approve"
-
-    # Unsafe subcommands
-    unsafe = {"init", "set", "add", "reapply", "disable"}
-    if subcommand in unsafe:
-        return None
-
-    return None
+        return False
+    return rest[0] == "list"
 
 
-def _check_bundle(rest: list[str]) -> Optional[str]:
+def _check_bundle(rest: list[str]) -> bool:
     """Check git bundle subcommand."""
     if not rest:
-        return None
+        return False
 
     subcommand = rest[0]
-
-    # Safe subcommands (read-only inspection)
     safe = {"verify", "list-heads"}
-    if subcommand in safe:
-        return "approve"
-
-    # Unsafe subcommands
-    unsafe = {"create", "unbundle"}
-    if subcommand in unsafe:
-        return None
-
-    return None
+    return subcommand in safe
 
 
-def _check_lfs(rest: list[str]) -> Optional[str]:
+def _check_lfs(rest: list[str]) -> bool:
     """Check git lfs subcommand."""
     if not rest:
-        return None
+        return False
 
     subcommand = rest[0]
-
-    # Safe subcommands (read-only)
     safe = {"fetch", "ls-files", "status", "env", "version"}
-    if subcommand in safe:
-        return "approve"
-
-    # Unsafe subcommands (modify LFS tracking or repo)
-    unsafe = {"install", "uninstall", "track", "untrack", "pull", "push",
-              "clone", "migrate", "prune", "dedup", "logs"}
-    if subcommand in unsafe:
-        return None
-
-    return None
+    return subcommand in safe
 
 
-def _check_hash_object(rest: list[str]) -> Optional[str]:
+def _check_hash_object(rest: list[str]) -> bool:
     """Check git hash-object subcommand."""
-    # -w writes the object to the database
-    if "-w" in rest or "--write" in rest:
-        return None
-    # Without -w, just computes hash (read-only)
-    return "approve"
+    return "-w" not in rest and "--write" not in rest
 
 
-def _check_symbolic_ref(rest: list[str]) -> Optional[str]:
+def _check_symbolic_ref(rest: list[str]) -> bool:
     """Check git symbolic-ref subcommand."""
-    # Count positional arguments (non-flags)
     positional = [t for t in rest if not t.startswith("-")]
-
-    # Reading: git symbolic-ref HEAD (1 positional)
-    # Writing: git symbolic-ref HEAD refs/heads/main (2 positional)
-    if len(positional) <= 1:
-        return "approve"
-
-    return None
+    return len(positional) <= 1
 
 
-def _check_replace(rest: list[str]) -> Optional[str]:
+def _check_replace(rest: list[str]) -> bool:
     """Check git replace subcommand."""
-    # Listing is safe
-    if "-l" in rest or "--list" in rest or not rest:
-        return "approve"
-
-    # All other operations modify replace refs
-    return None
+    return "-l" in rest or "--list" in rest or not rest
 
 
-def _check_rerere(rest: list[str]) -> Optional[str]:
+def _check_rerere(rest: list[str]) -> bool:
     """Check git rerere subcommand."""
     if not rest:
-        return "approve"  # Just "git rerere" shows status
+        return True
 
     subcommand = rest[0]
-
-    # Safe subcommands (read-only)
     safe = {"status", "diff"}
-    if subcommand in safe:
-        return "approve"
-
-    # Unsafe subcommands
-    unsafe = {"clear", "forget", "gc"}
-    if subcommand in unsafe:
-        return None
-
-    return None
+    return subcommand in safe

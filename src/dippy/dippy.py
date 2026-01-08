@@ -29,7 +29,7 @@ from dippy.core.patterns import (
     SIMPLE_SAFE,
     UNSAFE_PATTERNS,
 )
-from dippy.cli import get_handler
+from dippy.cli import get_handler, get_description
 
 
 # === Logging Setup ===
@@ -253,7 +253,9 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
     # Try CLI-specific handler
     handler = get_handler(base)
     if handler:
-        return handler.check(command, tokens)
+        desc = get_description(tokens, base)
+        approved = handler.check(tokens)
+        return ("approve", desc) if approved else (None, desc)
 
     # Check unsafe patterns (fallback for unknown commands)
     # This comes after handlers so they can approve things like "aws s3 rm --help"

@@ -5,49 +5,30 @@ OpenSSL has various commands, some are read-only (viewing certs)
 and some modify files or do crypto operations.
 """
 
-from typing import Optional
 
-
-# Safe read-only subcommands
 SAFE_COMMANDS = frozenset({
     "version",
     "help",
     "list",
 })
 
-# Commands that can be safe with certain flags
-X509_SAFE_FLAGS = frozenset({
-    "-noout",  # Don't output cert, just info
-    "-text",
-    "-subject", "-issuer",
-    "-dates", "-startdate", "-enddate",
-    "-serial", "-fingerprint",
-    "-purpose", "-modulus",
-    "-pubkey",
-    "-in",  # Input file
-})
 
-
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """Check if an openssl command should be approved."""
+def check(tokens: list[str]) -> bool:
+    """Check if openssl command is safe."""
     if len(tokens) < 2:
-        return (None, "openssl")
+        return False
 
     subcommand = tokens[1]
 
-    # Safe subcommands
     if subcommand in SAFE_COMMANDS:
-        return ("approve", "openssl")
+        return True
 
-    # x509 certificate viewing
-    if subcommand == "x509":
-        # If -noout is present, it's just viewing
-        if "-noout" in tokens:
-            return ("approve", "openssl")
+    # x509 with -noout is just viewing
+    if subcommand == "x509" and "-noout" in tokens:
+        return True
 
-    # s_client for connection testing (read-only)
+    # s_client for connection testing
     if subcommand == "s_client":
-        return ("approve", "openssl")
+        return True
 
-    # Other subcommands need confirmation
-    return (None, "openssl")
+    return False

@@ -4,24 +4,12 @@ Sort command handler for Dippy.
 Sort is safe for text processing, but -o flag writes to a file.
 """
 
-from typing import Optional
 
-
-def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-    """
-    Check if a sort command should be approved.
-
-    Rejects sort with -o/--output (writes to file).
-
-    Returns:
-        "approve" - Read-only text processing
-        None - Writes to file, needs confirmation
-    """
-    for i, t in enumerate(tokens[1:]):
-        # -o or -ofile or --output
+def check(tokens: list[str]) -> bool:
+    """Check if sort command is safe (no output to file)."""
+    for t in tokens[1:]:
         if t == "-o" or t.startswith("-o"):
-            return (None, "sort")
+            return False
         if t == "--output" or t.startswith("--output"):
-            return (None, "sort")
-
-    return ("approve", "sort")
+            return False
+    return True

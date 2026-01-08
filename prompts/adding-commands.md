@@ -82,39 +82,22 @@ Create `src/dippy/cli/<command>.py`:
 <Brief description of what makes commands safe/unsafe>
 """
 
-from typing import Optional
-
 # Actions that only read data
 SAFE_ACTIONS = frozenset({
     "list", "show", "get", "describe",
 })
 
-# Actions that modify state
-UNSAFE_ACTIONS = frozenset({
-    "create", "delete", "update", "apply",
-})
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
-    """
-    Check if a <command> command should be approved or denied.
+def check(tokens: list[str]) -> bool:
+    """Check if <command> is safe.
 
-    Returns:
-        "approve" - Safe read-only operation
-        "deny" - Dangerous operation (rarely used)
-        None - Needs user confirmation
+    Returns True to approve, False to ask user.
     """
     if len(tokens) < 2:
-        return None
+        return False
 
     action = tokens[1]
-
-    if action in SAFE_ACTIONS:
-        return "approve"
-
-    if action in UNSAFE_ACTIONS:
-        return None  # Needs confirmation
-
-    return None  # Unknown - ask user
+    return action in SAFE_ACTIONS
 ```
 
 ### 5. Register the Handler
@@ -173,13 +156,11 @@ For CLIs with flat subcommand structure (e.g., `git`, `docker`):
 
 ```python
 SAFE_ACTIONS = frozenset({"status", "list", "show"})
-UNSAFE_ACTIONS = frozenset({"delete", "create", "update"})
 
-def check(command: str, tokens: list[str]) -> Optional[str]:
+
+def check(tokens: list[str]) -> bool:
     action = tokens[1] if len(tokens) > 1 else None
-    if action in SAFE_ACTIONS:
-        return "approve"
-    return None
+    return action in SAFE_ACTIONS
 ```
 
 ### Nested Subcommands
@@ -187,16 +168,12 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
 For CLIs with nested structure (e.g., `aws s3 ls`, `kubectl get pods`):
 
 ```python
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(tokens: list[str]) -> bool:
     if len(tokens) < 3:
-        return None
+        return False
 
-    service = tokens[1]
     action = tokens[2]
-
-    if action in {"list", "describe", "get"}:
-        return "approve"
-    return None
+    return action in {"list", "describe", "get"}
 ```
 
 ### Flag-Dependent Safety
@@ -204,10 +181,8 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
 When flags determine safety (e.g., `git apply --check`):
 
 ```python
-def check(command: str, tokens: list[str]) -> Optional[str]:
-    if "--check" in tokens or "--dry-run" in tokens:
-        return "approve"
-    return None
+def check(tokens: list[str]) -> bool:
+    return "--check" in tokens or "--dry-run" in tokens
 ```
 
 ### Commands That Wrap Other Commands
@@ -215,15 +190,16 @@ def check(command: str, tokens: list[str]) -> Optional[str]:
 For wrappers like `xargs`, `env`, `time`:
 
 ```python
-def check(command: str, tokens: list[str]) -> Optional[str]:
+def check(tokens: list[str]) -> bool:
     # Skip wrapper flags to find inner command
-    inner_tokens = extract_inner_command(tokens)
-    if not inner_tokens:
-        return None
+    inner_cmd = extract_inner_command(tokens)
+    if not inner_cmd:
+        return False
 
     # Check the inner command
     from dippy.dippy import _check_single_command
-    return _check_single_command(inner_tokens)
+    decision, _ = _check_single_command(inner_cmd)
+    return decision == "approve"
 ```
 
 ## Safety Principles
