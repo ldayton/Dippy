@@ -97,6 +97,17 @@ KNOWN_HANDLERS = {
     "dmesg": "dmesg",
     "ruff": "ruff",
     "helm": "helm",
+    "ansible": "ansible",
+    "ansible-playbook": "ansible",
+    "ansible-vault": "ansible",
+    "ansible-galaxy": "ansible",
+    "ansible-inventory": "ansible",
+    "ansible-doc": "ansible",
+    "ansible-pull": "ansible",
+    "ansible-config": "ansible",
+    "ansible-console": "ansible",
+    "ansible-lint": "ansible",
+    "ansible-test": "ansible",
 }
 
 
