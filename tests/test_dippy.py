@@ -1181,9 +1181,12 @@ TESTS = [
     ("cmd &> all.txt", False),
     ("git log > changes.txt", False),
     # Safe redirects to /dev/null
+    ("echo test >/dev/null", True),
+    ("echo test >>/dev/null", True),
     ("grep foo bar 2>/dev/null", True),
-    ("ls 2>/dev/null", True),
+    ("ls 2>>/dev/null", True),
     ("ls &>/dev/null", True),
+    ("ls &>>/dev/null", True),
     ("grep -r pattern /dir 2>/dev/null | head -10", True),
     # fd redirects (2>&1 style) - safe
     ("ls 2>&1", True),
@@ -1191,6 +1194,17 @@ TESTS = [
     # Input redirects - safe (read only)
     ("cat < input.txt", True),
     ("grep foo < file.txt", True),
+    # Heredocs - safe for read-only commands
+    ("cat <<EOF\nhello\nEOF", True),
+    ("cat <<-EOF\n\thello\nEOF", True),
+    ("cat <<'EOF'\nhello\nEOF", True),
+    ("head <<EOF\nline1\nline2\nEOF", True),
+    # Heredocs - blocked for shell execution
+    ("bash <<EOF\necho hi\nEOF", False),
+    ("sh <<EOF\necho hi\nEOF", False),
+    ("zsh <<EOF\necho hi\nEOF", False),
+    # Heredocs with redirects - blocked
+    ("cat <<EOF > output.txt\nhello\nEOF", False),
     # Mixed chains with redirects
     ("ls && cat foo > out.txt", False),
     ("cat < in.txt && ls", True),
