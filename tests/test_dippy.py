@@ -1121,33 +1121,7 @@ TESTS = [
     ("awk -f script.awk file.txt", False),
     ("awk '{print > \"out.txt\"}' file.txt", False),
     ("awk '{system(\"rm file\")}'", False),
-    # Curl - safe (GET/HEAD only)
-    ("curl https://example.com", True),
-    ("curl -I https://example.com", True),
-    ("curl --head https://example.com", True),
-    ("curl -X GET https://example.com", True),
-    ("curl -X HEAD https://example.com", True),
-    ("curl -X OPTIONS https://example.com", True),
-    ("curl -X TRACE https://example.com", True),
-    ("curl -s -o /dev/null -w '%{http_code}' https://example.com", True),
-    # Curl - unsafe (POST/PUT/DELETE or data-sending)
-    ("curl -X POST https://example.com", False),
-    ("curl -X PUT https://example.com", False),
-    ("curl -X DELETE https://example.com", False),
-    ("curl --request=DELETE https://example.com", False),
-    ("curl -d 'data' https://example.com", False),
-    ("curl --data='foo=bar' https://example.com", False),
-    ("curl -F 'file=@test.txt' https://example.com", False),
-    ("curl --form 'file=@test.txt' https://example.com", False),
-    ("curl -T file.txt ftp://example.com", False),
-    ("curl --upload-file file.txt ftp://example.com", False),
-    # Curl wrappers (from tests/dippy-test.toml)
-    ("curl-wrapper.sh query foo", True),
-    ("/path/to/curl-wrapper.sh get metrics", True),
-    ("curl-wrapper.sh --help", True),
-    ("curl-wrapper.sh -X POST data", False),
-    ("curl-wrapper.sh -d 'data' https://example.com", False),
-    ("curl-wrapper.sh --data=foo", False),
+    # Curl tests are in test_curl.py
     # Chained commands - should check ALL commands
     ("aws s3 ls && aws s3 ls", True),  # both safe
     ("aws s3 ls && aws s3 rm foo", False),  # second unsafe
