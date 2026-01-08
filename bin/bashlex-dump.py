@@ -1,32 +1,69 @@
-#!/usr/bin/env -S uv run
-# /// script
-# requires-python = ">=3.14"
-# dependencies = [
-#   "bashlex>=0.18",
-# ]
-# ///
-"""Debug script to inspect bashlex AST structure."""
+#!/usr/bin/env python3
+"""
+Debug helper for inspecting bashlex AST.
+
+Usage:
+    python bin/bashlex-dump.py 'command to parse'
+
+This helps understand how bashlex parses commands, which is useful
+when adding new patterns to Dippy.
+"""
 
 import sys
-import bashlex
+
+try:
+    import bashlex
+except ImportError:
+    print("Error: bashlex not installed. Run: pip install bashlex")
+    sys.exit(1)
 
 
-def show(node, indent=0):
-    attrs = {k: v for k, v in vars(node).items() if not k.startswith("_")}
-    print(" " * indent + f"{node.kind}: {attrs}")
-    if hasattr(node, "parts"):
-        for p in node.parts:
-            show(p, indent + 2)
-    if hasattr(node, "list"):
-        for p in node.list:
-            show(p, indent + 2)
+def dump_node(node, indent=0):
+    """Recursively dump a bashlex AST node."""
+    prefix = "  " * indent
+    
+    if hasattr(node, 'kind'):
+        print(f"{prefix}kind: {node.kind}")
+    
+    if hasattr(node, 'word'):
+        print(f"{prefix}word: {node.word!r}")
+    
+    if hasattr(node, 'type'):
+        print(f"{prefix}type: {node.type}")
+    
+    if hasattr(node, 'pos'):
+        print(f"{prefix}pos: {node.pos}")
+    
+    if hasattr(node, 'parts'):
+        print(f"{prefix}parts:")
+        for part in node.parts:
+            dump_node(part, indent + 1)
+    
+    if hasattr(node, 'list'):
+        print(f"{prefix}list:")
+        for item in node.list:
+            dump_node(item, indent + 1)
 
 
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "echo foo 2>/dev/null"
-    print(f"Parsing: {cmd}\n")
-    for p in bashlex.parse(cmd):
-        show(p)
+    if len(sys.argv) < 2:
+        print("Usage: bashlex-dump.py 'command'")
+        print("Example: bashlex-dump.py 'git status | grep foo'")
+        sys.exit(1)
+    
+    command = sys.argv[1]
+    print(f"Parsing: {command!r}")
+    print("-" * 40)
+    
+    try:
+        parts = bashlex.parse(command)
+        for i, part in enumerate(parts):
+            print(f"Part {i}:")
+            dump_node(part, 1)
+            print()
+    except bashlex.errors.ParsingError as e:
+        print(f"Parse error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,129 @@
+"""
+Kubectl command handler for Dippy.
+
+Handles kubectl and similar Kubernetes CLI tools.
+"""
+
+from typing import Optional
+
+
+# Safe read-only actions
+SAFE_ACTIONS = frozenset({
+    "get", "describe", "explain",
+    "logs", "top",
+    "cluster-info", "version",
+    "api-resources", "api-versions",
+    "config",  # Most config operations are read-only
+    "auth",    # auth can-i is read-only
+    "wait",    # Polling is read-only
+    "diff",    # Shows differences without applying
+    "plugin",  # Plugin management (list is read-only)
+    "completion",  # Shell completion scripts
+    "kustomize",   # Build kustomize manifests (output only)
+})
+
+
+# Unsafe actions that modify cluster state
+UNSAFE_ACTIONS = frozenset({
+    "create", "apply", "delete", "replace", "patch",
+    "edit", "set",
+    "scale", "autoscale",
+    "rollout",
+    "expose",
+    "run",
+    "attach", "exec",  # exec can modify
+    "cp",
+    "label", "annotate", "taint",
+    "cordon", "uncordon", "drain",
+    "port-forward",  # Creates a network tunnel
+    "proxy",  # Creates proxy to API server
+    "debug",  # Debug running pods
+    "certificate",  # Certificate management (approve/deny)
+})
+
+
+# Safe subcommands for multi-level commands
+SAFE_SUBCOMMANDS = {
+    "config": {
+        "view", "get-contexts", "get-clusters",
+        "current-context", "get-users",
+    },
+    "auth": {"can-i", "whoami"},
+    "rollout": {"status", "history"},
+}
+
+
+# Unsafe subcommands
+UNSAFE_SUBCOMMANDS = {
+    "config": {
+        "set", "set-context", "set-cluster", "set-credentials",
+        "delete-context", "delete-cluster", "delete-user",
+        "use-context", "use", "rename-context",
+    },
+    "rollout": {"restart", "pause", "resume", "undo"},
+}
+
+
+def check(command: str, tokens: list[str]) -> Optional[str]:
+    """
+    Check if a kubectl command should be approved or denied.
+    
+    Returns:
+        "approve" - Safe read-only operation
+        "deny" - Dangerous operation that should be blocked
+        None - Needs user confirmation
+    """
+    if len(tokens) < 2:
+        return None
+    
+    # Find the action (skip global flags)
+    action = None
+    action_idx = 1
+    
+    while action_idx < len(tokens):
+        token = tokens[action_idx]
+        
+        # Skip flags
+        if token.startswith("-"):
+            # Skip flag values for known flags
+            if token in {"-n", "--namespace", "-l", "--selector", "-o", "--output",
+                        "--context", "--cluster", "-f", "--filename"}:
+                action_idx += 2
+                continue
+            action_idx += 1
+            continue
+        
+        action = token
+        break
+    
+    if not action:
+        return None
+    
+    rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
+    
+    # Check for subcommands first
+    if action in SAFE_SUBCOMMANDS and rest:
+        # Find first non-flag token
+        for token in rest:
+            if not token.startswith("-"):
+                if token in SAFE_SUBCOMMANDS[action]:
+                    return "approve"
+                break
+    
+    if action in UNSAFE_SUBCOMMANDS and rest:
+        for token in rest:
+            if not token.startswith("-"):
+                if token in UNSAFE_SUBCOMMANDS[action]:
+                    return None  # Needs confirmation
+                break
+    
+    # Simple safe actions
+    if action in SAFE_ACTIONS:
+        return "approve"
+    
+    # Unsafe actions need confirmation
+    if action in UNSAFE_ACTIONS:
+        return None
+    
+    # Unknown - ask user
+    return None

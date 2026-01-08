@@ -1,41 +1,62 @@
 [project]
 name = "dippy"
-version = "0.1.0"
-description = "Claude Code permission hook - auto-approve safe bash commands"
+version = "0.2.0"
+description = "Approval autopilot for Claude Code — stay in the flow by automatically allowing safe commands"
 readme = "README.md"
-license = "MIT"
-requires-python = ">=3.14"
-authors = [
-    { name = "Lily Dayton" }
-]
-keywords = ["claude", "claude-code", "hook", "bash", "permissions"]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["claude", "claude-code", "hook", "bash", "permissions", "cli"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.14",
-    "Topic :: Software Development :: Tools",
-]
-dependencies = [
-    "bashlex>=0.18",
-    "structlog>=25.5.0",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
 ]
 
-[project.urls]
-Homepage = "https://github.com/ldayton/Dippy"
-Repository = "https://github.com/ldayton/Dippy"
-Issues = "https://github.com/ldayton/Dippy/issues"
+dependencies = [
+    "bashlex>=0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
 
 [project.scripts]
 dippy = "dippy.dippy:main"
 
 [build-system]
-requires = ["uv-build>=0.9.22"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dippy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/dippy"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
 
 [dependency-groups]
 dev = [
-    "pytest",
-    "ruff",
+    "pytest>=9.0.2",
+    "ruff>=0.8.0",
 ]
