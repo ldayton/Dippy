@@ -1277,6 +1277,12 @@ def check_7z(tokens: list[str]) -> bool:
     return tokens[1] == "l"
 
 
+def check_wget(tokens: list[str]) -> bool:
+    """Approve wget only in spider mode (no download, just check availability)."""
+    # wget downloads files by default, so only --spider mode is safe
+    return "--spider" in tokens
+
+
 CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
     "7z": check_7z,
     "awk": check_awk,
@@ -1289,6 +1295,7 @@ CUSTOM_CHECKS: dict[str, Callable[[list[str]], bool]] = {
     "sh": check_shell_c,
     "tar": check_tar,
     "unzip": check_unzip,
+    "wget": check_wget,
     "xargs": check_xargs,
     "zsh": check_shell_c,
 }
