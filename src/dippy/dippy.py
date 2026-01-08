@@ -1029,29 +1029,74 @@ CURL_DATA_FLAGS = {
     "--form-string",
     "-T",
     "--upload-file",
+    "--json",
+}
+
+# Curl flags that are always unsafe
+CURL_UNSAFE_FLAGS = {
+    "-K",
+    "--config",
+    "--ftp-create-dirs",
+    "--mail-from",
+    "--mail-rcpt",
+}
+
+# Safe HTTP methods (read-only)
+CURL_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+# FTP commands that are safe (read-only)
+CURL_SAFE_FTP_COMMANDS = {
+    "PWD",
+    "LIST",
+    "NLST",
+    "STAT",
+    "SIZE",
+    "MDTM",
+    "NOOP",
+    "HELP",
+    "SYST",
+    "TYPE",
+    "PASV",
+    "CWD",
+    "CDUP",
+    "FEAT",
 }
 
 
 def check_curl(tokens: list[str]) -> bool:
     """Approve curl if GET/HEAD only (no data-sending or method-changing flags)."""
     for i, t in enumerate(tokens):
+        # Block always-unsafe flags
+        if t in CURL_UNSAFE_FLAGS:
+            return False
+
         # Block data/upload flags (and --flag=value variants)
         if t in CURL_DATA_FLAGS:
             return False
         for flag in CURL_DATA_FLAGS:
             if t.startswith(flag + "="):
                 return False
+
         # Check -X/--request for non-safe methods
         if t in {"-X", "--request"}:
             if i + 1 < len(tokens):
                 method = tokens[i + 1].upper()
-                if method not in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+                if method not in CURL_SAFE_METHODS:
                     return False
+
         # Also catch --request=METHOD
         if t.startswith("-X=") or t.startswith("--request="):
             method = t.split("=", 1)[1].upper()
-            if method not in {"GET", "HEAD"}:
+            if method not in CURL_SAFE_METHODS:
                 return False
+
+        # Check -Q/--quote for FTP commands
+        if t in {"-Q", "--quote"}:
+            if i + 1 < len(tokens):
+                ftp_cmd = tokens[i + 1].strip().strip("'\"").split()[0].upper()
+                if ftp_cmd not in CURL_SAFE_FTP_COMMANDS:
+                    return False
+
     return True
 
 

@@ -159,7 +159,47 @@ gh pr merge --squash --delete-branch
 
 ## Test Organization
 
-Tests are grouped by CLI tool with section headers:
+**Comprehensive coverage requires a dedicated test file.** When adding comprehensive support for a CLI tool:
+
+1. Create `tests/test_<command>.py` with the standard structure:
+   ```python
+   """Test cases for <Command> CLI (<command>)."""
+
+   import pytest
+
+   from dippy.dippy import (
+       is_command_safe,
+       parse_commands,
+       _load_custom_configs,
+   )
+
+   _load_custom_configs()
+
+   TESTS = [
+       # Test cases here
+       ("command subcommand", True),
+       ("command unsafe-subcommand", False),
+   ]
+
+   @pytest.mark.parametrize("command,expected", TESTS)
+   def test_<command>_command(command: str, expected: bool):
+       """Test <command> command safety classification."""
+       result = parse_commands(command)
+       assert result.commands is not None, f"Failed to parse: {command}"
+       assert len(result.commands) == 1
+       actual = is_command_safe(result.commands[0])
+       assert actual == expected, f"Command '{command}': expected {expected}, got {actual}"
+   ```
+
+2. **Move any existing tests** from `test_dippy.py` to the new dedicated file to avoid duplication.
+
+3. Organize tests within the file by:
+   - Safe operations (True cases)
+   - Unsafe operations (False cases)
+   - Edge cases (no args, help, version)
+   - Flag combinations
+
+For smaller additions that don't warrant a dedicated file, add to `tests/test_dippy.py` under a section header:
 ```python
 #
 # ==========================================================================
@@ -167,12 +207,6 @@ Tests are grouped by CLI tool with section headers:
 # ==========================================================================
 #
 ```
-
-Within each section, organize tests by:
-1. Safe operations (True cases)
-2. Unsafe operations (False cases)
-3. Edge cases (no args, help, version)
-4. Flag combinations
 
 Avoid duplicate tests. When reorganizing, remove duplicates rather than keeping them.
 
