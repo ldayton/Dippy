@@ -7,6 +7,10 @@ on:
         description: 'CLI command to add support for (e.g., ansible, terraform)'
         required: true
         type: string
+      brew_tap:
+        description: 'Optional Homebrew tap (e.g., hashicorp/tap)'
+        required: false
+        type: string
 
 jobs:
   add-command:
@@ -33,7 +37,13 @@ jobs:
         uses: Homebrew/actions/setup-homebrew@main
 
       - name: Install command via brew
-        run: brew install ${{ inputs.command }}
+        run: |
+          if [ -n "${{ inputs.brew_tap }}" ]; then
+            brew tap ${{ inputs.brew_tap }}
+            brew install ${{ inputs.brew_tap }}/${{ inputs.command }}
+          else
+            brew install ${{ inputs.command }}
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
