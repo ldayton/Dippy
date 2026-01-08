@@ -80,6 +80,7 @@ jobs:
             7. Fix any issues until tests and linter pass
 
             Do not create a git commit or PR.
+          show_full_output: "true"
           claude_args: |
             --model us.anthropic.claude-opus-4-5-20251101-v1:0
             --allowedTools Read,Edit,Write,Bash,Glob,Grep
