@@ -12,8 +12,9 @@ def is_approved(result: dict) -> bool:
 
 
 def needs_confirmation(result: dict) -> bool:
-    """Check if a hook result requires user confirmation (empty response)."""
-    return result == {}
+    """Check if a hook result requires user confirmation."""
+    output = result.get("hookSpecificOutput", {})
+    return output.get("permissionDecision") == "ask"
 
 
 class TestFileViewing:

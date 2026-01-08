@@ -63,9 +63,15 @@ def approve(reason: str = "all commands safe") -> dict:
 
 
 def ask(reason: str = "needs approval") -> dict:
-    """Return empty response to let Claude's normal permission flow handle it."""
+    """Return ask response to prompt user for confirmation."""
     logging.info(f"ASK: {reason}")
-    return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": f"🐤 {reason}",
+        }
+    }
 
 
 # === Safety Checks ===
