@@ -68,7 +68,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "parable", git = "https://github.com/ldayton/Parable.git?rev=b1021a6a002a8984f4aec3de16995031a9b3bf4a" },
+    { name = "parable", git = "https://github.com/ldayton/Parable.git?rev=613e117f4825f0d8809a91d7d5c64afd98d73ac1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
 ]
@@ -101,7 +101,7 @@ wheels = [
 [[package]]
 name = "parable"
 version = "0.1.0"
-source = { git = "https://github.com/ldayton/Parable.git?rev=b1021a6a002a8984f4aec3de16995031a9b3bf4a#b1021a6a002a8984f4aec3de16995031a9b3bf4a" }
+source = { git = "https://github.com/ldayton/Parable.git?rev=613e117f4825f0d8809a91d7d5c64afd98d73ac1#613e117f4825f0d8809a91d7d5c64afd98d73ac1" }
 
 [[package]]
 name = "pluggy"

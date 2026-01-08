@@ -81,6 +81,43 @@ All decisions are logged to `~/.claude/hook-approvals.log`.
 
 ---
 
+## Configuration
+
+Create `~/.config/dippy/dippy.toml` for global settings, or `.dippy.toml` in your project root for project-specific rules.
+
+```toml
+version = 1
+
+# What you want auto-approved
+approve = [
+    "mkdir",                       # Simple command
+    "git stash",                   # CLI action (prefix match)
+    "./scripts/deploy.sh",         # Script (relative to project root)
+    "re:^make (lint|test|build)",  # Regex (explicit re: prefix)
+]
+
+# Override: always ask, even if rules would approve
+confirm = [
+    "docker run",
+    "git push --force",
+]
+
+# Map aliases to CLI handlers
+aliases = { k = "kubectl", tf = "terraform", g = "git" }
+```
+
+**Pattern types:**
+- `mkdir` — simple command match
+- `git stash` — prefix match (matches `git stash`, `git stash pop`, etc.)
+- `./scripts/deploy.sh` — script path (resolved against project root)
+- `re:^pattern` — regex match against full command
+
+**Precedence:** `confirm` → `approve` → built-in handlers → `SIMPLE_SAFE`
+
+**Script paths:** Relative paths are resolved against the project root (where `.dippy.toml` lives). Only the exact file matches—a script with the same name in a different directory won't be approved.
+
+---
+
 ## Contributing
 
 PRs welcome! See [prompts/adding-commands.md](prompts/adding-commands.md) for instructions on adding support for new CLI tools.
@@ -106,6 +143,7 @@ src/dippy/
 │   ├── kubectl.py
 │   └── ...
 └── core/
+    ├── config.py     # Configuration system
     ├── parser.py     # Parable parsing helpers
     └── patterns.py   # Safe commands and patterns
 

@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "parable @ git+https://github.com/ldayton/Parable.git@b1021a6a002a8984f4aec3de16995031a9b3bf4a",
+    "parable @ git+https://github.com/ldayton/Parable.git@613e117f4825f0d8809a91d7d5c64afd98d73ac1",
 ]
 
 [project.optional-dependencies]
