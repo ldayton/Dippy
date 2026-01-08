@@ -1106,9 +1106,7 @@ TESTS = [
     # Unix utilities with custom checks
     # ==========================================================================
     #
-    ("find . -name '*.py'", True),
-    ("find . -exec rm {} \\;", False),
-    ("find . -delete", False),
+    # find tests are in test_find.py
     ("sort file.txt", True),
     ("sort -o output.txt file.txt", False),
     ("sed 's/foo/bar/' file.txt", True),
@@ -3913,9 +3911,7 @@ TESTS = [
     # journalctl prefix matching
     ("journalctl --vacuum-size=100M", False),
     ("journalctl --vacuum-files=10", False),
-    # find exact matching (not prefix)
-    ("find . -executable", True),
-    ("find . -name '*exec*'", True),
+    # find exact matching tests are in test_find.py
     # === Regression tests for refactor 3: inner command extraction ===
     # xargs with -- separator
     ("xargs -0 -I {} -- cat {}", True),
