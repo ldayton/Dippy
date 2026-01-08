@@ -727,7 +727,29 @@ CLI_CONFIGS = {
     },
     "brew": {
         "safe_actions": COMMON_SAFE_ACTIONS
-        | {"config", "deps", "desc", "doctor", "leaves", "options", "outdated", "uses"},
+        | {
+            # Core inspection commands
+            "cat",
+            "commands",
+            "config",
+            "deps",
+            "desc",
+            "doctor",
+            "docs",
+            "fetch",
+            "formulae",
+            "casks",
+            "home",
+            "homepage",
+            "leaves",
+            "log",
+            "missing",
+            "options",
+            "outdated",
+            "shellenv",
+            "tap-info",
+            "uses",
+        },
         "safe_prefixes": (),
         "parser": "first_token",
     },
@@ -885,6 +907,14 @@ GH_SUBCOMMAND_ALIASES: dict[str, str] = {
     "at": "attestation",
     "rs": "ruleset",
     "ext": "extension",
+}
+
+# brew has several built-in aliases for common commands
+BREW_SUBCOMMAND_ALIASES: dict[str, str] = {
+    "ls": "list",
+    "dr": "doctor",
+    "homepage": "home",
+    "-S": "search",
 }
 
 CLI_ALIASES: dict[str, str] = {}
@@ -1679,11 +1709,43 @@ def check_git_worktree(tokens: list[str]) -> bool:
     return False
 
 
+def check_brew_bundle(tokens: list[str]) -> bool:
+    """Approve brew bundle only for read-only subcommands."""
+    # tokens: ['brew', 'bundle'] or ['brew', 'bundle', 'subcommand', ...]
+    if len(tokens) < 3:
+        return False  # Just 'brew bundle' installs
+    subcommand = tokens[2]
+    # Safe subcommands: check, list
+    # Unsafe: install, upgrade, dump, cleanup, edit, add, remove, exec, sh, env
+    return subcommand in {"check", "list"}
+
+
+def check_brew_analytics(tokens: list[str]) -> bool:
+    """Approve brew analytics only for read-only subcommands."""
+    # tokens: ['brew', 'analytics'] or ['brew', 'analytics', 'subcommand']
+    if len(tokens) < 3:
+        return True  # Just 'brew analytics' shows state
+    subcommand = tokens[2]
+    # Safe: no subcommand, 'state'
+    # Unsafe: on, off
+    return subcommand == "state"
+
+
+def check_brew_services(tokens: list[str]) -> bool:
+    """Block brew services (manages background services - always requires approval)."""
+    # Services can start/stop/manage daemons - always require explicit approval
+    # even for 'list' and 'info' since the services subsystem is about mutation
+    return False
+
+
 COMPOUND_CHECKS: dict[tuple[str, ...], Callable[[list[str]], bool]] = {
     ("auth0", "api"): check_auth0_api,
     ("aws", "secretsmanager"): check_aws_secretsmanager,
     ("aws", "ssm"): check_aws_ssm,
     ("az", "devops", "configure"): check_az_devops_configure,
+    ("brew", "analytics"): check_brew_analytics,
+    ("brew", "bundle"): check_brew_bundle,
+    ("brew", "services"): check_brew_services,
     ("cdk", "context"): check_cdk_context,
     ("docker", "compose"): check_docker_compose,
     ("docker", "image", "save"): check_docker_image_save,
@@ -1962,6 +2024,33 @@ def is_command_safe(tokens: list[str]) -> bool:
             expanded = GH_SUBCOMMAND_ALIASES[args[i]]
             args = args[:i] + [expanded] + args[i + 1 :]
             tokens = [cmd] + args
+
+    # Expand brew subcommand aliases (ls -> list, dr -> doctor, etc.)
+    if cmd == "brew" and args:
+        if args[0] in BREW_SUBCOMMAND_ALIASES:
+            expanded = BREW_SUBCOMMAND_ALIASES[args[0]]
+            args = [expanded] + args[1:]
+            tokens = [cmd] + args
+
+    # Handle brew flag-based commands (--cache, --prefix, --version, etc.)
+    if cmd == "brew" and args and args[0].startswith("-"):
+        first_arg = args[0].split("=")[0]  # Handle --flag=value
+        # These are read-only path/info commands
+        safe_flags = {
+            "--cache",
+            "--caskroom",
+            "--cellar",
+            "--config",
+            "--env",
+            "--prefix",
+            "--repo",
+            "--repository",
+            "--taps",
+            "--version",
+            "-v",  # -v is --version for brew
+        }
+        if first_arg in safe_flags:
+            return True
 
     if cmd in SAFE_COMMANDS:
         return True
