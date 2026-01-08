@@ -2,9 +2,7 @@
 
 import pytest
 
-from dippy.dippy import is_command_safe, parse_commands, _load_custom_configs
-
-_load_custom_configs()
+from conftest import is_approved, needs_confirmation
 
 #
 # ==========================================================================
@@ -288,11 +286,10 @@ TESTS = [
 
 
 @pytest.mark.parametrize("command,expected", TESTS)
-def test_docker(command: str, expected: bool) -> None:
+def test_docker(check, command: str, expected: bool) -> None:
     """Test command safety."""
-    result = parse_commands(command)
-    if result.error or not result.commands:
-        actual = False
+    result = check(command)
+    if expected:
+        assert is_approved(result), f"Expected approved for: {command}"
     else:
-        actual = all(is_command_safe(cmd) for cmd in result.commands)
-    assert actual == expected, f"Expected {expected} for: {command}"
+        assert needs_confirmation(result), f"Expected confirmation for: {command}"

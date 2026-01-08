@@ -2,9 +2,7 @@
 
 import pytest
 
-from dippy.dippy import is_command_safe, parse_commands, _load_custom_configs
-
-_load_custom_configs()
+from conftest import is_approved, needs_confirmation
 
 #
 # ==========================================================================
@@ -81,10 +79,10 @@ TESTS = [
 
 
 @pytest.mark.parametrize("command,expected", TESTS)
-def test_wget(command: str, expected: bool) -> None:
+def test_wget(check, command: str, expected: bool) -> None:
     """Test wget command safety."""
-    result = parse_commands(command)
-    assert result.commands, f"Failed to parse: {command}"
-    assert len(result.commands) == 1
-    actual = is_command_safe(result.commands[0])
-    assert actual == expected, f"Expected {expected} for: {command}"
+    result = check(command)
+    if expected:
+        assert is_approved(result), f"Expected approved for: {command}"
+    else:
+        assert needs_confirmation(result), f"Expected confirmation for: {command}"

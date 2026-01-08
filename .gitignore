@@ -1,12 +1,38 @@
-.venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.egg-info/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
 dist/
 build/
-.eggs/
+*.egg-info/
 *.egg
-.uv/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Local configuration (user-specific)
 dippy-local.toml
-tests/test_dippy_local.py
+tests/local/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

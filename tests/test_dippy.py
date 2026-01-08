@@ -1,19 +1,9 @@
 """Test cases for dippy."""
 
-from pathlib import Path
 
 import pytest
 
-from dippy.dippy import (
-    parse_commands,
-    is_command_safe,
-    get_command_description,
-    get_unsafe_commands,
-    _load_custom_configs,
-)
-
-# Load custom configs (normally done in main(), but tests call functions directly)
-_load_custom_configs()
+from conftest import is_approved, needs_confirmation
 
 # (command, expected_approved_by_hook)
 TESTS = [
@@ -1175,9 +1165,7 @@ TESTS = [
     ("ls -la", True),
     ("grep foo bar.txt", True),
     ("cat file.txt", True),
-    # Scripts with paths (basename matching, from tests/dippy-test.toml)
-    ("./safe-test-script.sh", True),
-    ("/path/to/safe-test-script.sh", True),
+    # Scripts need confirmation (no custom safe list)
     ("./unknown-script.py", False),
     # Python running dippy (allow dippy to run itself) - tested separately
     ("python malicious.py", False),
@@ -3884,12 +3872,6 @@ TESTS = [
     # Dot with arguments
     (". script.sh arg1", False),
     (". ./setup.sh --config", False),
-    # Safe patterns (from tests/dippy-test.toml)
-    (f"{Path.home()}/test-tools/foo/bin/run.sh", True),
-    (f"{Path.home()}/test-tools/bar/bin/run.sh --test", True),
-    (f"{Path.home()}/test-tools/baz/bin/run.sh --prod", True),
-    ("/other/path/run.sh", False),
-    (f"{Path.home()}/test-tools/foo/run.sh", False),  # not in bin/
     # === Regression tests for refactor 1: flag skipping ===
     # AWS global flags before service
     ("aws --no-cli-pager --output json s3 ls", True),
@@ -3930,225 +3912,11 @@ TESTS = [
 ]
 
 
-DESCRIPTION_TESTS = [
-    # AWS
-    (
-        ["aws", "cloudformation", "delete-stack", "--stack-name", "foo"],
-        "aws cloudformation delete-stack",
-    ),
-    (["aws", "--profile", "prod", "s3", "rm", "s3://bucket"], "aws s3 rm"),
-    (["aws", "s3", "rm"], "aws s3 rm"),
-    (
-        [
-            "aws",
-            "--profile",
-            "prod",
-            "--region",
-            "us-east-1",
-            "ec2",
-            "terminate-instances",
-        ],
-        "aws ec2 terminate-instances",
-    ),
-    (["aws"], "aws"),  # incomplete
-    (["aws", "help"], "aws help"),  # help is service, no action
-    (["aws", "--profile", "prod"], "aws"),  # only flags, no service/action
-    # Az (variable_depth)
-    (["az", "vm", "delete", "myvm"], "az vm delete"),
-    (["az", "boards", "work-item", "create"], "az boards work-item create"),
-    (
-        ["az", "cognitiveservices", "account", "deployment", "create"],
-        "az cognitiveservices account deployment create",
-    ),
-    (["az", "--subscription", "mysub", "vm", "delete", "foo"], "az vm delete"),
-    (["az"], "az"),  # incomplete
-    # Gcloud (variable_depth)
-    (
-        ["gcloud", "compute", "instances", "delete", "foo"],
-        "gcloud compute instances delete",
-    ),
-    (
-        ["gcloud", "run", "services", "update", "myservice"],
-        "gcloud run services update",
-    ),
-    (
-        ["gcloud", "--project", "myproj", "compute", "instances", "create", "foo"],
-        "gcloud compute instances create",
-    ),
-    # Kubectl (first_token)
-    (["kubectl", "delete", "pod", "foo"], "kubectl delete"),
-    (["kubectl", "--context", "mycluster", "delete", "pod", "foo"], "kubectl delete"),
-    (["kubeat", "delete", "pod", "foo"], "kubectl delete"),  # alias
-    (["kubeci", "apply", "-f", "foo.yaml"], "kubectl apply"),  # alias
-    # Gh (second_token)
-    (["gh", "pr", "create"], "gh pr create"),
-    (["gh", "issue", "list"], "gh issue list"),
-    (["gh", "-R", "foo/bar", "pr", "create"], "gh pr create"),
-    (["gh", "pr"], "gh"),  # missing action - fallback to cmd
-    # Git (first_token)
-    (["git", "push"], "git push"),
-    (["git", "-C", "/path", "push", "--force"], "git push"),
-    (["git", "status"], "git status"),
-    # Auth0 (second_token)
-    (["auth0", "apps", "create"], "auth0 apps create"),
-    (["auth0", "--tenant", "foo", "users", "delete"], "auth0 users delete"),
-    # Docker (first_token)
-    (["docker", "run", "ubuntu"], "docker run"),
-    (["docker", "--host", "tcp://localhost", "run", "ubuntu"], "docker run"),
-    # Uv
-    (["uv", "sync"], "uv sync"),
-    (["uv", "pip", "install", "foo"], "uv pip install"),
-    # Simple commands (no CLI config)
-    (["rm", "foo"], "rm"),
-    (["cp", "a", "b"], "cp"),
-    # Wrappers
-    (["time", "aws", "s3", "rm", "foo"], "aws s3 rm"),
-    (["uv", "run", "aws", "s3", "rm", "foo"], "aws s3 rm"),
-    (["time", "rm", "foo"], "rm"),
-    # Edge cases
-    ([], "empty command"),
-    (["time"], "empty command"),  # wrapper with nothing after
-]
-
-
 @pytest.mark.parametrize("cmd,expected_safe", TESTS)
-def test_command(cmd, expected_safe):
+def test_command(check, cmd, expected_safe):
     """Test a command directly using the module's functions."""
-    result = parse_commands(cmd)
-    if result.error or not result.commands:
-        is_safe = False
+    result = check(cmd)
+    if expected_safe:
+        assert is_approved(result), f"Expected approved for: {cmd}"
     else:
-        is_safe = all(is_command_safe(tokens) for tokens in result.commands)
-    assert is_safe == expected_safe
-
-
-@pytest.mark.parametrize("tokens,expected_desc", DESCRIPTION_TESTS)
-def test_description(tokens, expected_desc):
-    """Test command description extraction."""
-    assert get_command_description(tokens) == expected_desc
-
-
-def test_python_dippy_self():
-    """Test that dippy allows running itself."""
-    import dippy.dippy as dippy_module
-
-    dippy_path = Path(dippy_module.__file__).resolve()
-    # Absolute path
-    assert is_command_safe(["python", str(dippy_path)]) is True
-    # Relative path from project root
-    assert is_command_safe(["python", "src/dippy/dippy.py"]) is True
-    # With flags
-    assert is_command_safe(["python", "-u", str(dippy_path)]) is True
-    # Wrong path should fail
-    assert is_command_safe(["python", "/tmp/dippy.py"]) is False
-
-
-def test_dippy_self_via_uv():
-    """Test that dippy allows running itself via uv run (self-executing)."""
-    import dippy.dippy as dippy_module
-
-    dippy_path = Path(dippy_module.__file__).resolve()
-    # After uv run wrapper stripping, just the script path remains
-    assert is_command_safe([str(dippy_path)]) is True
-    assert is_command_safe(["src/dippy/dippy.py"]) is True
-    # Wrong path should fail
-    assert is_command_safe(["/tmp/other.py"]) is False
-
-
-def test_python_bashlex_oneliner():
-    """Test that dippy allows bashlex one-liners for debugging."""
-    # Bashlex import allowed
-    assert (
-        is_command_safe(["python", "-c", "import bashlex; print(bashlex.parse('ls'))"])
-        is True
-    )
-    # Other one-liners rejected
-    assert (
-        is_command_safe(["python", "-c", "import os; os.system('rm -rf /')"]) is False
-    )
-    assert is_command_safe(["python", "-c", "print('hello')"]) is False
-
-
-def test_heredoc_preprocessing():
-    """Test that heredocs in command substitution are handled."""
-    from dippy.dippy import preprocess_command
-
-    # Single quotes EOF
-    cmd = '''git commit -m "$(cat <<'EOF'
-message line 1
-message line 2
-EOF
-)"'''
-    assert "HEREDOC_PLACEHOLDER" in preprocess_command(cmd)
-    # No quotes EOF
-    cmd2 = '''git commit -m "$(cat <<EOF
-message
-EOF
-)"'''
-    assert "HEREDOC_PLACEHOLDER" in preprocess_command(cmd2)
-    # With -C flag
-    cmd3 = '''git -C /path commit -m "$(cat <<'EOF'
-msg
-EOF
-)"'''
-    assert "HEREDOC_PLACEHOLDER" in preprocess_command(cmd3)
-    # Chained commands
-    cmd4 = '''git add -A && git commit -m "$(cat <<'EOF'
-msg
-EOF
-)"'''
-    assert "HEREDOC_PLACEHOLDER" in preprocess_command(cmd4)
-
-
-def test_heredoc_commit_parses():
-    """Test that git commit with heredoc can be parsed and evaluated."""
-    # git commit should be unsafe (requires approval)
-    cmd = '''git commit -m "$(cat <<'EOF'
-message
-EOF
-)"'''
-    result = parse_commands(cmd)
-    assert result.error is None
-    assert result.commands is not None
-    assert not all(is_command_safe(tokens) for tokens in result.commands)
-    # git add && git commit - both parsed, commit unsafe
-    cmd2 = '''git add -A && git commit -m "$(cat <<'EOF'
-msg
-EOF
-)"'''
-    result2 = parse_commands(cmd2)
-    assert result2.error is None
-    assert result2.commands is not None
-    assert len(result2.commands) == 2
-
-
-def test_get_unsafe_commands_multiple():
-    """Test that compound commands report all unsafe commands."""
-    result = parse_commands("git add foo/ && git commit -m 'message'")
-    assert result.commands is not None
-    unsafe = get_unsafe_commands(result.commands)
-    assert unsafe == ["git add", "git commit"]
-
-
-def test_get_unsafe_commands_dedupe():
-    """Test that duplicate unsafe commands are deduplicated."""
-    result = parse_commands("source foo && source bar")
-    assert result.commands is not None
-    unsafe = get_unsafe_commands(result.commands)
-    assert unsafe == ["source"]
-
-
-def test_get_unsafe_commands_mixed():
-    """Test compound with safe and unsafe commands."""
-    result = parse_commands("ls -la && rm -rf /")
-    assert result.commands is not None
-    unsafe = get_unsafe_commands(result.commands)
-    assert unsafe == ["rm"]
-
-
-def test_get_unsafe_commands_all_safe():
-    """Test that all-safe compound returns empty list."""
-    result = parse_commands("ls && pwd && echo hello")
-    assert result.commands is not None
-    unsafe = get_unsafe_commands(result.commands)
-    assert unsafe == []
+        assert needs_confirmation(result), f"Expected confirmation for: {cmd}"

@@ -2,14 +2,7 @@
 
 import pytest
 
-from dippy.dippy import (
-    is_command_safe,
-    parse_commands,
-    _load_custom_configs,
-)
-
-# Load custom configs (normally done in main(), but tests call functions directly)
-_load_custom_configs()
+from conftest import is_approved, needs_confirmation
 
 # ==========================================================================
 # Curl
@@ -299,22 +292,14 @@ TESTS = [
     ("curl -v -X POST https://example.com", False),
     ("curl -H 'Content-Type: application/json' -d '{}' https://example.com", False),
     ("curl -o output.txt -X DELETE https://example.com", False),
-    #
-    # --- Curl wrappers (from tests/dippy-test.toml) ---
-    #
-    ("curl-wrapper.sh query foo", True),
-    ("/path/to/curl-wrapper.sh get metrics", True),
-    ("curl-wrapper.sh --help", True),
-    ("curl-wrapper.sh -X POST data", False),
-    ("curl-wrapper.sh -d 'data' https://example.com", False),
-    ("curl-wrapper.sh --data=foo", False),
 ]
 
 
 @pytest.mark.parametrize("command,expected", TESTS)
-def test_command(command: str, expected: bool) -> None:
+def test_command(check, command: str, expected: bool) -> None:
     """Test that command safety is detected correctly."""
-    result = parse_commands(command)
-    assert len(result.commands) == 1, f"Expected 1 command, got {len(result.commands)}"
-    actual = is_command_safe(result.commands[0])
-    assert actual == expected, f"Command '{command}' expected {expected}, got {actual}"
+    result = check(command)
+    if expected:
+        assert is_approved(result), f"Expected approved for: {command}"
+    else:
+        assert needs_confirmation(result), f"Expected confirmation for: {command}"

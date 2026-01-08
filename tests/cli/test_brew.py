@@ -2,14 +2,7 @@
 
 import pytest
 
-from dippy.dippy import (
-    is_command_safe,
-    parse_commands,
-    _load_custom_configs,
-)
-
-# Load custom configs (normally done in main(), but tests call functions directly)
-_load_custom_configs()
+from conftest import is_approved, needs_confirmation
 
 # ==========================================================================
 # Homebrew CLI (brew)
@@ -598,10 +591,10 @@ TESTS = [
 
 
 @pytest.mark.parametrize("command,expected", TESTS)
-def test_brew_command(command: str, expected: bool):
+def test_brew_command(check, command: str, expected: bool):
     """Test brew command safety classification."""
-    result = parse_commands(command)
-    assert result.commands is not None, f"Failed to parse: {command}"
-    assert len(result.commands) == 1, f"Expected 1 command, got {len(result.commands)}"
-    actual = is_command_safe(result.commands[0])
-    assert actual == expected, f"Command '{command}': expected {expected}, got {actual}"
+    result = check(command)
+    if expected:
+        assert is_approved(result), f"Expected approved for: {command}"
+    else:
+        assert needs_confirmation(result), f"Expected confirmation for: {command}"

@@ -1,26 +1,21 @@
-<p align="center">
-  <img src="images/dippy.gif" width="200">
-</p>
+# 🐤 Dippy
 
-<h1 align="center">🐤 Dippy</h1>
-<p align="center"><em>Because <code>ls</code> shouldn't need approval</em></p>
+*Because `ls` shouldn't need approval*
 
 ---
 
-> **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` - destroying your flow state. You check Slack, come back, and Claude's just sitting there waiting.
+> **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` — destroying your flow state. You check Slack, come back, and Claude's just sitting there waiting.
 
 Dippy is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) that auto-approves safe commands while still prompting for anything destructive. Get up to **40% faster development** without `--dangerously-skip-permissions`.
 
-![Screenshot](images/screenshot.png)
-
-## ✅ What gets approved
+## ✅ What Gets Approved
 
 - **Read-only commands**: `ls`, `cat`, `head`, `tail`, `grep`, `find`, `wc`, `stat`
 - **Git reads**: `git status`, `git log`, `git diff`, `git branch`
 - **Cloud CLI reads**: `aws s3 ls`, `kubectl get`, `gcloud describe`, `az show`
 - **Safe tools**: `jq`, `curl` (GET only), `docker ps`, `brew list`
 
-## 🚫 What gets blocked
+## 🚫 What Gets Blocked
 
 - **Destructive ops**: `rm`, `mv`, `chmod`, file writes
 - **Git mutations**: `git push`, `git commit`, `git reset`
@@ -29,7 +24,19 @@ Dippy is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hook
 
 ---
 
-## Add to Claude
+## Installation
+
+```bash
+# Clone the repo
+git clone https://github.com/ldayton/Dippy.git
+cd Dippy
+
+# Install with uv (recommended)
+uv pip install -e .
+
+# Or with pip
+pip install -e .
+```
 
 Add to `~/.claude/settings.json`:
 
@@ -42,7 +49,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "/path/to/Dippy/src/dippy/dippy.py"
+            "command": "python -m dippy"
           }
         ]
       }
@@ -57,35 +64,61 @@ All decisions are logged to `~/.claude/hook-approvals.log`.
 
 ---
 
-## Customize
+## Project Structure
 
-Copy `dippy-local-sample.toml` to `dippy-local.toml` to add your own rules. Changes take effect immediately.
-
-```toml
-[safe_commands]
-commands = ["mkdir"]           # single commands to auto-approve
-
-[safe_scripts]
-scripts = ["my-script.sh"]     # script basenames always safe
-
-[cli_aliases]
-aliases = { k = "kubectl" }    # map aliases to CLI tools
-
-[cli_safe_actions]
-git = ["stash"]                # add safe actions to existing CLIs
-
-[cli_tools.mycli]              # define entirely new CLI tools
-safe_actions = ["status"]
-parser = "first_token"
 ```
+src/dippy/
+├── dippy.py          # Main router + entry point
+├── cli/              # CLI-specific handlers
+│   ├── __init__.py   # Dynamic loader
+│   ├── git.py
+│   ├── aws.py
+│   ├── kubectl.py
+│   ├── gcloud.py
+│   ├── terraform.py
+│   ├── docker.py
+│   └── ...
+└── core/
+    ├── parser.py     # bashlex helpers
+    └── patterns.py   # Safe commands, patterns, config
 
-See `dippy-local-sample.toml` for all options including `prefix_commands`, `safe_patterns`, `curl_wrappers`, and `wrappers`.
+tests/
+├── conftest.py       # Shared fixtures
+├── test_router.py    # Integration tests
+├── test_simple.py    # Simple command tests
+├── test_parser.py    # Parser tests
+├── cli/              # CLI handler tests
+│   ├── test_git.py
+│   ├── test_aws.py
+│   ├── test_kubectl.py
+│   └── ...
+└── local/            # User's local tests (gitignored)
+```
 
 ---
 
 ## Contributing
 
-I use Dippy all day and I'm constantly adding more patterns and programs as I encounter them. I'm a cloud infra engineer, so the supported CLI tools (aws, gcloud, az, kubectl, terraform, etc.) reflect that. PRs welcome to add support for tools you use - please include tests for any additions.
+PRs welcome! To add support for a new CLI tool:
+
+1. Create `src/dippy/cli/mycli.py` with:
+   - `SAFE_ACTIONS`: set of safe action names
+   - `UNSAFE_ACTIONS`: set of unsafe action names  
+   - `check(command, tokens)`: returns `"approve"`, `"deny"`, or `None`
+
+2. Add to `KNOWN_HANDLERS` in `src/dippy/cli/__init__.py`
+
+3. Create `tests/cli/test_mycli.py` with test cases
+
+4. Run tests: `uv run pytest`
+
+### Workflow for Adding Patterns
+
+1. User reports "Hook PreToolUse:Bash requires confirmation" for a command
+2. Use `bin/bashlex-dump.py 'command'` to inspect parsing
+3. Add pattern to appropriate handler
+4. Add test case
+5. Run `uv run pytest`
 
 ---
 
@@ -95,20 +128,6 @@ Remove the hook entry from `~/.claude/settings.json`.
 
 ---
 
-<details>
-<summary><strong>Claude Instructions</strong></summary>
+## License
 
-Structure:
-- `src/dippy/dippy.py` - Main hook logic
-- `tests/test_dippy.py` - Test cases
-- `bin/bashlex-dump.py` - Debug helper for AST inspection
-- `dippy-local.toml` - User-specific patterns (gitignored)
-
-Workflow:
-1. User pastes "Hook PreToolUse:Bash requires confirmation" output
-2. Use `bin/bashlex-dump.py 'command'` to inspect parsing
-3. Add pattern to `SAFE_COMMANDS`, `CLI_CONFIGS`, or `CUSTOM_CHECKS` in dippy.py (or `dippy-local.toml` for personal patterns)
-4. Add test case to `tests/test_dippy.py` (or `tests/test_dippy_local.py` for personal)
-5. Run `uv run pytest`
-
-</details>
+MIT
