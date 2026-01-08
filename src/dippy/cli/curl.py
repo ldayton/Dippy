@@ -37,11 +37,6 @@ SAFE_FTP_COMMANDS = frozenset({
 })
 
 
-# These don't need special handling in the new structure
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
-
 def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a curl command should be approved.

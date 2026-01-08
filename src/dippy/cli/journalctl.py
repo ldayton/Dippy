@@ -7,9 +7,6 @@ Journalctl is safe for viewing logs, but modification flags need confirmation.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Flags that modify journal state (vacuum, rotate, flush)
 UNSAFE_FLAGS = frozenset({
     "--rotate",

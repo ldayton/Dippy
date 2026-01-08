@@ -2,10 +2,8 @@
 CLI-specific command handlers for Dippy.
 
 Each handler module exports:
-- SAFE_ACTIONS: set of action names that are always safe
-- UNSAFE_ACTIONS: set of action names that should be blocked
-- check(command: str, tokens: list[str]) -> str | None
-    Returns "approve" or None (ask user)
+- check(command: str, tokens: list[str]) -> tuple[Optional[str], str]
+    Returns (decision, description) where decision is "approve" or None.
 """
 
 import importlib
@@ -15,11 +13,9 @@ from typing import Optional, Protocol
 
 class CLIHandler(Protocol):
     """Protocol for CLI handler modules."""
-    SAFE_ACTIONS: set[str]
-    UNSAFE_ACTIONS: set[str]
 
     def check(self, command: str, tokens: list[str]) -> tuple[Optional[str], str]:
-        """Check if command should be approved, denied, or needs user input.
+        """Check if command should be approved or needs user input.
 
         Returns (decision, description) where decision is "approve" or None.
         """

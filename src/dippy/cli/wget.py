@@ -8,10 +8,6 @@ Only --spider mode (check availability without downloading) is safe.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
-
 def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a wget command should be approved.

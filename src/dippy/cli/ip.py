@@ -8,9 +8,6 @@ commands need confirmation.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Safe ip subcommands (read-only)
 SAFE_SUBCOMMANDS = frozenset({
     "addr", "address", "a",  # "a" is common alias for addr

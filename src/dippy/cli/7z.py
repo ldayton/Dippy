@@ -8,9 +8,6 @@ Read-only operations (list, test, info) are safe, extraction/modification is not
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Unzip flags that are safe (read-only operations)
 UNZIP_SAFE_FLAGS = frozenset({
     "-l",  # list short format

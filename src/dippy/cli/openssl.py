@@ -8,9 +8,6 @@ and some modify files or do crypto operations.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Safe read-only subcommands
 SAFE_COMMANDS = frozenset({
     "version",

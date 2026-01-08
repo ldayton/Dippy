@@ -8,9 +8,6 @@ We need to extract and check the inner command.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Env flags that take an argument
 FLAGS_WITH_ARG = frozenset({
     "-u", "--unset",

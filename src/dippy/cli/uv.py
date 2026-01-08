@@ -8,9 +8,6 @@ Some commands need special handling for inner command checking.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Safe uv commands
 SAFE_COMMANDS = frozenset({
     "sync",     # Sync dependencies

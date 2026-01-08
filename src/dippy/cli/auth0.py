@@ -7,9 +7,6 @@ Auth0 commands for identity management.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Safe Auth0 actions (read-only)
 SAFE_ACTION_KEYWORDS = frozenset({
     "list", "ls", "show", "get",

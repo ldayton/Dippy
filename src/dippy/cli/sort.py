@@ -7,10 +7,6 @@ Sort is safe for text processing, but -o flag writes to a file.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
-
 def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a sort command should be approved.

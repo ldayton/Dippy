@@ -11,10 +11,6 @@ from typing import Optional
 # Shells we handle
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish"})
 
-# Not used directly but required by the handler protocol
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 
 def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """

@@ -8,10 +8,6 @@ Only listing (-t/--list) is safe.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
-
 def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a tar command should be approved.

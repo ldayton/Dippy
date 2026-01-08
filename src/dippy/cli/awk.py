@@ -9,9 +9,6 @@ import re
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Patterns that indicate file output or command execution
 # These match awk's print/printf redirection syntax: print > "file" or print | "cmd"
 OUTPUT_REDIRECT_PATTERN = re.compile(

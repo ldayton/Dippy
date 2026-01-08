@@ -7,10 +7,6 @@ Sed is safe for text processing, but -i flag modifies files in place.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
-
 def check(command: str, tokens: list[str]) -> tuple[Optional[str], str]:
     """
     Check if a sed command should be approved.

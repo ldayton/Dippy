@@ -7,9 +7,6 @@ Dmesg is safe for viewing kernel messages, but -c/--clear clears the ring buffer
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Flags that modify the kernel ring buffer
 UNSAFE_FLAGS = frozenset({
     "-c", "--clear",

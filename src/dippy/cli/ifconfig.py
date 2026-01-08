@@ -7,9 +7,6 @@ Ifconfig is safe for viewing, but modification commands need confirmation.
 from typing import Optional
 
 
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 # Arguments that modify interface state
 MODIFY_ARGS = frozenset({
     "up", "down",

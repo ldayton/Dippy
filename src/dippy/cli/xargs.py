@@ -25,10 +25,6 @@ FLAGS_WITH_ARG = frozenset({
 # Flags that make xargs interactive/unsafe regardless of command
 UNSAFE_FLAGS = frozenset({"-p", "--interactive", "-o", "--open-tty"})
 
-# Not used directly but required by the handler protocol
-SAFE_ACTIONS = frozenset()
-UNSAFE_ACTIONS = frozenset()
-
 
 def _skip_flags(tokens: list[str], flags_with_arg: frozenset, stop_at_double_dash: bool = False) -> int:
     """Skip flags and their arguments, return index of first non-flag token."""
