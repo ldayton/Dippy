@@ -11,21 +11,24 @@
 
 Dippy is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks) that auto-approves safe commands while still prompting for anything destructive. Get up to **40% faster development** without `--dangerously-skip-permissions`.
 
+Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bash parser—no external dependencies, just pure Python. A combined 9600+ tests.
+
 ![Screenshot](images/screenshot.png)
 
 ## ✅ What gets approved
 
-- **Read-only commands**: `ls`, `cat`, `head`, `tail`, `grep`, `find`, `wc`, `stat`
-- **Git reads**: `git status`, `git log`, `git diff`, `git branch`
-- **Cloud CLI reads**: `aws s3 ls`, `kubectl get`, `gcloud describe`, `az show`
-- **Safe tools**: `jq`, `curl` (GET only), `docker ps`, `brew list`
+- **Complex pipelines**: `ps aux | grep python | awk '{print $2}' | head -10`
+- **Chained reads**: `git status && git log --oneline -5 && git diff --stat`
+- **Cloud inspection**: `aws ec2 describe-instances --filters "Name=tag:Environment,Values=prod"`
+- **Container debugging**: `docker logs --tail 100 api-server 2>&1 | grep ERROR`
+- **Safe redirects**: `grep -r "TODO" src/ 2>/dev/null`, `ls &>/dev/null`
 
 ## 🚫 What gets blocked
 
-- **Destructive ops**: `rm`, `mv`, `chmod`, file writes
-- **Git mutations**: `git push`, `git commit`, `git reset`
-- **Cloud mutations**: `aws s3 rm`, `kubectl delete`, `terraform apply`
-- **Anything with output redirects**: `> file.txt`, `>> log`
+- **Subtle file writes**: `curl https://example.com > script.sh`, `tee output.log`
+- **Hidden mutations**: `git stash drop`, `npm unpublish`, `brew unlink`
+- **Cloud danger**: `aws s3 rm s3://bucket --recursive`, `kubectl delete pod`
+- **Destructive chains**: `rm -rf node_modules && npm install` (blocks the whole thing)
 
 ---
 
