@@ -29,7 +29,9 @@ Dippy is a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hook
 
 ---
 
-## Add to Claude
+## Installation
+
+### With uvx (recommended)
 
 Add to `~/.claude/settings.json`:
 
@@ -39,12 +41,29 @@ Add to `~/.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/path/to/Dippy/bin/dippy-hook"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "uvx --from git+https://github.com/ldayton/Dippy.git dippy" }]
+      }
+    ]
+  }
+}
+```
+
+### Manual
+
+```bash
+git clone https://github.com/ldayton/Dippy.git
+cd Dippy && uv sync
+```
+
+Then add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
       }
     ]
   }
@@ -82,7 +101,7 @@ src/dippy/
 │   ├── kubectl.py
 │   └── ...
 └── core/
-    ├── parser.py     # bashlex helpers
+    ├── parser.py     # Parable parsing helpers
     └── patterns.py   # Safe commands and patterns
 
 tests/
@@ -96,9 +115,8 @@ tests/
 
 Workflow:
 1. User pastes "Hook PreToolUse:Bash requires confirmation" output
-2. Use `bin/bashlex-dump.py 'command'` to inspect parsing
-3. Add pattern to appropriate handler in `src/dippy/cli/`
-4. Add test case to `tests/cli/test_*.py`
-5. Run `uv run pytest`
+2. Add pattern to appropriate handler in `src/dippy/cli/`
+3. Add test case to `tests/cli/test_*.py`
+4. Run `uv run pytest`
 
 </details>

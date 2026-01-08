@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "bashlex>=0.18",
+    "parable @ git+https://github.com/ldayton/Parable.git@b1021a6a002a8984f4aec3de16995031a9b3bf4a",
 ]
 
 [project.optional-dependencies]
@@ -29,11 +29,8 @@ dev = [
 dippy = "dippy.dippy:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/dippy"]
+requires = ["uv_build>=0.7.19,<0.8"]
+build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
