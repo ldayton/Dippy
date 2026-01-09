@@ -68,7 +68,7 @@ Categories to cover:
 ### 3. Run Tests to See Failures
 
 ```bash
-uv run pytest tests/cli/test_<command>.py -v
+just test
 ```
 
 ### 4. Create the Handler
@@ -115,16 +115,22 @@ KNOWN_HANDLERS = {
 ### 6. Run Tests Until All Pass
 
 ```bash
-uv run pytest tests/cli/test_<command>.py -v
+just test
 ```
 
-### 7. Run Linter
+### 7. Run All Python Versions Before Committing
+
+```bash
+just test-all
+```
+
+### 8. Run Linter
 
 ```bash
 uv run ruff check src/ tests/
 ```
 
-### 8. Create a Pull Request
+### 9. Create a Pull Request
 
 ```bash
 git add -A
@@ -142,7 +148,7 @@ EOF
 )"
 ```
 
-### 9. Merge the PR
+### 10. Merge the PR
 
 ```bash
 gh pr merge --squash --delete-branch
