@@ -38,7 +38,12 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 
 ## Installation
 
-Dippy auto-detects which AI assistant is calling it based on the input format. No flags needed.
+```bash
+git clone https://github.com/ldayton/Dippy.git
+cd Dippy && uv sync
+```
+
+Then configure your AI assistant to use the hook. Dippy auto-detects which assistant is calling it.
 
 ### Claude Code
 
@@ -50,7 +55,7 @@ Add to `~/.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "uvx --from git+https://github.com/ldayton/Dippy.git dippy" }]
+        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
       }
     ]
   }
@@ -71,7 +76,7 @@ Add to `~/.gemini/settings.json`:
     "BeforeTool": [
       {
         "matcher": "shell",
-        "hooks": [{ "type": "command", "command": "uvx --from git+https://github.com/ldayton/Dippy.git dippy" }]
+        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
       }
     ]
   }
@@ -87,21 +92,12 @@ Add to `.cursor/hooks.json` in your project:
 ```json
 {
   "beforeShellExecution": {
-    "command": "uvx --from git+https://github.com/ldayton/Dippy.git dippy"
+    "command": "/path/to/Dippy/bin/dippy-hook"
   }
 }
 ```
 
 Logs: `~/.cursor/hook-approvals.log`
-
-### Manual Installation
-
-```bash
-git clone https://github.com/ldayton/Dippy.git
-cd Dippy && uv sync
-```
-
-Then use `/path/to/Dippy/bin/dippy-hook` as the command in the configs above.
 
 ---
 
@@ -119,7 +115,7 @@ Dippy auto-detects your AI assistant, but you can force a mode:
 
 ## Configuration
 
-Create `~/.dippy/config.toml` for global settings, or `dippy.toml` (or `.dippy.toml`) in your project root for project-specific rules.
+Create `~/.dippy/settings.toml` for global settings, or `dippy.toml` (or `.dippy.toml`) in your project root for project-specific rules.
 
 ```toml
 version = 1

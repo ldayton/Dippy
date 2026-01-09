@@ -2,7 +2,7 @@
 Configuration system for Dippy.
 
 Loads config from:
-- ~/.dippy/config.toml (global defaults)
+- ~/.dippy/settings.toml (global defaults)
 - dippy.toml or .dippy.toml in project root (first found wins, merged with global)
 
 Example config:
@@ -69,7 +69,7 @@ def load_config(cwd: Optional[str] = None) -> Config:
     config = Config()
 
     # Load global config
-    global_path = Path.home() / ".dippy" / "config.toml"
+    global_path = Path.home() / ".dippy" / "settings.toml"
     if global_path.exists():
         global_config = _load_config_file(global_path)
         config = config.merge(global_config)
