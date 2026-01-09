@@ -1,0 +1,115 @@
+"""
+Packer command handler for Dippy.
+
+Packer is a HashiCorp tool for building automated machine images.
+
+Safe operations are read-only inspections and validations.
+Unsafe operations include building images (external effects),
+installing plugins, and modifying template files.
+"""
+
+COMMANDS = ["packer"]
+
+# Safe read-only actions
+SAFE_ACTIONS = frozenset({
+    "version",
+    "validate",  # Check template validity
+    "inspect",   # Show template components
+    "console",   # Interactive testing (read-only)
+})
+
+# Unsafe actions that have external effects or modify files
+UNSAFE_ACTIONS = frozenset({
+    "build",         # Creates machine images - major external effect
+    "init",          # Installs plugins - downloads external content
+    "fix",           # Modifies templates
+    "hcl2_upgrade",  # Transforms/writes template files
+})
+
+# Safe subcommands for plugins
+SAFE_PLUGINS_SUBCOMMANDS = frozenset({
+    "installed",  # List installed plugins
+    "required",   # List required plugins
+})
+
+# Unsafe subcommands for plugins
+UNSAFE_PLUGINS_SUBCOMMANDS = frozenset({
+    "install",  # Installs plugins
+    "remove",   # Removes plugins
+})
+
+
+def check(tokens: list[str]) -> bool:
+    """Check if packer command is safe.
+
+    Returns True to approve, False to ask user.
+    """
+    if len(tokens) < 2:
+        return False
+
+    # Check for help flags anywhere
+    if "--help" in tokens or "-help" in tokens or "-h" in tokens:
+        return True
+
+    # Check for version flag
+    if "--version" in tokens or "-version" in tokens:
+        return True
+
+    # Find action (skip global flags)
+    action = None
+    action_idx = 1
+
+    while action_idx < len(tokens):
+        token = tokens[action_idx]
+
+        if token.startswith("-"):
+            action_idx += 1
+            continue
+
+        action = token
+        break
+
+    if not action:
+        return False
+
+    rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
+
+    # Handle plugins subcommand
+    if action == "plugins":
+        subcommand = _find_subcommand(rest)
+        if subcommand in SAFE_PLUGINS_SUBCOMMANDS:
+            return True
+        if subcommand in UNSAFE_PLUGINS_SUBCOMMANDS:
+            return False
+        return False
+
+    # Handle fmt - safe only with -check, -diff, or -write=false
+    if action == "fmt":
+        return _is_fmt_safe(rest)
+
+    # Simple safe actions
+    if action in SAFE_ACTIONS:
+        return True
+
+    # Unsafe actions
+    if action in UNSAFE_ACTIONS:
+        return False
+
+    # Unknown actions require confirmation
+    return False
+
+
+def _find_subcommand(rest: list[str]) -> str | None:
+    """Find the first non-flag token (the subcommand)."""
+    for token in rest:
+        if not token.startswith("-"):
+            return token
+    return None
+
+
+def _is_fmt_safe(rest: list[str]) -> bool:
+    """Check if fmt command is safe (read-only mode)."""
+    for token in rest:
+        if token in {"-check", "-diff"} or token.startswith("-write=false"):
+            return True
+    return False
