@@ -1,4 +1,5 @@
-name: Add CLI Command Support
+name: Add Command
+run-name: "Add Command: ${{ inputs.command }}"
 
 on:
   workflow_dispatch:
@@ -9,6 +10,10 @@ on:
         type: string
       brew_tap:
         description: 'Optional Homebrew tap (e.g., hashicorp/tap)'
+        required: false
+        type: string
+      handler:
+        description: 'Handler to use (e.g., generic, kubectl)'
         required: false
         type: string
 
@@ -64,6 +69,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Add support for the '${{ inputs.command }}' CLI command following the process in prompts/adding-commands.md.
+            ${{ inputs.handler && format('Use the {0} handler as a base.', inputs.handler) || '' }}
 
             Reference materials:
             - tldr pages are at ~/tldr/pages/common/, ~/tldr/pages/linux/, ~/tldr/pages/osx/
