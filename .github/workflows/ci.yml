@@ -31,3 +31,4 @@ jobs:
             /tmp/dippy-test-py3.14.log
             /tmp/dippy-lint.log
             /tmp/dippy-fmt.log
+            /tmp/dippy-lock.log

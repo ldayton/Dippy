@@ -20,9 +20,13 @@ test *ARGS: (_test-py "3.14" ARGS)
 test-all:
     just test-py311 & just test-py312 & just test-py313 & just test-py314 & wait
 
-# Run all checks (tests, lint, format) in parallel
+# Verify lock file is up to date
+lock-check:
+    uv lock --check 2>&1 | sed -u "s/^/[lock] /" | tee /tmp/{{project}}-lock.log
+
+# Run all checks (tests, lint, format, lock) in parallel
 check:
-    just test-all & just lint & just fmt & wait
+    just test-all & just lint & just fmt & just lock-check & wait
 
 # Lint (--fix to apply changes)
 lint *ARGS:
