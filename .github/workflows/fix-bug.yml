@@ -71,9 +71,10 @@ jobs:
       - name: Job summary
         if: always()
         run: |
-          COST=$(jq -s '[.[] | select(.type == "result")] | last | .total_cost_usd // 0 | . * 100 | round / 100' "${{ steps.claude.outputs.execution_file }}" || echo 0)
-          INPUT=$(jq -s '[.[] | select(.type == "result")] | last | .usage.input_tokens // 0' "${{ steps.claude.outputs.execution_file }}" || echo 0)
-          OUTPUT=$(jq -s '[.[] | select(.type == "result")] | last | .usage.output_tokens // 0' "${{ steps.claude.outputs.execution_file }}" || echo 0)
+          FILE="${{ steps.claude.outputs.execution_file }}"
+          COST=$(grep -o '"total_cost_usd": [0-9.]*' "$FILE" | tail -1 | grep -o '[0-9.]*' || echo 0)
+          INPUT=$(grep -o '"input_tokens": [0-9]*' "$FILE" | tail -1 | grep -o '[0-9]*' || echo 0)
+          OUTPUT=$(grep -o '"output_tokens": [0-9]*' "$FILE" | tail -1 | grep -o '[0-9]*' || echo 0)
           echo "## Fix Bug: ${{ inputs.title }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
