@@ -62,30 +62,24 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Generate prompt
+        id: prompt
+        run: |
+          COMMAND="${{ inputs.command }}"
+          HANDLER_LINE="${{ inputs.handler && format('Use the {0} handler as a base.', inputs.handler) || '' }}"
+          export COMMAND HANDLER_LINE
+          {
+            echo 'content<<EOF'
+            envsubst < prompts/add-command.md
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
           use_bedrock: "true"
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            Add support for the '${{ inputs.command }}' CLI command following the process in prompts/adding-commands.md.
-            ${{ inputs.handler && format('Use the {0} handler as a base.', inputs.handler) || '' }}
-
-            Reference materials:
-            - tldr pages are at ~/tldr/pages/common/, ~/tldr/pages/linux/, ~/tldr/pages/osx/
-            - Man pages: run `man ${{ inputs.command }}` or `man ${{ inputs.command }}-<subcommand>`
-            - Help: run `${{ inputs.command }} --help`
-
-            Steps:
-            1. Read the tldr page and man page to understand safe vs unsafe operations
-            2. Create tests in tests/cli/test_${{ inputs.command }}.py
-            3. Create the handler in src/dippy/cli/${{ inputs.command }}.py
-            4. Register it in src/dippy/cli/__init__.py
-            5. Run tests: uv run pytest tests/cli/test_${{ inputs.command }}.py -v
-            6. Run linter: uv run ruff check src/ tests/
-            7. Fix any issues until tests and linter pass
-
-            Do not create a git commit or PR.
+          prompt: ${{ steps.prompt.outputs.content }}
           show_full_output: "true"
           claude_args: |
             --model us.anthropic.claude-opus-4-5-20251101-v1:0

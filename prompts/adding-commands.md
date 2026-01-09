@@ -5,10 +5,10 @@ This document describes how to add support for a new CLI tool in Dippy.
 ## Before You Start
 
 1. **Read the tldr pages** for the command:
-   - `~/source/tldr/pages/common/<command>.md` - cross-platform commands
-   - `~/source/tldr/pages/linux/<command>.md` - Linux-specific
-   - `~/source/tldr/pages/osx/<command>.md` - macOS-specific
-   - `~/source/tldr/pages/*/<command>-<subcommand>.md` - subcommand pages (e.g., `git-status.md`)
+   - `~/tldr/pages/common/<command>.md` - cross-platform commands
+   - `~/tldr/pages/linux/<command>.md` - Linux-specific
+   - `~/tldr/pages/osx/<command>.md` - macOS-specific
+   - `~/tldr/pages/*/<command>-<subcommand>.md` - subcommand pages (e.g., `git-status.md`)
    - Note which operations are read-only vs mutations
 2. **Read the man pages** and help output:
    - `man <command>` for the main page
@@ -71,7 +71,20 @@ Categories to cover:
 just test
 ```
 
-### 4. Create the Handler
+### 4. Implement Support
+
+**Option A: Add to SIMPLE_SAFE** (for always-safe commands)
+
+If the command is always safe regardless of arguments (read-only, no destructive flags), add it to `SIMPLE_SAFE` in `src/dippy/core/patterns.py`:
+
+```python
+SIMPLE_SAFE = frozenset({
+    # ...existing commands...
+    "<command>",
+})
+```
+
+**Option B: Create a Handler** (for commands with complex safety logic)
 
 Create `src/dippy/cli/<command>.py`:
 
@@ -100,59 +113,28 @@ def check(tokens: list[str]) -> bool:
     return action in SAFE_ACTIONS
 ```
 
-### 5. Register the Handler
-
-Add to `KNOWN_HANDLERS` in `src/dippy/cli/__init__.py`:
-
-```python
-KNOWN_HANDLERS = {
-    # ...existing handlers...
-    "<command>": "<command>",
-    "<alias>": "<command>",  # If the command has common aliases
-}
-```
-
-### 6. Run Tests Until All Pass
+### 5. Run Tests Until All Pass
 
 ```bash
 just test
 ```
 
-### 7. Run All Python Versions Before Committing
+### 6. Lint and Format
+
+When tests pass:
 
 ```bash
-just test-all
+just lint --fix
+just fmt --fix
 ```
 
-### 8. Run Linter
+### 7. IMPORTANT: `just check` MUST PASS
 
 ```bash
-uv run ruff check src/ tests/
+just check
 ```
 
-### 9. Create a Pull Request
-
-```bash
-git add -A
-git commit -m "Add <command> CLI support"
-git push -u origin add-<command>-support
-gh pr create --title "Add <command> CLI support" --body "$(cat <<'EOF'
-## Summary
-- Add handler for <command> CLI
-- Add tests covering safe/unsafe operations
-
-## Test plan
-- [ ] All new tests pass
-- [ ] Linter passes
-EOF
-)"
-```
-
-### 10. Merge the PR
-
-```bash
-gh pr merge --squash --delete-branch
-```
+This runs all tests on all Python versions plus lint and format checks. Do not proceed until this passes.
 
 ## Handler Patterns
 
