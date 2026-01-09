@@ -93,6 +93,7 @@ def _get_log_file() -> Path:
         return Path.home() / ".cursor" / "hook-approvals.log"
     return Path.home() / ".claude" / "hook-approvals.log"
 
+
 # Module-level config (set per check_command call)
 _current_aliases: dict[str, str] = {}
 
@@ -165,6 +166,7 @@ def ask(reason: str = "needs approval") -> dict:
 
 # === Safety Checks ===
 
+
 def check_unsafe_patterns(command: str) -> bool:
     """Check if command matches any unsafe patterns."""
     for pattern in UNSAFE_PATTERNS:
@@ -205,7 +207,10 @@ def is_version_or_help(tokens: list[str]) -> bool:
 
 # === Main Logic ===
 
-def check_simple_command(cmd: str, tokens: list[str]) -> tuple[Optional[str], Optional[str]]:
+
+def check_simple_command(
+    cmd: str, tokens: list[str]
+) -> tuple[Optional[str], Optional[str]]:
     """
     Check simple commands that don't need CLI-specific handling.
 
@@ -217,7 +222,7 @@ def check_simple_command(cmd: str, tokens: list[str]) -> tuple[Optional[str], Op
 
     # Skip environment variable assignments (FOO=bar)
     i = 0
-    while i < len(tokens) and '=' in tokens[i] and not tokens[i].startswith('-'):
+    while i < len(tokens) and "=" in tokens[i] and not tokens[i].startswith("-"):
         i += 1
 
     if i >= len(tokens):
@@ -238,15 +243,15 @@ def check_simple_command(cmd: str, tokens: list[str]) -> tuple[Optional[str], Op
         while j < len(rest):
             token = rest[j]
             # Skip numeric arguments
-            if token.isdigit() or token.replace('.', '').isdigit():
+            if token.isdigit() or token.replace(".", "").isdigit():
                 j += 1
                 continue
             # Skip flags (but stop at -- which ends flag processing)
-            if token.startswith('-') and token != '--':
+            if token.startswith("-") and token != "--":
                 j += 1
                 continue
             # -- ends flag processing, skip it and use next token
-            if token == '--':
+            if token == "--":
                 j += 1
             # Found the actual command
             break
@@ -333,7 +338,9 @@ def _check_command_substitutions_with_config(
         inner_result = check_command(inner_cmd, config, cwd)
         if inner_result["hookSpecificOutput"]["permissionDecision"] != "allow":
             # Inner command not approved - propagate the reason
-            inner_reason = inner_result["hookSpecificOutput"]["permissionDecisionReason"]
+            inner_reason = inner_result["hookSpecificOutput"][
+                "permissionDecisionReason"
+            ]
             # Strip the emoji prefix for cleaner nested message
             if inner_reason.startswith("🐤 "):
                 inner_reason = inner_reason[2:]
@@ -471,13 +478,15 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
 # === Hook Entry Point ===
 
 # Tool names that indicate shell/bash commands
-SHELL_TOOL_NAMES = frozenset({
-    "Bash",  # Claude Code
-    "shell",  # Gemini CLI
-    "run_shell",  # Gemini CLI alternate
-    "run_shell_command",  # Gemini CLI official name
-    "execute_shell",  # Gemini CLI alternate
-})
+SHELL_TOOL_NAMES = frozenset(
+    {
+        "Bash",  # Claude Code
+        "shell",  # Gemini CLI
+        "run_shell",  # Gemini CLI alternate
+        "run_shell_command",  # Gemini CLI official name
+        "execute_shell",  # Gemini CLI alternate
+    }
+)
 
 
 def main():
@@ -524,7 +533,7 @@ def main():
 
         result = check_command(command, config, cwd)
         print(json.dumps(result))
-        
+
     except json.JSONDecodeError:
         logging.error("Invalid JSON input")
         print(json.dumps({}))

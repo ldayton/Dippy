@@ -7,38 +7,70 @@ Handles az commands.
 COMMANDS = ["az"]
 
 # Safe action keywords - if command contains these as action verbs, it's read-only
-SAFE_ACTION_KEYWORDS = frozenset({
-    "show", "list", "get", "exists", "query",
-    "list-sizes", "list-skus", "list-offers", "list-publishers",
-    "list-member", "list-definitions",
-    "show-tags", "summarize", "logs",
-    "check-health", "url", "download", "download-batch", "tail",
-})
+SAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "show",
+        "list",
+        "get",
+        "exists",
+        "query",
+        "list-sizes",
+        "list-skus",
+        "list-offers",
+        "list-publishers",
+        "list-member",
+        "list-definitions",
+        "show-tags",
+        "summarize",
+        "logs",
+        "check-health",
+        "url",
+        "download",
+        "download-batch",
+        "tail",
+    }
+)
 
 # Safe action prefixes - if command contains action starting with these
 SAFE_ACTION_PREFIXES = ("list-", "show-", "get-")
 
 # Exceptions: things that look safe but aren't (e.g., get- prefix but modifies state)
-UNSAFE_EXCEPTIONS = frozenset({
-    "get-credentials",  # az aks get-credentials modifies kubeconfig
-})
+UNSAFE_EXCEPTIONS = frozenset(
+    {
+        "get-credentials",  # az aks get-credentials modifies kubeconfig
+    }
+)
 
 # Unsafe action keywords - operations that modify state
-UNSAFE_ACTION_KEYWORDS = frozenset({
-    "create", "delete", "update", "set",
-    "start", "stop", "restart",
-    "add", "remove", "clear",
-    "run", "invoke", "execute",
-})
+UNSAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "create",
+        "delete",
+        "update",
+        "set",
+        "start",
+        "stop",
+        "restart",
+        "add",
+        "remove",
+        "clear",
+        "run",
+        "invoke",
+        "execute",
+    }
+)
 
 # Group-level commands that need subcommand checking
 ACCOUNT_SAFE_COMMANDS = frozenset({"show", "list", "get-access-token"})
 ACCOUNT_UNSAFE_COMMANDS = frozenset({"set", "clear"})
 
 # Groups that are mostly read-only
-SAFE_GROUPS = frozenset({
-    "version", "find",
-})
+SAFE_GROUPS = frozenset(
+    {
+        "version",
+        "find",
+    }
+)
 
 # Commands with safe/unsafe subcommands
 SAFE_SUBCOMMANDS = {
@@ -46,38 +78,72 @@ SAFE_SUBCOMMANDS = {
 }
 
 # Groups that need confirmation
-UNSAFE_GROUPS = frozenset({
-    "login", "logout", "configure",
-})
+UNSAFE_GROUPS = frozenset(
+    {
+        "login",
+        "logout",
+        "configure",
+    }
+)
 
 # Flags that consume the next argument (should be skipped)
-FLAGS_WITH_ARG = frozenset({
-    "--resource-group", "-g",
-    "--subscription", "-s",
-    "--name", "-n",
-    "--output", "-o",
-    "--query",
-    "--location", "-l",
-    "--ids", "--id",
-    "--workspace-name", "--workspace",
-    "--vault-name", "--vault",
-    "--server", "--server-name",
-    "--database", "--database-name",
-    "--namespace-name", "--namespace",
-    "--container-name", "--container",
-    "--account-name", "--account",
-    "--storage-account",
-    "--registry", "--registry-name",
-    "--repository",
-    "--project", "--organization", "--org",
-    "--pipeline-id", "--build-id", "--release-id",
-    "--pool-id", "--group-id", "--team",
-    "--assignee", "--scope",
-    "--analytics-query", "--wiql",
-    "--publisher", "--offer", "--sku", "--urn",
-    "--start-time", "--end-time",
-    "--resource", "--resource-type", "--resource-id",
-})
+FLAGS_WITH_ARG = frozenset(
+    {
+        "--resource-group",
+        "-g",
+        "--subscription",
+        "-s",
+        "--name",
+        "-n",
+        "--output",
+        "-o",
+        "--query",
+        "--location",
+        "-l",
+        "--ids",
+        "--id",
+        "--workspace-name",
+        "--workspace",
+        "--vault-name",
+        "--vault",
+        "--server",
+        "--server-name",
+        "--database",
+        "--database-name",
+        "--namespace-name",
+        "--namespace",
+        "--container-name",
+        "--container",
+        "--account-name",
+        "--account",
+        "--storage-account",
+        "--registry",
+        "--registry-name",
+        "--repository",
+        "--project",
+        "--organization",
+        "--org",
+        "--pipeline-id",
+        "--build-id",
+        "--release-id",
+        "--pool-id",
+        "--group-id",
+        "--team",
+        "--assignee",
+        "--scope",
+        "--analytics-query",
+        "--wiql",
+        "--publisher",
+        "--offer",
+        "--sku",
+        "--urn",
+        "--start-time",
+        "--end-time",
+        "--resource",
+        "--resource-type",
+        "--resource-id",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

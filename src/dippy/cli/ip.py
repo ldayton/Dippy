@@ -8,35 +8,65 @@ commands need confirmation.
 COMMANDS = ["ip"]
 
 # Safe ip subcommands (read-only)
-SAFE_SUBCOMMANDS = frozenset({
-    "addr", "address", "a",  # "a" is common alias for addr
-    "link", "l",  # "l" is alias for link
-    "route", "r",
-    "rule", "ru",  # "ru" is alias for rule
-    "neigh", "neighbor", "n",  # "n" is alias for neigh
-    "tunnel",
-    "tuntap", "tunt",  # "tunt" is alias for tuntap
-    "maddr", "maddress", "m",  # "m" is alias for maddress
-    "mroute",
-    "monitor", "mo",  # "mo" is alias for monitor
-    "netns",
-    "netconf", "netc",  # network config (read-only)
-    "stats", "st",  # interface statistics (read-only)
-})
+SAFE_SUBCOMMANDS = frozenset(
+    {
+        "addr",
+        "address",
+        "a",  # "a" is common alias for addr
+        "link",
+        "l",  # "l" is alias for link
+        "route",
+        "r",
+        "rule",
+        "ru",  # "ru" is alias for rule
+        "neigh",
+        "neighbor",
+        "n",  # "n" is alias for neigh
+        "tunnel",
+        "tuntap",
+        "tunt",  # "tunt" is alias for tuntap
+        "maddr",
+        "maddress",
+        "m",  # "m" is alias for maddress
+        "mroute",
+        "monitor",
+        "mo",  # "mo" is alias for monitor
+        "netns",
+        "netconf",
+        "netc",  # network config (read-only)
+        "stats",
+        "st",  # interface statistics (read-only)
+    }
+)
 
 # Subcommand actions that modify state
-MODIFY_ACTIONS = frozenset({
-    "add", "del", "delete", "change", "replace",
-    "set", "flush",
-    "exec",  # ip netns exec
-})
+MODIFY_ACTIONS = frozenset(
+    {
+        "add",
+        "del",
+        "delete",
+        "change",
+        "replace",
+        "set",
+        "flush",
+        "exec",  # ip netns exec
+    }
+)
 
 # Global flags that take an argument (need to skip)
-GLOBAL_FLAGS_WITH_ARG = frozenset({
-    "-n", "-netns", "--netns",
-    "-b", "-batch", "--batch",
-    "-rc", "-rcvbuf", "--rcvbuf",
-})
+GLOBAL_FLAGS_WITH_ARG = frozenset(
+    {
+        "-n",
+        "-netns",
+        "--netns",
+        "-b",
+        "-batch",
+        "--batch",
+        "-rc",
+        "-rcvbuf",
+        "--rcvbuf",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

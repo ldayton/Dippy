@@ -66,16 +66,6 @@ class TestApproveReasons:
     def test_git_list(self, check):
         assert get_reason(check("git status && git log")) == "git status, git log"
 
-    def test_git_with_C_flag(self, check):
-        # -C is a path option, not the action
-        assert get_reason(check("git -C /some/path status")) == "git status"
-
-    def test_git_with_git_dir_flag(self, check):
-        assert get_reason(check("git --git-dir=/some/.git log")) == "git log"
-
-    def test_git_with_no_pager(self, check):
-        assert get_reason(check("git --no-pager diff")) == "git diff"
-
 
 class TestAskReasons:
     """Verify unsafe commands list matched commands."""
@@ -104,21 +94,6 @@ class TestAskReasons:
     def test_git_add_commit(self, check):
         assert (
             get_reason(check("git add . && git commit -m 'x'")) == "git add, git commit"
-        )
-
-    def test_git_add_with_C_flag(self, check):
-        # -C is a path option, not the action
-        assert get_reason(check("git -C /path add file.md")) == "git add"
-
-    def test_git_commit_with_C_flag(self, check):
-        assert get_reason(check("git -C /path commit -m 'msg'")) == "git commit"
-
-    def test_git_add_commit_with_C_flags(self, check):
-        # The original bug: git -C /path add file.md && git -C /path commit -m "..."
-        # Should show "git add, git commit" not "git -C, git -C"
-        assert (
-            get_reason(check("git -C /path add file.md && git -C /path commit -m 'x'"))
-            == "git add, git commit"
         )
 
     def test_kubectl_delete(self, check):

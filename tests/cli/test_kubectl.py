@@ -132,8 +132,8 @@ TESTS = [
     ("kubectl edit configmap my-config", False),
     ('kubectl patch deployment nginx -p \'{"spec":{"replicas":3}}\'', False),
     (
-    'kubectl patch pod nginx --type=\'json\' -p=\'[{"op": "replace", "path": "/spec/containers/0/image", "value":"nginx:latest"}]\'',
-    False,
+        'kubectl patch pod nginx --type=\'json\' -p=\'[{"op": "replace", "path": "/spec/containers/0/image", "value":"nginx:latest"}]\'',
+        False,
     ),
     ("kubectl replace -f deployment.yaml", False),
     ("kubectl replace --force -f pod.yaml", False),
@@ -144,8 +144,8 @@ TESTS = [
     ("kubectl annotate pods nginx description-", False),
     ("kubectl set image deployment/nginx nginx=nginx:1.19", False),
     (
-    "kubectl set resources deployment/nginx -c=nginx --limits=cpu=200m,memory=512Mi",
-    False,
+        "kubectl set resources deployment/nginx -c=nginx --limits=cpu=200m,memory=512Mi",
+        False,
     ),
     ("kubectl set env deployment/nginx ENV_VAR=value", False),
     # kubectl - unsafe (scaling)

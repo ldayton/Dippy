@@ -7,33 +7,50 @@ Auth0 commands for identity management.
 COMMANDS = ["auth0"]
 
 # Safe Auth0 actions (read-only)
-SAFE_ACTION_KEYWORDS = frozenset({
-    "list", "ls", "show", "get",
-    "search", "search-by-email",
-    "tail",  # logs tail
-    "diff",  # actions diff
-    "stats",  # event-streams stats
-    "--help", "-h",  # help flags
-})
+SAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "list",
+        "ls",
+        "show",
+        "get",
+        "search",
+        "search-by-email",
+        "tail",  # logs tail
+        "diff",  # actions diff
+        "stats",  # event-streams stats
+        "--help",
+        "-h",  # help flags
+    }
+)
 
-UNSAFE_ACTION_KEYWORDS = frozenset({
-    "create", "delete", "update",
-    "import", "export",
-    "rm",  # alias for delete
-    "add", "remove",  # for permissions
-    "download",  # quickstarts download
-    "use",  # tenants use
-    "customize",  # universal-login customize
-    "verify",  # domains verify
-    "deploy",  # actions deploy
-    "enable", "disable",  # rules enable/disable
-})
+UNSAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "create",
+        "delete",
+        "update",
+        "import",
+        "export",
+        "rm",  # alias for delete
+        "add",
+        "remove",  # for permissions
+        "download",  # quickstarts download
+        "use",  # tenants use
+        "customize",  # universal-login customize
+        "verify",  # domains verify
+        "deploy",  # actions deploy
+        "enable",
+        "disable",  # rules enable/disable
+    }
+)
 
 # Global flags that take an argument
-GLOBAL_FLAGS_WITH_ARG = frozenset({
-    "--tenant", "-t",
-    "--debug",
-})
+GLOBAL_FLAGS_WITH_ARG = frozenset(
+    {
+        "--tenant",
+        "-t",
+        "--debug",
+    }
+)
 
 
 def _check_api(tokens: list[str]) -> bool:

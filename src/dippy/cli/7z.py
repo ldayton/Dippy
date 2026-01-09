@@ -8,25 +8,29 @@ Read-only operations (list, test, info) are safe, extraction/modification is not
 COMMANDS = ["unzip", "7z", "7za", "7zr", "7zz"]
 
 # Unzip flags that are safe (read-only operations)
-UNZIP_SAFE_FLAGS = frozenset({
-    "-l",  # list short format
-    "-v",  # verbose list / version info
-    "-t",  # test archive integrity
-    "-z",  # display archive comment only
-    "-Z",  # zipinfo mode (detailed listing)
-    "-h",  # help
-    "-hh",  # extended help
-    "--help",
-})
+UNZIP_SAFE_FLAGS = frozenset(
+    {
+        "-l",  # list short format
+        "-v",  # verbose list / version info
+        "-t",  # test archive integrity
+        "-z",  # display archive comment only
+        "-Z",  # zipinfo mode (detailed listing)
+        "-h",  # help
+        "-hh",  # extended help
+        "--help",
+    }
+)
 
 # 7z commands that are safe (read-only operations)
-SAFE_7Z_COMMANDS = frozenset({
-    "l",  # list contents
-    "t",  # test archive integrity
-    "h",  # calculate hash
-    "b",  # benchmark
-    "i",  # show info about supported formats
-})
+SAFE_7Z_COMMANDS = frozenset(
+    {
+        "l",  # list contents
+        "t",  # test archive integrity
+        "h",  # calculate hash
+        "b",  # benchmark
+        "i",  # show info about supported formats
+    }
+)
 
 
 def _check_unzip(tokens: list[str]) -> bool:

@@ -8,17 +8,22 @@ Most commands modify infrastructure, only a few are safe.
 COMMANDS = ["cdk"]
 
 # Safe CDK commands (read-only)
-SAFE_ACTIONS = frozenset({
-    "list", "ls",
-    "diff",
-    "synth", "synthesize",  # Generates CloudFormation, no deployment
-    "metadata",
-    "context",  # Needs special handling for --reset/--clear
-    "docs",
-    "doctor",
-    "notices",
-    "acknowledge", "ack",
-})
+SAFE_ACTIONS = frozenset(
+    {
+        "list",
+        "ls",
+        "diff",
+        "synth",
+        "synthesize",  # Generates CloudFormation, no deployment
+        "metadata",
+        "context",  # Needs special handling for --reset/--clear
+        "docs",
+        "doctor",
+        "notices",
+        "acknowledge",
+        "ack",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

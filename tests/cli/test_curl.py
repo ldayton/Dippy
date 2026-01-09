@@ -232,7 +232,7 @@ TESTS = [
     ("curl --data-binary '@file' https://example.com", False),
     ("curl --data-raw 'data' https://example.com", False),
     ("curl --data-urlencode 'key=value' https://example.com", False),
-    ("curl --json '{\"key\":\"value\"}' https://example.com", False),
+    ('curl --json \'{"key":"value"}\' https://example.com', False),
     # --url-query is safe - it just adds URL query parameters for GET requests
     ("curl --url-query 'key=value' https://example.com", True),
     #

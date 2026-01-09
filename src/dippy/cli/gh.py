@@ -7,31 +7,52 @@ Approves read-only gh operations, blocks mutations.
 COMMANDS = ["gh"]
 
 # Actions that only read data (second token after gh)
-SAFE_ACTIONS = frozenset({
-    # Common safe actions
-    "list", "view", "status", "diff", "checks", "get", "search",
-    "download", "watch", "verify", "verify-asset", "trusted-root",
-
-    # gh auth
-    "token",
-
-    # gh codespace
-    "logs", "ports",
-
-    # gh project
-    "field-list", "item-list",
-
-    # gh ruleset
-    "check",
-})
+SAFE_ACTIONS = frozenset(
+    {
+        # Common safe actions
+        "list",
+        "view",
+        "status",
+        "diff",
+        "checks",
+        "get",
+        "search",
+        "download",
+        "watch",
+        "verify",
+        "verify-asset",
+        "trusted-root",
+        # gh auth
+        "token",
+        # gh codespace
+        "logs",
+        "ports",
+        # gh project
+        "field-list",
+        "item-list",
+        # gh ruleset
+        "check",
+    }
+)
 
 
 # Actions that modify state
-UNSAFE_ACTIONS = frozenset({
-    "create", "delete", "edit", "close", "reopen",
-    "merge", "comment", "review", "approve",
-    "ready", "push", "sync",
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        "create",
+        "delete",
+        "edit",
+        "close",
+        "reopen",
+        "merge",
+        "comment",
+        "review",
+        "approve",
+        "ready",
+        "push",
+        "sync",
+    }
+)
 
 
 # Flags that take an argument (skip these when finding action)
@@ -89,7 +110,9 @@ def _check_api(tokens: list[str]) -> bool:
                 query_content = val[6:]
                 if "mutation" in query_content.lower():
                     return False
-                is_graphql_query = "query" in query_content.lower() or "{" in query_content
+                is_graphql_query = (
+                    "query" in query_content.lower() or "{" in query_content
+                )
         if arg.startswith(("--raw-field=query=", "-f=query=")):
             query_content = arg.split("=", 2)[2] if arg.count("=") >= 2 else ""
             if "mutation" in query_content.lower():

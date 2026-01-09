@@ -1,4 +1,4 @@
-set shell := ["bash", "-cu"]
+set shell := ["bash", "-o", "pipefail", "-cu"]
 project := "dippy"
 
 _test-py version *ARGS:
@@ -17,16 +17,16 @@ test-py314 *ARGS: (_test-py "3.14" ARGS)
 test *ARGS: (_test-py "3.14" ARGS)
 
 # Run tests on all supported Python versions (parallel)
-test-all:
-    just test-py311 & just test-py312 & just test-py313 & just test-py314 & wait
+[parallel]
+test-all: test-py311 test-py312 test-py313 test-py314
 
 # Verify lock file is up to date
 lock-check:
     uv lock --check 2>&1 | sed -u "s/^/[lock] /" | tee /tmp/{{project}}-lock.log
 
 # Run all checks (tests, lint, format, lock) in parallel
-check:
-    just test-all & just lint & just fmt & just lock-check & wait
+[parallel]
+check: test-all lint fmt lock-check
 
 # Lint (--fix to apply changes)
 lint *ARGS:

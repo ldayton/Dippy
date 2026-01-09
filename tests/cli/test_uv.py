@@ -142,7 +142,10 @@ TESTS = [
     ("uv tool install ruff", False),
     ("uv tool uninstall ruff", False),
     ("uv tool upgrade ruff", False),
-    ("uv tool list", False),  # uv tool list shows installed tools but tool commands are unsafe
+    (
+        "uv tool list",
+        False,
+    ),  # uv tool list shows installed tools but tool commands are unsafe
     ("uv tool dir", False),
     #
     # === UNSAFE: uvx (alias for uv tool run) ===

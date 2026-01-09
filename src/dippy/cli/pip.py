@@ -6,25 +6,39 @@ Handles pip, pip3, and uv commands.
 
 COMMANDS = ["pip", "pip3"]
 
-SAFE_ACTIONS = frozenset({
-    "list", "freeze", "show",
-    "search",  # Deprecated but safe
-    "check", "config",
-    "help", "-h", "--help",
-    "version", "-V", "--version",
-    "debug", "cache",
-    "index",
-    "inspect",  # Read-only environment inspection
-    "hash",  # Read-only hash computation
-})
+SAFE_ACTIONS = frozenset(
+    {
+        "list",
+        "freeze",
+        "show",
+        "search",  # Deprecated but safe
+        "check",
+        "config",
+        "help",
+        "-h",
+        "--help",
+        "version",
+        "-V",
+        "--version",
+        "debug",
+        "cache",
+        "index",
+        "inspect",  # Read-only environment inspection
+        "hash",  # Read-only hash computation
+    }
+)
 
 
-UNSAFE_ACTIONS = frozenset({
-    "install", "uninstall", "remove",
-    "download",
-    "wheel",
-    "lock",  # Experimental lock file creation
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        "install",
+        "uninstall",
+        "remove",
+        "download",
+        "wheel",
+        "lock",  # Experimental lock file creation
+    }
+)
 
 
 SAFE_SUBCOMMANDS = {

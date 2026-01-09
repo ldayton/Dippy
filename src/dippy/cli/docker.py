@@ -7,44 +7,83 @@ Handles docker, docker-compose, and podman commands.
 COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]
 
 # Safe read-only actions (at the top level)
-SAFE_ACTIONS = frozenset({
-    "version", "help", "info",
-    "ps", "images", "image",
-    "inspect", "logs", "stats", "top",
-    "port", "diff",
-    "history", "search",
-    "events", "system",
-    "network",  # Some subcommands are safe
-    "volume",   # Some subcommands are safe
-    "config",   # Some subcommands are safe
-    "context",  # Needs subcommand checking
-    "export",   # Read-only (exports container to stdout)
-    "save",     # Read-only (saves image to stdout)
-})
+SAFE_ACTIONS = frozenset(
+    {
+        "version",
+        "help",
+        "info",
+        "ps",
+        "images",
+        "image",
+        "inspect",
+        "logs",
+        "stats",
+        "top",
+        "port",
+        "diff",
+        "history",
+        "search",
+        "events",
+        "system",
+        "network",  # Some subcommands are safe
+        "volume",  # Some subcommands are safe
+        "config",  # Some subcommands are safe
+        "context",  # Needs subcommand checking
+        "export",  # Read-only (exports container to stdout)
+        "save",  # Read-only (saves image to stdout)
+    }
+)
 
 
 # Unsafe actions
-UNSAFE_ACTIONS = frozenset({
-    "run", "exec", "start", "stop", "restart",
-    "kill", "pause", "unpause",
-    "rm", "rmi", "prune",
-    "pull", "push",
-    "build", "create",
-    "commit", "tag",
-    "cp", "import", "load",
-    "attach",
-    "update",
-    "compose",  # docker-compose subcommands need checking
-    "swarm",  # All swarm operations need confirmation
-    "login", "logout",
-    "rename", "wait",
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        "run",
+        "exec",
+        "start",
+        "stop",
+        "restart",
+        "kill",
+        "pause",
+        "unpause",
+        "rm",
+        "rmi",
+        "prune",
+        "pull",
+        "push",
+        "build",
+        "create",
+        "commit",
+        "tag",
+        "cp",
+        "import",
+        "load",
+        "attach",
+        "update",
+        "compose",  # docker-compose subcommands need checking
+        "swarm",  # All swarm operations need confirmation
+        "login",
+        "logout",
+        "rename",
+        "wait",
+    }
+)
 
 
 # Safe subcommands for multi-level commands
 SAFE_SUBCOMMANDS = {
     "image": {"ls", "list", "inspect", "history", "save"},
-    "container": {"ls", "list", "inspect", "logs", "stats", "top", "port", "diff", "export"},
+    "container": {
+        "ls",
+        "list",
+        "inspect",
+        "logs",
+        "stats",
+        "top",
+        "port",
+        "diff",
+        "export",
+    },
     "network": {"ls", "list", "inspect"},
     "volume": {"ls", "list", "inspect"},
     "system": {"df", "info", "events"},
@@ -54,7 +93,17 @@ SAFE_SUBCOMMANDS = {
     "service": {"ls", "list", "inspect", "logs", "ps"},
     "stack": {"ls", "ps", "services"},
     "node": {"ls", "inspect", "ps"},
-    "compose": {"ps", "logs", "config", "images", "ls", "top", "version", "port", "events"},
+    "compose": {
+        "ps",
+        "logs",
+        "config",
+        "images",
+        "ls",
+        "top",
+        "version",
+        "port",
+        "events",
+    },
     "plugin": {"ls", "list", "inspect"},
     "buildx": {"ls", "inspect", "du", "version"},  # imagetools handled specially
     "manifest": {"inspect"},
@@ -70,28 +119,62 @@ UNSAFE_SUBCOMMANDS = {
     "volume": {"create", "rm", "prune"},
     "system": {"prune"},
     "context": {"create", "update", "use", "rm", "import"},
-    "compose": {"up", "down", "start", "stop", "restart", "rm", "pull", "build", "exec", "run"},
+    "compose": {
+        "up",
+        "down",
+        "start",
+        "stop",
+        "restart",
+        "rm",
+        "pull",
+        "build",
+        "exec",
+        "run",
+    },
     "config": {"create", "rm"},
     "secret": {"create", "rm"},
     "service": {"create", "rm", "scale", "update", "rollback"},
     "stack": {"deploy", "rm"},
     "node": {"update", "rm", "promote", "demote"},
     "plugin": {"install", "enable", "disable", "rm", "upgrade", "create", "push"},
-    "buildx": {"build", "bake", "create", "rm", "use", "prune"},  # imagetools handled specially
+    "buildx": {
+        "build",
+        "bake",
+        "create",
+        "rm",
+        "use",
+        "prune",
+    },  # imagetools handled specially
     "manifest": {"create", "push", "annotate", "rm"},
     "trust": {"sign", "revoke"},
-    "swarm": {"init", "join", "join-token", "leave", "update", "ca", "unlock", "unlock-key"},
+    "swarm": {
+        "init",
+        "join",
+        "join-token",
+        "leave",
+        "update",
+        "ca",
+        "unlock",
+        "unlock-key",
+    },
 }
 
 
 # Global flags that take an argument
-GLOBAL_FLAGS_WITH_ARG = frozenset({
-    "-H", "--host",
-    "-c", "--context",
-    "-l", "--log-level",
-    "--config",
-    "--tlscacert", "--tlscert", "--tlskey",
-})
+GLOBAL_FLAGS_WITH_ARG = frozenset(
+    {
+        "-H",
+        "--host",
+        "-c",
+        "--context",
+        "-l",
+        "--log-level",
+        "--config",
+        "--tlscacert",
+        "--tlscert",
+        "--tlskey",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:
@@ -107,7 +190,7 @@ def check(tokens: list[str]) -> bool:
         return False
 
     action = tokens[action_idx]
-    rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
+    rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
     # Handle docker-compose / docker compose
     if action == "compose" or tokens[0] in {"docker-compose", "podman-compose"}:
@@ -119,13 +202,19 @@ def check(tokens: list[str]) -> bool:
         if subcommand:
             # Handle nested subcommands (e.g., buildx imagetools inspect)
             if action == "buildx" and subcommand == "imagetools":
-                sub_rest = rest[rest.index(subcommand) + 1:] if subcommand in rest else []
+                sub_rest = (
+                    rest[rest.index(subcommand) + 1 :] if subcommand in rest else []
+                )
                 imagetools_action = _find_subcommand(sub_rest)
                 return imagetools_action == "inspect"
 
             if subcommand in SAFE_SUBCOMMANDS.get(action, set()):
                 # Special case: image save -o writes to file
-                if action == "image" and subcommand == "save" and _has_output_flag(rest):
+                if (
+                    action == "image"
+                    and subcommand == "save"
+                    and _has_output_flag(rest)
+                ):
                     return False
                 return True
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
@@ -180,8 +269,10 @@ def _has_output_flag(tokens: list[str]) -> bool:
 def _check_compose(tokens: list[str], start_idx: int, base: str) -> bool:
     """Check docker-compose commands."""
     compose_flags_with_arg = {
-        "-f", "--file",
-        "-p", "--project-name",
+        "-f",
+        "--file",
+        "-p",
+        "--project-name",
         "--project-directory",
         "--env-file",
         "--profile",
@@ -207,6 +298,16 @@ def _check_compose(tokens: list[str], start_idx: int, base: str) -> bool:
             continue
 
         # Found the compose action
-        return token in {"ps", "logs", "config", "images", "ls", "top", "version", "port", "events"}
+        return token in {
+            "ps",
+            "logs",
+            "config",
+            "images",
+            "ls",
+            "top",
+            "version",
+            "port",
+            "events",
+        }
 
     return False

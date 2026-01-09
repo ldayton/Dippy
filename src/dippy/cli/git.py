@@ -123,14 +123,6 @@ GLOBAL_FLAGS_NO_ARG = frozenset(
 )
 
 
-def get_description(tokens: list[str]) -> str:
-    """Compute description for git command, skipping global flags."""
-    _, action = _find_action(tokens)
-    if action:
-        return f"git {action}"
-    return "git"
-
-
 def _find_action(tokens: list[str]) -> tuple[int, str | None]:
     """Find the git action (subcommand) accounting for global flags.
 
@@ -168,6 +160,14 @@ def _find_action(tokens: list[str]) -> tuple[int, str | None]:
         break
 
     return -1, None
+
+
+def get_description(tokens: list[str]) -> str:
+    """Compute description for git command, skipping global flags."""
+    _, action = _find_action(tokens)
+    if action:
+        return f"git {action}"
+    return "git"
 
 
 def check(tokens: list[str]) -> bool:

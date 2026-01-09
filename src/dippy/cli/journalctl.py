@@ -6,13 +6,17 @@ Journalctl is safe for viewing logs, but modification flags need confirmation.
 
 COMMANDS = ["journalctl"]
 
-UNSAFE_FLAGS = frozenset({
-    "--rotate",
-    "--vacuum-time", "--vacuum-size", "--vacuum-files",
-    "--flush",
-    "--sync",
-    "--relinquish-var",
-})
+UNSAFE_FLAGS = frozenset(
+    {
+        "--rotate",
+        "--vacuum-time",
+        "--vacuum-size",
+        "--vacuum-files",
+        "--flush",
+        "--sync",
+        "--relinquish-var",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:
