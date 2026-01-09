@@ -21,4 +21,10 @@ When tests pass:
 
 IMPORTANT: `just check` MUST PASS before you are done.
 
+RESTRICTIONS:
+- ONLY modify files directly related to the bug
+- Make minimal, targeted fixes
+- Do NOT refactor, rename, or "improve" unrelated code
+- Do NOT modify files that are not part of the fix
+
 Do not create a git commit or PR.

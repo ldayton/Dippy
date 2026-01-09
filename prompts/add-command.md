@@ -20,4 +20,12 @@ When tests pass:
 
 IMPORTANT: `just check` MUST PASS before you are done.
 
+RESTRICTIONS:
+- ONLY modify files directly related to $COMMAND
+- For SIMPLE_SAFE: only touch src/dippy/core/patterns.py and tests/cli/test_$COMMAND.py
+- For handlers: only touch src/dippy/cli/$COMMAND.py and tests/cli/test_$COMMAND.py
+- Do NOT refactor, rename, or "improve" existing code
+- Do NOT modify other handlers or test files
+- Do NOT touch src/dippy/dippy.py, src/dippy/cli/__init__.py, or core files unless absolutely necessary
+
 Do not create a git commit or PR.
