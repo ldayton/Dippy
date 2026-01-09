@@ -16,6 +16,11 @@ on:
         description: 'Handler to use (e.g., generic, kubectl)'
         required: false
         type: string
+      skip_install:
+        description: 'Skip brew install (for built-in commands like sleep, echo)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   add-command:
@@ -39,9 +44,11 @@ jobs:
         run: git clone --depth 1 https://github.com/tldr-pages/tldr.git ~/tldr
 
       - name: Set up Homebrew
+        if: ${{ !inputs.skip_install }}
         uses: Homebrew/actions/setup-homebrew@main
 
       - name: Install command via brew
+        if: ${{ !inputs.skip_install }}
         run: |
           if [ -n "${{ inputs.brew_tap }}" ]; then
             brew tap ${{ inputs.brew_tap }}
