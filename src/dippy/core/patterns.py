@@ -69,6 +69,8 @@ SIMPLE_SAFE = frozenset(
         "tr",
         "tsort",
         "unexpand",
+        # Encoding/decoding
+        "base64",
         # Checksums & hashing
         "md5sum",
         "sha1sum",
