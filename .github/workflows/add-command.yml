@@ -96,10 +96,9 @@ jobs:
       - name: Job summary
         if: always()
         run: |
-          RESULT=$(grep '"type": "result"' "${{ steps.claude.outputs.execution_file }}" || echo '{}')
-          COST=$(echo "$RESULT" | jq -r '.total_cost_usd // 0 | . * 100 | round / 100')
-          INPUT=$(echo "$RESULT" | jq -r '.usage.input_tokens // 0')
-          OUTPUT=$(echo "$RESULT" | jq -r '.usage.output_tokens // 0')
+          COST=$(jq -s '[.[] | select(.type == "result")] | last | .total_cost_usd // 0 | . * 100 | round / 100' "${{ steps.claude.outputs.execution_file }}" || echo 0)
+          INPUT=$(jq -s '[.[] | select(.type == "result")] | last | .usage.input_tokens // 0' "${{ steps.claude.outputs.execution_file }}" || echo 0)
+          OUTPUT=$(jq -s '[.[] | select(.type == "result")] | last | .usage.output_tokens // 0' "${{ steps.claude.outputs.execution_file }}" || echo 0)
           echo "## Add Command: ${{ inputs.command }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
