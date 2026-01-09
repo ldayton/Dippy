@@ -6,6 +6,7 @@ import pytest
 @pytest.fixture
 def check():
     from dippy.dippy import check_command
+
     return check_command
 
 
@@ -65,6 +66,16 @@ class TestApproveReasons:
     def test_git_list(self, check):
         assert get_reason(check("git status && git log")) == "git status, git log"
 
+    def test_git_with_C_flag(self, check):
+        # -C is a path option, not the action
+        assert get_reason(check("git -C /some/path status")) == "git status"
+
+    def test_git_with_git_dir_flag(self, check):
+        assert get_reason(check("git --git-dir=/some/.git log")) == "git log"
+
+    def test_git_with_no_pager(self, check):
+        assert get_reason(check("git --no-pager diff")) == "git diff"
+
 
 class TestAskReasons:
     """Verify unsafe commands list matched commands."""
@@ -91,7 +102,24 @@ class TestAskReasons:
         assert get_reason(check("git add .")) == "git add"
 
     def test_git_add_commit(self, check):
-        assert get_reason(check("git add . && git commit -m 'x'")) == "git add, git commit"
+        assert (
+            get_reason(check("git add . && git commit -m 'x'")) == "git add, git commit"
+        )
+
+    def test_git_add_with_C_flag(self, check):
+        # -C is a path option, not the action
+        assert get_reason(check("git -C /path add file.md")) == "git add"
+
+    def test_git_commit_with_C_flag(self, check):
+        assert get_reason(check("git -C /path commit -m 'msg'")) == "git commit"
+
+    def test_git_add_commit_with_C_flags(self, check):
+        # The original bug: git -C /path add file.md && git -C /path commit -m "..."
+        # Should show "git add, git commit" not "git -C, git -C"
+        assert (
+            get_reason(check("git -C /path add file.md && git -C /path commit -m 'x'"))
+            == "git add, git commit"
+        )
 
     def test_kubectl_delete(self, check):
         assert get_reason(check("kubectl delete pod foo")) == "kubectl delete"
@@ -115,7 +143,10 @@ class TestAskReasons:
         assert get_reason(check("chmod 755 f && chown root f")) == "chmod, chown"
 
     def test_rm_git_push_docker_rm(self, check):
-        assert get_reason(check("rm x && git push && docker rm y")) == "rm, git push, docker rm"
+        assert (
+            get_reason(check("rm x && git push && docker rm y"))
+            == "rm, git push, docker rm"
+        )
 
     def test_mixed_safe_unsafe(self, check):
         # ls is safe, rm is not - only list unsafe
