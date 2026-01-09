@@ -154,9 +154,10 @@ aliases = { k = "kubectl", tf = "terraform", g = "git" }
 
 ```bash
 just test        # Run tests (Python 3.14)
-just test-py312  # Run tests on specific version
-just test-all    # Run tests on all versions (3.11-3.14)
-just fmt         # Format and lint (ruff)
+just test-all    # All Python versions (3.11-3.14)
+just lint        # Lint (ruff check)
+just fmt         # Format (ruff format)
+just check       # All of the above — MUST PASS before committing
 ```
 
 ---
@@ -203,6 +204,6 @@ Workflow:
 1. User pastes "Hook PreToolUse:Bash requires confirmation" output
 2. Add pattern to appropriate handler in `src/dippy/cli/`
 3. Add test case to `tests/cli/test_*.py`
-4. Run `just test` (must pass `just test-all` before committing)
+4. Run `just test` until passing, then `just check` MUST PASS
 
 </details>
