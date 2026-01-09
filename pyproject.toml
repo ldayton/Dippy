@@ -3,21 +3,31 @@ name = "dippy"
 version = "0.2.0"
 description = "Approval autopilot for Claude Code — stay in the flow by automatically allowing safe commands"
 readme = "README.md"
-license = { text = "MIT" }
-requires-python = ">=3.14"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Lily Dayton", email = "lily.dayton.git@gmail.com" }
+]
 keywords = ["claude", "claude-code", "hook", "bash", "permissions", "cli"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Build Tools",
 ]
-
 dependencies = [
-    "parable @ git+https://github.com/ldayton/Parable.git@613e117f4825f0d8809a91d7d5c64afd98d73ac1",
+    "parable>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ldayton/Dippy"
+Repository = "https://github.com/ldayton/Dippy"
+Issues = "https://github.com/ldayton/Dippy/issues"
 
 [project.optional-dependencies]
 dev = [
