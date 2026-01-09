@@ -119,7 +119,7 @@ Dippy auto-detects your AI assistant, but you can force a mode:
 
 ## Configuration
 
-Create `~/.config/dippy/dippy.toml` for global settings, or `.dippy.toml` in your project root for project-specific rules.
+Create `~/.dippy/config.toml` for global settings, or `dippy.toml` (or `.dippy.toml`) in your project root for project-specific rules.
 
 ```toml
 version = 1
@@ -150,7 +150,7 @@ aliases = { k = "kubectl", tf = "terraform", g = "git" }
 
 **Precedence:** `confirm` → `approve` → built-in handlers → `SIMPLE_SAFE`
 
-**Script paths:** Relative paths are resolved against the project root (where `.dippy.toml` lives). Only the exact file matches—a script with the same name in a different directory won't be approved.
+**Script paths:** Relative paths are resolved against the project root (where the config file lives). Only the exact file matches—a script with the same name in a different directory won't be approved.
 
 ---
 

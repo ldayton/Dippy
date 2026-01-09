@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from dippy.core.config import Config, matches_pattern
+from dippy.core.config import Config, _find_project_config, matches_pattern
 from dippy.dippy import check_command
 
 
@@ -107,6 +107,42 @@ class TestConfigMerge:
         merged = c1.merge(c2)
 
         assert merged.project_root == Path("/b")
+
+
+class TestFindProjectConfig:
+    """Tests for project config file discovery."""
+
+    def test_finds_dippy_toml(self, tmp_path):
+        """Finds dippy.toml in project root."""
+        config_file = tmp_path / "dippy.toml"
+        config_file.write_text("version = 1\n")
+        assert _find_project_config(tmp_path) == config_file
+
+    def test_finds_hidden_dippy_toml(self, tmp_path):
+        """Finds .dippy.toml in project root."""
+        config_file = tmp_path / ".dippy.toml"
+        config_file.write_text("version = 1\n")
+        assert _find_project_config(tmp_path) == config_file
+
+    def test_dippy_toml_takes_priority(self, tmp_path):
+        """dippy.toml takes priority over .dippy.toml."""
+        visible = tmp_path / "dippy.toml"
+        hidden = tmp_path / ".dippy.toml"
+        visible.write_text("version = 1\n")
+        hidden.write_text("version = 1\n")
+        assert _find_project_config(tmp_path) == visible
+
+    def test_walks_up_directory_tree(self, tmp_path):
+        """Walks up from subdirectory to find config."""
+        config_file = tmp_path / "dippy.toml"
+        config_file.write_text("version = 1\n")
+        subdir = tmp_path / "src" / "lib"
+        subdir.mkdir(parents=True)
+        assert _find_project_config(subdir) == config_file
+
+    def test_returns_none_when_not_found(self, tmp_path):
+        """Returns None when no config exists."""
+        assert _find_project_config(tmp_path) is None
 
 
 class TestCheckCommandWithConfig:

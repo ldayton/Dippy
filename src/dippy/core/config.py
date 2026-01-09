@@ -2,8 +2,8 @@
 Configuration system for Dippy.
 
 Loads config from:
-- ~/.config/dippy/dippy.toml (global defaults)
-- .dippy.toml (project override, merged)
+- ~/.dippy/config.toml (global defaults)
+- dippy.toml or .dippy.toml in project root (first found wins, merged with global)
 
 Example config:
     # What you want auto-approved
@@ -69,7 +69,7 @@ def load_config(cwd: Optional[str] = None) -> Config:
     config = Config()
 
     # Load global config
-    global_path = Path.home() / ".config" / "dippy" / "dippy.toml"
+    global_path = Path.home() / ".dippy" / "config.toml"
     if global_path.exists():
         global_config = _load_config_file(global_path)
         config = config.merge(global_config)
@@ -111,12 +111,14 @@ def _load_config_file(path: Path) -> Config:
 
 
 def _find_project_config(cwd: Path) -> Optional[Path]:
-    """Walk up from cwd to find .dippy.toml."""
+    """Walk up from cwd to find dippy.toml or .dippy.toml (first found wins)."""
     current = cwd.resolve()
     while current != current.parent:
-        config_path = current / ".dippy.toml"
-        if config_path.exists():
-            return config_path
+        # dippy.toml takes priority over .dippy.toml
+        for name in ("dippy.toml", ".dippy.toml"):
+            config_path = current / name
+            if config_path.exists():
+                return config_path
         current = current.parent
     return None
 
