@@ -7,65 +7,115 @@ Handles aws, aws-vault, and similar AWS tools.
 COMMANDS = ["aws"]
 
 # Safe action prefixes that appear in AWS CLI commands
-SAFE_ACTION_PREFIXES = frozenset({
-    "describe-", "list-", "get-", "show-", "head-",
-    "lookup-",  # cloudtrail lookup-events
-    "filter-",  # logs filter-log-events (but not put-metric-filter!)
-    "validate-",  # cloudformation validate-template
-    "estimate-",  # cloudformation estimate-template-cost
-    "simulate-",  # iam simulate-principal-policy
-    "generate-",  # iam generate-credential-report
-    "download-",  # rds download-db-log-file-portion
-    "detect-",  # cloudformation detect-stack-drift
-    "test-",  # route53 test-dns-answer
-    "check-if-",  # sns check-if-phone-number-is-opted-out
-    "admin-get-",  # cognito admin-get-user
-    "admin-list-",  # cognito admin-list-*
-})
+SAFE_ACTION_PREFIXES = frozenset(
+    {
+        "describe-",
+        "list-",
+        "get-",
+        "show-",
+        "head-",
+        "lookup-",  # cloudtrail lookup-events
+        "filter-",  # logs filter-log-events (but not put-metric-filter!)
+        "validate-",  # cloudformation validate-template
+        "estimate-",  # cloudformation estimate-template-cost
+        "simulate-",  # iam simulate-principal-policy
+        "generate-",  # iam generate-credential-report
+        "download-",  # rds download-db-log-file-portion
+        "detect-",  # cloudformation detect-stack-drift
+        "test-",  # route53 test-dns-answer
+        "check-if-",  # sns check-if-phone-number-is-opted-out
+        "admin-get-",  # cognito admin-get-user
+        "admin-list-",  # cognito admin-list-*
+    }
+)
 
 # Exact safe action names
-SAFE_ACTIONS_EXACT = frozenset({
-    "ls", "wait", "help", "query", "scan", "tail",
-    "receive-message",  # sqs
-    "batch-get-item", "transact-get-items",  # dynamodb
-    "batch-get-image",  # ecr
-    "start-query", "stop-query",  # logs
-})
+SAFE_ACTIONS_EXACT = frozenset(
+    {
+        "ls",
+        "wait",
+        "help",
+        "query",
+        "scan",
+        "tail",
+        "receive-message",  # sqs
+        "batch-get-item",
+        "transact-get-items",  # dynamodb
+        "batch-get-image",  # ecr
+        "start-query",
+        "stop-query",  # logs
+    }
+)
 
 # Actions that look safe but should require confirmation
-UNSAFE_EXCEPTIONS = frozenset({
-    "assume-role", "assume-role-with-saml", "assume-role-with-web-identity",
-    "get-secret-value",  # Sensitive data exposure
-    "start-image-scan",  # ecr - triggers a scan
-})
+UNSAFE_EXCEPTIONS = frozenset(
+    {
+        "assume-role",
+        "assume-role-with-saml",
+        "assume-role-with-web-identity",
+        "get-secret-value",  # Sensitive data exposure
+        "start-image-scan",  # ecr - triggers a scan
+    }
+)
 
 
 # Explicitly unsafe action keywords
-UNSAFE_ACTION_KEYWORDS = frozenset({
-    "create", "delete", "remove", "rm",
-    "put", "update", "modify", "set",
-    "start", "stop", "terminate", "reboot",
-    "attach", "detach", "associate", "disassociate",
-    "authorize", "revoke",
-    "copy", "cp", "mv", "sync", "mb", "rb",  # s3 mutations
-    "invoke",  # Lambda invoke
-    "execute", "run",
-    "enable", "disable",
-    "register", "deregister",
-    "import", "export",
-})
+UNSAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "create",
+        "delete",
+        "remove",
+        "rm",
+        "put",
+        "update",
+        "modify",
+        "set",
+        "start",
+        "stop",
+        "terminate",
+        "reboot",
+        "attach",
+        "detach",
+        "associate",
+        "disassociate",
+        "authorize",
+        "revoke",
+        "copy",
+        "cp",
+        "mv",
+        "sync",
+        "mb",
+        "rb",  # s3 mutations
+        "invoke",  # Lambda invoke
+        "execute",
+        "run",
+        "enable",
+        "disable",
+        "register",
+        "deregister",
+        "import",
+        "export",
+    }
+)
 
 
 # Services where all commands are safe
-ALWAYS_SAFE_SERVICES = frozenset({
-    "pricing",  # Price lookups
-})
+ALWAYS_SAFE_SERVICES = frozenset(
+    {
+        "pricing",  # Price lookups
+    }
+)
 
 # STS safe actions (assume-role variants are NOT safe)
-STS_SAFE_ACTIONS = frozenset({
-    "get-caller-identity", "get-session-token", "get-access-key-info",
-    "get-federation-token", "decode-authorization-message",
-})
+STS_SAFE_ACTIONS = frozenset(
+    {
+        "get-caller-identity",
+        "get-session-token",
+        "get-access-key-info",
+        "get-federation-token",
+        "decode-authorization-message",
+    }
+)
 
 
 # Specific safe commands (service, action pairs)
@@ -141,9 +191,15 @@ def check(tokens: list[str]) -> bool:
     action = None
 
     global_opts_with_value = {
-        "--region", "--profile", "--output", "--endpoint-url",
-        "--cli-connect-timeout", "--cli-read-timeout",
-        "--ca-bundle", "--color", "--query",
+        "--region",
+        "--profile",
+        "--output",
+        "--endpoint-url",
+        "--cli-connect-timeout",
+        "--cli-read-timeout",
+        "--ca-bundle",
+        "--color",
+        "--query",
     }
 
     i = 1

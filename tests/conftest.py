@@ -9,11 +9,10 @@ import pytest
 @pytest.fixture
 def hook_input():
     """Factory for generating hook input JSON."""
+
     def _make(command: str) -> str:
-        return json.dumps({
-            "tool_name": "Bash",
-            "tool_input": {"command": command}
-        })
+        return json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
     return _make
 
 
@@ -21,6 +20,7 @@ def hook_input():
 def check():
     """Import and return the check_command function."""
     from dippy.dippy import check_command
+
     return check_command
 
 
@@ -28,6 +28,7 @@ def check():
 def check_single():
     """Import and return the _check_single_command function."""
     from dippy.dippy import _check_single_command
+
     return _check_single_command
 
 

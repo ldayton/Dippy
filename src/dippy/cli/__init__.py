@@ -26,18 +26,30 @@ class CLIHandler(Protocol):
 # How many tokens to include in description (base + action + ...)
 # Default is 2 (e.g., "git status", "docker ps")
 DESCRIPTION_DEPTH = {
-    "aws": 3,      # aws s3 ls
-    "gcloud": 3,   # gcloud compute instances
-    "gsutil": 2,   # gsutil ls
-    "az": 3,       # az vm list
+    "aws": 3,  # aws s3 ls
+    "gcloud": 3,  # gcloud compute instances
+    "gsutil": 2,  # gsutil ls
+    "az": 3,  # az vm list
 }
 
 
 def get_description(tokens: list[str], handler_name: str = None) -> str:
-    """Compute description from tokens based on handler type."""
+    """Compute description from tokens based on handler type.
+
+    For commands with special handling (like git with global flags),
+    delegates to the handler's get_description if available.
+    """
     if not tokens:
         return "unknown"
-    depth = DESCRIPTION_DEPTH.get(handler_name or tokens[0], 2)
+
+    base = handler_name or tokens[0]
+
+    # Check if handler has custom description logic
+    handler = get_handler(base)
+    if handler and hasattr(handler, "get_description"):
+        return handler.get_description(tokens)
+
+    depth = DESCRIPTION_DEPTH.get(base, 2)
     return " ".join(tokens[:depth])
 
 

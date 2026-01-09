@@ -23,9 +23,15 @@ class TestMatchesPattern:
 
     def test_regex_pattern(self):
         """Regex patterns with re: prefix."""
-        assert matches_pattern("make test", "re:^make (test|lint|build)", ["make", "test"])
-        assert matches_pattern("make lint", "re:^make (test|lint|build)", ["make", "lint"])
-        assert not matches_pattern("make deploy", "re:^make (test|lint|build)", ["make", "deploy"])
+        assert matches_pattern(
+            "make test", "re:^make (test|lint|build)", ["make", "test"]
+        )
+        assert matches_pattern(
+            "make lint", "re:^make (test|lint|build)", ["make", "lint"]
+        )
+        assert not matches_pattern(
+            "make deploy", "re:^make (test|lint|build)", ["make", "deploy"]
+        )
 
     def test_regex_invalid(self):
         """Invalid regex doesn't match."""
@@ -54,9 +60,7 @@ class TestMatchesPattern:
         tokens = [cmd]
 
         assert matches_pattern(
-            cmd, pattern, tokens,
-            project_root=tmp_path,
-            cwd=tmp_path
+            cmd, pattern, tokens, project_root=tmp_path, cwd=tmp_path
         )
 
     def test_script_different_paths_no_match(self, tmp_path):
@@ -74,9 +78,7 @@ class TestMatchesPattern:
         tokens = [cmd]
 
         assert not matches_pattern(
-            cmd, pattern, tokens,
-            project_root=tmp_path,
-            cwd=tmp_path
+            cmd, pattern, tokens, project_root=tmp_path, cwd=tmp_path
         )
 
 
@@ -177,7 +179,10 @@ class TestCheckCommandWithConfig:
         result = check_command("ls -la", config)
 
         assert result["hookSpecificOutput"]["permissionDecision"] == "ask"
-        assert "config confirm:" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert (
+            "config confirm:"
+            in result["hookSpecificOutput"]["permissionDecisionReason"]
+        )
 
     def test_alias_resolution(self):
         """Aliases resolve to their target commands."""
@@ -245,14 +250,19 @@ class TestConfigWithCmdsubs:
         result = check_command("echo $(pwd)", config)
         assert result["hookSpecificOutput"]["permissionDecision"] == "ask"
         # The inner pwd triggers config confirm
-        assert "config confirm" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert (
+            "config confirm" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        )
 
     def test_confirm_still_asks_even_with_safe_cmdsub(self):
         """Confirm pattern always asks, regardless of cmdsubs."""
         config = Config(confirm=["echo"])
         result = check_command("echo $(pwd)", config)
         assert result["hookSpecificOutput"]["permissionDecision"] == "ask"
-        assert "config confirm:" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert (
+            "config confirm:"
+            in result["hookSpecificOutput"]["permissionDecisionReason"]
+        )
 
 
 class TestConfigPrecedence:

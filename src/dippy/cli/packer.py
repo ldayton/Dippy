@@ -11,32 +11,40 @@ installing plugins, and modifying template files.
 COMMANDS = ["packer"]
 
 # Safe read-only actions
-SAFE_ACTIONS = frozenset({
-    "version",
-    "validate",  # Check template validity
-    "inspect",   # Show template components
-    "console",   # Interactive testing (read-only)
-})
+SAFE_ACTIONS = frozenset(
+    {
+        "version",
+        "validate",  # Check template validity
+        "inspect",  # Show template components
+        "console",  # Interactive testing (read-only)
+    }
+)
 
 # Unsafe actions that have external effects or modify files
-UNSAFE_ACTIONS = frozenset({
-    "build",         # Creates machine images - major external effect
-    "init",          # Installs plugins - downloads external content
-    "fix",           # Modifies templates
-    "hcl2_upgrade",  # Transforms/writes template files
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        "build",  # Creates machine images - major external effect
+        "init",  # Installs plugins - downloads external content
+        "fix",  # Modifies templates
+        "hcl2_upgrade",  # Transforms/writes template files
+    }
+)
 
 # Safe subcommands for plugins
-SAFE_PLUGINS_SUBCOMMANDS = frozenset({
-    "installed",  # List installed plugins
-    "required",   # List required plugins
-})
+SAFE_PLUGINS_SUBCOMMANDS = frozenset(
+    {
+        "installed",  # List installed plugins
+        "required",  # List required plugins
+    }
+)
 
 # Unsafe subcommands for plugins
-UNSAFE_PLUGINS_SUBCOMMANDS = frozenset({
-    "install",  # Installs plugins
-    "remove",   # Removes plugins
-})
+UNSAFE_PLUGINS_SUBCOMMANDS = frozenset(
+    {
+        "install",  # Installs plugins
+        "remove",  # Removes plugins
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:
@@ -72,7 +80,7 @@ def check(tokens: list[str]) -> bool:
     if not action:
         return False
 
-    rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
+    rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
     # Handle plugins subcommand
     if action == "plugins":

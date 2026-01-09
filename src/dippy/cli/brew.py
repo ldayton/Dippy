@@ -5,57 +5,84 @@ Homebrew CLI handler for Dippy.
 COMMANDS = ["brew"]
 
 # Actions that only read data
-SAFE_ACTIONS = frozenset({
-    # Info and listing
-    "list", "ls", "leaves",
-    "info", "desc", "home", "homepage",
-    "deps", "uses", "options",
-    "search", "doctor", "config",
-    "outdated",
-
-    # Aliases
-    "dr",  # doctor alias
-    "-S",  # search alias
-
-    # Additional info commands
-    "missing",
-    "tap-info",
-    "formulae", "casks",
-    "log", "cat", "commands",
-    "fetch",  # Just downloads, doesn't install
-    "docs", "shellenv",
-    # Note: analytics handled specially (on/off modify settings)
-
-    # Help and version
-    "--version", "-v", "help",  # -v is version for brew specifically
-})
+SAFE_ACTIONS = frozenset(
+    {
+        # Info and listing
+        "list",
+        "ls",
+        "leaves",
+        "info",
+        "desc",
+        "home",
+        "homepage",
+        "deps",
+        "uses",
+        "options",
+        "search",
+        "doctor",
+        "config",
+        "outdated",
+        # Aliases
+        "dr",  # doctor alias
+        "-S",  # search alias
+        # Additional info commands
+        "missing",
+        "tap-info",
+        "formulae",
+        "casks",
+        "log",
+        "cat",
+        "commands",
+        "fetch",  # Just downloads, doesn't install
+        "docs",
+        "shellenv",
+        # Note: analytics handled specially (on/off modify settings)
+        # Help and version
+        "--version",
+        "-v",
+        "help",  # -v is version for brew specifically
+    }
+)
 
 
 # Global flags that act like read-only commands
-SAFE_GLOBAL_FLAGS = frozenset({
-    "--cache",
-    "--cellar",
-    "--caskroom",
-    "--prefix",
-    "--repository", "--repo",
-    "--env",
-    "--taps",
-    "--config",  # Same as config command
-})
+SAFE_GLOBAL_FLAGS = frozenset(
+    {
+        "--cache",
+        "--cellar",
+        "--caskroom",
+        "--prefix",
+        "--repository",
+        "--repo",
+        "--env",
+        "--taps",
+        "--config",  # Same as config command
+    }
+)
 
 
 # Actions that modify state
-UNSAFE_ACTIONS = frozenset({
-    "install", "uninstall", "remove", "rm",
-    "upgrade", "update",
-    "link", "unlink",
-    "cleanup", "autoremove",
-    "tap", "untap",
-    "pin", "unpin",  # These modify pinning state
-    "cask",  # Needs subcommand checking
-    "services",  # Needs subcommand checking
-    "bundle",  # Needs subcommand checking
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        "install",
+        "uninstall",
+        "remove",
+        "rm",
+        "upgrade",
+        "update",
+        "link",
+        "unlink",
+        "cleanup",
+        "autoremove",
+        "tap",
+        "untap",
+        "pin",
+        "unpin",  # These modify pinning state
+        "cask",  # Needs subcommand checking
+        "services",  # Needs subcommand checking
+        "bundle",  # Needs subcommand checking
+    }
+)
 
 
 # Safe subcommands for multi-level commands

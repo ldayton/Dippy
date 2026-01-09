@@ -482,3 +482,37 @@ def test_git(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+def get_reason(result: dict) -> str:
+    """Extract the reason from a hook result (without emoji prefix)."""
+    reason = result.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+    if reason.startswith("🐤 "):
+        return reason[2:]
+    return reason
+
+
+# Test that git descriptions show actual subcommand, not global flags
+DESCRIPTION_TESTS = [
+    # (command, expected_description)
+    ("git status", "git status"),
+    ("git -C /some/path status", "git status"),
+    ("git -C /some/path log --oneline", "git log"),
+    ("git --git-dir=/some/.git status", "git status"),
+    ("git -c core.editor=vim log", "git log"),
+    ("git --no-pager diff", "git diff"),
+    ("git -C /path add file.txt", "git add"),
+    ("git -C /path commit -m 'msg'", "git commit"),
+    # Chained commands should show both subcommands
+    ("git -C /path add . && git -C /path commit -m 'msg'", "git add, git commit"),
+]
+
+
+@pytest.mark.parametrize("command,expected_desc", DESCRIPTION_TESTS)
+def test_git_description(check, command: str, expected_desc: str) -> None:
+    """Test that git descriptions show actual subcommands, not global flags."""
+    result = check(command)
+    reason = get_reason(result)
+    assert reason == expected_desc, (
+        f"For '{command}': expected '{expected_desc}', got '{reason}'"
+    )

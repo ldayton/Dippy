@@ -12,11 +12,13 @@ Unsafe operations:
 COMMANDS = ["fzf"]
 
 # Unsafe bind actions that execute external commands
-UNSAFE_BIND_ACTIONS = frozenset({
-    "execute",
-    "execute-silent",
-    "become",
-})
+UNSAFE_BIND_ACTIONS = frozenset(
+    {
+        "execute",
+        "execute-silent",
+        "become",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

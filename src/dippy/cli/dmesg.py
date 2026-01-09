@@ -6,12 +6,18 @@ Dmesg is safe for viewing kernel messages, but -c/--clear clears the ring buffer
 
 COMMANDS = ["dmesg"]
 
-UNSAFE_FLAGS = frozenset({
-    "-c", "--clear",
-    "-C", "--console-off",
-    "-D", "--console-on",
-    "-E", "--console-level",
-})
+UNSAFE_FLAGS = frozenset(
+    {
+        "-c",
+        "--clear",
+        "-C",
+        "--console-off",
+        "-D",
+        "--console-on",
+        "-E",
+        "--console-level",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

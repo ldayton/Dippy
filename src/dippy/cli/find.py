@@ -9,11 +9,15 @@ Find is mostly safe for searching, but has dangerous flags:
 
 COMMANDS = ["find"]
 
-UNSAFE_FLAGS = frozenset({
-    "-exec", "-execdir",
-    "-ok", "-okdir",
-    "-delete",
-})
+UNSAFE_FLAGS = frozenset(
+    {
+        "-exec",
+        "-execdir",
+        "-ok",
+        "-okdir",
+        "-delete",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

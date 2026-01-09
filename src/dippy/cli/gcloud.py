@@ -7,30 +7,55 @@ Handles gcloud, gsutil, and bq commands.
 COMMANDS = ["gcloud", "gsutil"]
 
 # Safe action keywords - these are read-only operations
-SAFE_ACTION_KEYWORDS = frozenset({
-    "describe", "list", "get", "show",
-    "info", "status", "version",
-    "get-credentials",  # Just configures kubectl
-    "list-tags", "list-grantable-roles",
-    "read",  # logging read, app logs read, etc.
-    "configurations",  # gcloud topic configurations is help
-})
+SAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "describe",
+        "list",
+        "get",
+        "show",
+        "info",
+        "status",
+        "version",
+        "get-credentials",  # Just configures kubectl
+        "list-tags",
+        "list-grantable-roles",
+        "read",  # logging read, app logs read, etc.
+        "configurations",  # gcloud topic configurations is help
+    }
+)
 
 # Safe action prefixes
 SAFE_ACTION_PREFIXES = ("list-", "describe-", "get-")
 
 # Unsafe action keywords - these modify state (applied to last part only)
-UNSAFE_ACTION_KEYWORDS = frozenset({
-    "create", "delete", "remove",
-    "update", "set", "add", "patch",
-    "start", "stop", "restart", "reset",
-    "deploy", "undelete",
-    "enable", "disable",
-    "import", "export",
-    "ssh", "scp",
-    "login", "activate", "revoke", "configure-docker",
-    "print-access-token",  # Sensitive operation
-})
+UNSAFE_ACTION_KEYWORDS = frozenset(
+    {
+        "create",
+        "delete",
+        "remove",
+        "update",
+        "set",
+        "add",
+        "patch",
+        "start",
+        "stop",
+        "restart",
+        "reset",
+        "deploy",
+        "undelete",
+        "enable",
+        "disable",
+        "import",
+        "export",
+        "ssh",
+        "scp",
+        "login",
+        "activate",
+        "revoke",
+        "configure-docker",
+        "print-access-token",  # Sensitive operation
+    }
+)
 # Note: "run" is NOT here because it's also a gcloud command group name
 
 # Unsafe action patterns - match anywhere in action
@@ -47,7 +72,9 @@ CONFIG_UNSAFE_COMMANDS = frozenset({"set", "unset", "create", "activate", "delet
 AUTH_SAFE_COMMANDS = frozenset({"list"})
 # Most auth commands modify state
 
-PROJECTS_SAFE_COMMANDS = frozenset({"list", "describe", "get-ancestors", "get-iam-policy"})
+PROJECTS_SAFE_COMMANDS = frozenset(
+    {"list", "describe", "get-ancestors", "get-iam-policy"}
+)
 PROJECTS_UNSAFE_COMMANDS = frozenset({"create", "delete", "undelete", "update"})
 
 
@@ -135,9 +162,19 @@ def _extract_parts(tokens: list[str]) -> list[str]:
     i = 0
     # Flags that consume the next token
     flags_with_arg = {
-        "--project", "--region", "--zone", "--format", "--filter",
-        "--cluster", "--location", "--instance", "--secret",
-        "--service", "--keyring", "--member", "--role",
+        "--project",
+        "--region",
+        "--zone",
+        "--format",
+        "--filter",
+        "--cluster",
+        "--location",
+        "--instance",
+        "--secret",
+        "--service",
+        "--keyring",
+        "--member",
+        "--role",
     }
 
     while i < len(tokens) and len(parts) < 6:

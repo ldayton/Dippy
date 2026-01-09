@@ -115,25 +115,58 @@ TESTS = [
     #
     # === SAFE: Storage blob (viewing/downloading) ===
     ("az storage blob list -c mycontainer --account-name mystorageaccount", True),
-    ("az storage blob show -c mycontainer -n myblob --account-name mystorageaccount", True),
-    ("az storage blob exists -c mycontainer -n myblob --account-name mystorageaccount", True),
-    ("az storage blob download -c mycontainer -n myblob -f file.txt --account-name mystorageaccount", True),
-    ("az storage blob download-batch -s mycontainer -d ./local --account-name mystorageaccount", True),
-    ("az storage blob url -c mycontainer -n myblob --account-name mystorageaccount", True),
+    (
+        "az storage blob show -c mycontainer -n myblob --account-name mystorageaccount",
+        True,
+    ),
+    (
+        "az storage blob exists -c mycontainer -n myblob --account-name mystorageaccount",
+        True,
+    ),
+    (
+        "az storage blob download -c mycontainer -n myblob -f file.txt --account-name mystorageaccount",
+        True,
+    ),
+    (
+        "az storage blob download-batch -s mycontainer -d ./local --account-name mystorageaccount",
+        True,
+    ),
+    (
+        "az storage blob url -c mycontainer -n myblob --account-name mystorageaccount",
+        True,
+    ),
     #
     # === UNSAFE: Storage blob (modifying) ===
-    ("az storage blob upload -c mycontainer -n myblob -f file.txt --account-name mystorageaccount", False),
-    ("az storage blob delete -c mycontainer -n myblob --account-name mystorageaccount", False),
-    ("az storage blob copy start --source-uri https://... -c mycontainer -b myblob", False),
+    (
+        "az storage blob upload -c mycontainer -n myblob -f file.txt --account-name mystorageaccount",
+        False,
+    ),
+    (
+        "az storage blob delete -c mycontainer -n myblob --account-name mystorageaccount",
+        False,
+    ),
+    (
+        "az storage blob copy start --source-uri https://... -c mycontainer -b myblob",
+        False,
+    ),
     #
     # === SAFE: Storage container (viewing) ===
     ("az storage container list --account-name mystorageaccount", True),
     ("az storage container show -n mycontainer --account-name mystorageaccount", True),
-    ("az storage container exists -n mycontainer --account-name mystorageaccount", True),
+    (
+        "az storage container exists -n mycontainer --account-name mystorageaccount",
+        True,
+    ),
     #
     # === UNSAFE: Storage container (modifying) ===
-    ("az storage container create -n mycontainer --account-name mystorageaccount", False),
-    ("az storage container delete -n mycontainer --account-name mystorageaccount", False),
+    (
+        "az storage container create -n mycontainer --account-name mystorageaccount",
+        False,
+    ),
+    (
+        "az storage container delete -n mycontainer --account-name mystorageaccount",
+        False,
+    ),
     #
     # === SAFE: Network (viewing) ===
     ("az network vnet list", True),
@@ -167,7 +200,10 @@ TESTS = [
     ("az webapp stop -g mygroup -n myapp", False),
     ("az webapp restart -g mygroup -n myapp", False),
     ("az webapp update -g mygroup -n myapp", False),
-    ("az webapp deployment source config -g mygroup -n myapp --repo-url https://...", False),
+    (
+        "az webapp deployment source config -g mygroup -n myapp --repo-url https://...",
+        False,
+    ),
     #
     # === SAFE: Container (viewing) ===
     ("az container list", True),
@@ -283,7 +319,10 @@ TESTS = [
     ("az cognitiveservices account list-skus -g mygroup -n myaccount", True),
     #
     # === UNSAFE: Cognitive Services (modifying) ===
-    ("az cognitiveservices account create -g mygroup -n myaccount --kind TextAnalytics --sku S0 -l eastus", False),
+    (
+        "az cognitiveservices account create -g mygroup -n myaccount --kind TextAnalytics --sku S0 -l eastus",
+        False,
+    ),
     ("az cognitiveservices account delete -g mygroup -n myaccount", False),
     #
     # === SAFE: SSH Key (viewing) ===
@@ -310,7 +349,10 @@ TESTS = [
     ("az apim show -g mygroup -n myapim", True),
     #
     # === UNSAFE: APIM (modifying) ===
-    ("az apim create -g mygroup -n myapim -l eastus --publisher-email admin@example.com --publisher-name MyCompany", False),
+    (
+        "az apim create -g mygroup -n myapim -l eastus --publisher-email admin@example.com --publisher-name MyCompany",
+        False,
+    ),
     ("az apim delete -g mygroup -n myapim", False),
     #
     # === SAFE: Logic App (viewing) ===
@@ -318,7 +360,10 @@ TESTS = [
     ("az logicapp show -g mygroup -n mylogicapp", True),
     #
     # === UNSAFE: Logic App (modifying) ===
-    ("az logicapp create -g mygroup -n mylogicapp --storage-account mystorageaccount", False),
+    (
+        "az logicapp create -g mygroup -n mylogicapp --storage-account mystorageaccount",
+        False,
+    ),
     ("az logicapp delete -g mygroup -n mylogicapp", False),
     ("az logicapp start -g mygroup -n mylogicapp", False),
     ("az logicapp stop -g mygroup -n mylogicapp", False),
@@ -332,7 +377,10 @@ TESTS = [
     ("az quantum workspace delete -g mygroup -n myworkspace", False),
     #
     # === UNSAFE: Serial Console (interactive) ===
-    ("az serial-console connect -g mygroup -n myvm", False),  # interactive console access
+    (
+        "az serial-console connect -g mygroup -n myvm",
+        False,
+    ),  # interactive console access
     #
     # === UNSAFE: Feedback (sends data) ===
     ("az feedback", False),  # sends data to Microsoft
@@ -347,8 +395,14 @@ TESTS = [
     ("az storage table delete -n mytable --account-name mystorageaccount", False),
     ("az storage queue create -n myqueue --account-name mystorageaccount", False),
     ("az storage queue delete -n myqueue --account-name mystorageaccount", False),
-    ("az storage entity insert -t mytable -e PartitionKey=pk RowKey=rk --account-name mystorageaccount", False),
-    ("az storage entity delete -t mytable -e PartitionKey=pk RowKey=rk --account-name mystorageaccount", False),
+    (
+        "az storage entity insert -t mytable -e PartitionKey=pk RowKey=rk --account-name mystorageaccount",
+        False,
+    ),
+    (
+        "az storage entity delete -t mytable -e PartitionKey=pk RowKey=rk --account-name mystorageaccount",
+        False,
+    ),
 ]
 
 

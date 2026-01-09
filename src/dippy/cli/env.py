@@ -8,11 +8,16 @@ We need to extract and check the inner command.
 COMMANDS = ["env"]
 
 # Env flags that take an argument
-FLAGS_WITH_ARG = frozenset({
-    "-u", "--unset",
-    "-S", "--split-string",
-    "-C", "--chdir",
-})
+FLAGS_WITH_ARG = frozenset(
+    {
+        "-u",
+        "--unset",
+        "-S",
+        "--split-string",
+        "-C",
+        "--chdir",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:
@@ -52,5 +57,6 @@ def check(tokens: list[str]) -> bool:
     inner_cmd = " ".join(inner_tokens)
 
     from dippy.dippy import _check_single_command
+
     decision, _ = _check_single_command(inner_cmd)
     return decision == "approve"
