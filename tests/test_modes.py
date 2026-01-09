@@ -14,6 +14,7 @@ def reset_dippy_module(monkeypatch):
     monkeypatch.delenv("DIPPY_CURSOR", raising=False)
     monkeypatch.delenv("DIPPY_CLAUDE", raising=False)
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
 
@@ -22,6 +23,7 @@ def test_gemini_approve_format(monkeypatch):
     monkeypatch.setattr("sys.argv", ["dippy", "--gemini"])
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.approve("git status")
@@ -38,6 +40,7 @@ def test_gemini_ask_format(monkeypatch):
     monkeypatch.setattr("sys.argv", ["dippy", "--gemini"])
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.ask("rm -rf")
@@ -55,6 +58,7 @@ def test_claude_approve_format(monkeypatch):
     monkeypatch.delenv("DIPPY_GEMINI", raising=False)
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.approve("git status")
@@ -71,6 +75,7 @@ def test_claude_ask_format(monkeypatch):
     monkeypatch.delenv("DIPPY_GEMINI", raising=False)
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.ask("rm -rf")
@@ -87,6 +92,7 @@ def test_gemini_env_var(monkeypatch):
     monkeypatch.setenv("DIPPY_GEMINI", "true")
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.approve("ls")
@@ -112,6 +118,7 @@ def test_cursor_approve_format(monkeypatch):
     monkeypatch.setattr("sys.argv", ["dippy", "--cursor"])
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.approve("git status")
@@ -136,6 +143,7 @@ def test_cursor_ask_format(monkeypatch):
     monkeypatch.setattr("sys.argv", ["dippy", "--cursor"])
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.ask("rm -rf")
@@ -161,6 +169,7 @@ def test_cursor_env_var(monkeypatch):
     monkeypatch.setenv("DIPPY_CURSOR", "true")
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     result = dippy.dippy.approve("ls")
@@ -174,6 +183,7 @@ def test_cursor_mode_detection(monkeypatch):
     monkeypatch.setattr("sys.argv", ["dippy", "--cursor"])
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     assert dippy.dippy.MODE == "cursor"
@@ -189,6 +199,7 @@ def test_claude_flag(monkeypatch):
     monkeypatch.setattr("sys.argv", ["dippy", "--claude"])
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     assert dippy.dippy.MODE == "claude"
@@ -201,6 +212,7 @@ def test_claude_env_var(monkeypatch):
     monkeypatch.setenv("DIPPY_CLAUDE", "true")
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     assert dippy.dippy.MODE == "claude"
@@ -246,6 +258,7 @@ def test_no_flag_defaults_to_auto_detect(monkeypatch):
     monkeypatch.delenv("DIPPY_CLAUDE", raising=False)
 
     import dippy.dippy
+
     importlib.reload(dippy.dippy)
 
     # No explicit mode set, auto-detect will kick in at main()

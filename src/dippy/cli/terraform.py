@@ -7,37 +7,42 @@ Handles terraform and tofu (OpenTofu) commands.
 COMMANDS = ["terraform", "tf"]
 
 # Safe read-only actions
-SAFE_ACTIONS = frozenset({
-    "version", "help",
-    "fmt",      # Formatting (can modify files but typically wanted)
-    "validate", # Syntax check only
-    "plan",     # Shows changes without applying
-    "show",     # Show state
-    "state",    # State inspection (some subcommands are safe)
-    "output",   # Show outputs
-    "graph",    # Generate dependency graph
-    "providers", # List providers
-    "console",  # Interactive console (read-only)
-    "workspace", # Some subcommands are safe
-    "get",      # Downloads modules (doesn't modify infra)
-    "modules",  # Shows module information
-    "metadata", # Shows metadata (like functions)
-    "test",     # Runs tests (doesn't modify infra)
-    "refresh",  # Updates state to match real-world (read-only for infra)
-})
+SAFE_ACTIONS = frozenset(
+    {
+        "version",
+        "help",
+        "fmt",  # Formatting (can modify files but typically wanted)
+        "validate",  # Syntax check only
+        "plan",  # Shows changes without applying
+        "show",  # Show state
+        "state",  # State inspection (some subcommands are safe)
+        "output",  # Show outputs
+        "graph",  # Generate dependency graph
+        "providers",  # List providers
+        "console",  # Interactive console (read-only)
+        "workspace",  # Some subcommands are safe
+        "get",  # Downloads modules (doesn't modify infra)
+        "modules",  # Shows module information
+        "metadata",  # Shows metadata (like functions)
+        "test",  # Runs tests (doesn't modify infra)
+        "refresh",  # Updates state to match real-world (read-only for infra)
+    }
+)
 
 
 # Unsafe actions that modify state or require confirmation
-UNSAFE_ACTIONS = frozenset({
-    "apply",
-    "destroy",
-    "import",
-    "taint",
-    "untaint",
-    "init",     # Downloads providers/modules, can take a while
-    "login",    # Auth management - modifies credentials
-    "logout",
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        "apply",
+        "destroy",
+        "import",
+        "taint",
+        "untaint",
+        "init",  # Downloads providers/modules, can take a while
+        "login",  # Auth management - modifies credentials
+        "logout",
+    }
+)
 
 
 # Safe subcommands
@@ -83,7 +88,7 @@ def check(tokens: list[str]) -> bool:
     if not action:
         return False
 
-    rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
+    rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
     # Check subcommands
     if action in SAFE_SUBCOMMANDS and rest:

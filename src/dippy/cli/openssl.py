@@ -7,11 +7,13 @@ and some modify files or do crypto operations.
 
 COMMANDS = ["openssl"]
 
-SAFE_COMMANDS = frozenset({
-    "version",
-    "help",
-    "list",
-})
+SAFE_COMMANDS = frozenset(
+    {
+        "version",
+        "help",
+        "list",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

@@ -26,10 +26,10 @@ class CLIHandler(Protocol):
 # How many tokens to include in description (base + action + ...)
 # Default is 2 (e.g., "git status", "docker ps")
 DESCRIPTION_DEPTH = {
-    "aws": 3,      # aws s3 ls
-    "gcloud": 3,   # gcloud compute instances
-    "gsutil": 2,   # gsutil ls
-    "az": 3,       # az vm list
+    "aws": 3,  # aws s3 ls
+    "gcloud": 3,  # gcloud compute instances
+    "gsutil": 2,  # gsutil ls
+    "az": 3,  # az vm list
 }
 
 

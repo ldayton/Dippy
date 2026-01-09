@@ -32,7 +32,9 @@ def tokenize(command: str) -> list[str]:
 def _strip_quotes(value: str) -> str:
     """Strip surrounding quotes from a value."""
     if len(value) >= 2:
-        if (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'"):
+        if (value[0] == '"' and value[-1] == '"') or (
+            value[0] == "'" and value[-1] == "'"
+        ):
             return value[1:-1]
     return value
 
@@ -136,6 +138,7 @@ def split_command_list(command: str) -> list[str]:
         return commands if commands else [command]
     except Exception:
         import re
+
         parts = re.split(r"\s*(?:&&|\|\|)\s*", command)
         return [p.strip() for p in parts if p.strip()]
 
@@ -214,8 +217,8 @@ def _extract_cmdsubs(nodes: list, results: list):
                     if part.kind == "cmdsub":
                         inner_cmd = _reconstruct_command(part.command)
                         # Pure if word value starts with $( and ends with )
-                        is_pure = (
-                            word.value.startswith("$(") or word.value.startswith("`")
+                        is_pure = word.value.startswith("$(") or word.value.startswith(
+                            "`"
                         )
                         results.append((inner_cmd, is_pure, i))
         elif node.kind == "pipeline":

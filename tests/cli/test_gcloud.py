@@ -134,8 +134,8 @@ TESTS = [
     ("gcloud iam roles create my-role --project=my-project --file=role.yaml", False),
     ("gcloud iam roles delete my-role --project=my-project", False),
     (
-    "gcloud iam list-grantable-roles //cloudresourcemanager.googleapis.com/projects/my-project",
-    True,
+        "gcloud iam list-grantable-roles //cloudresourcemanager.googleapis.com/projects/my-project",
+        True,
     ),
     # gcloud iam - service accounts
     ("gcloud iam service-accounts list", True),
@@ -143,20 +143,20 @@ TESTS = [
     ("gcloud iam service-accounts create my-sa", False),
     ("gcloud iam service-accounts delete sa@project.iam.gserviceaccount.com", False),
     (
-    "gcloud iam service-accounts add-iam-policy-binding sa@project.iam.gserviceaccount.com --member=user:foo --role=roles/iam.serviceAccountUser",
-    False,
+        "gcloud iam service-accounts add-iam-policy-binding sa@project.iam.gserviceaccount.com --member=user:foo --role=roles/iam.serviceAccountUser",
+        False,
     ),
     (
-    "gcloud iam service-accounts set-iam-policy sa@project.iam.gserviceaccount.com policy.json",
-    False,
+        "gcloud iam service-accounts set-iam-policy sa@project.iam.gserviceaccount.com policy.json",
+        False,
     ),
     (
-    "gcloud iam service-accounts keys list --iam-account=sa@project.iam.gserviceaccount.com",
-    True,
+        "gcloud iam service-accounts keys list --iam-account=sa@project.iam.gserviceaccount.com",
+        True,
     ),
     (
-    "gcloud iam service-accounts keys create key.json --iam-account=sa@project.iam.gserviceaccount.com",
-    False,
+        "gcloud iam service-accounts keys create key.json --iam-account=sa@project.iam.gserviceaccount.com",
+        False,
     ),
     # gcloud app (depth 2 - default)
     ("gcloud app deploy", False),
@@ -178,13 +178,13 @@ TESTS = [
     ("gcloud secrets versions list my-secret", True),
     ("gcloud secrets versions describe 1 --secret=my-secret", True),
     (
-    "gcloud secrets versions access 1 --secret=my-secret",
-    False,
+        "gcloud secrets versions access 1 --secret=my-secret",
+        False,
     ),  # accessing secret data
     ("gcloud secrets versions destroy 1 --secret=my-secret", False),
     (
-    "gcloud secrets add-iam-policy-binding my-secret --member=user:foo --role=roles/secretmanager.secretAccessor",
-    False,
+        "gcloud secrets add-iam-policy-binding my-secret --member=user:foo --role=roles/secretmanager.secretAccessor",
+        False,
     ),
     # gcloud functions (depth 1)
     ("gcloud functions describe my-function", True),
@@ -210,8 +210,8 @@ TESTS = [
     ("gcloud dns record-sets list --zone=my-zone", True),
     ("gcloud dns record-sets describe www --zone=my-zone --type=A", True),
     (
-    "gcloud dns record-sets create www --zone=my-zone --type=A --rrdatas=1.2.3.4",
-    False,
+        "gcloud dns record-sets create www --zone=my-zone --type=A --rrdatas=1.2.3.4",
+        False,
     ),
     ("gcloud dns record-sets delete www --zone=my-zone --type=A", False),
     # gcloud storage (depth 2)
@@ -227,8 +227,8 @@ TESTS = [
     ("gcloud run services list", True),
     ("gcloud run services describe my-service --region=us-central1", True),
     (
-    "gcloud run services update my-service --region=us-central1 --memory=512Mi",
-    False,
+        "gcloud run services update my-service --region=us-central1 --memory=512Mi",
+        False,
     ),
     ("gcloud run services delete my-service --region=us-central1", False),
     ("gcloud run deploy my-service --image=gcr.io/my-project/my-image", False),
@@ -240,16 +240,16 @@ TESTS = [
     ("gcloud artifacts repositories create my-repo --location=us-central1", False),
     ("gcloud artifacts repositories delete my-repo --location=us-central1", False),
     (
-    "gcloud artifacts docker images list us-central1-docker.pkg.dev/my-project/my-repo",
-    True,
+        "gcloud artifacts docker images list us-central1-docker.pkg.dev/my-project/my-repo",
+        True,
     ),
     (
-    "gcloud artifacts docker tags list us-central1-docker.pkg.dev/my-project/my-repo/my-image",
-    True,
+        "gcloud artifacts docker tags list us-central1-docker.pkg.dev/my-project/my-repo/my-image",
+        True,
     ),
     (
-    "gcloud artifacts docker tags delete us-central1-docker.pkg.dev/my-project/my-repo/my-image:v1",
-    False,
+        "gcloud artifacts docker tags delete us-central1-docker.pkg.dev/my-project/my-repo/my-image:v1",
+        False,
     ),
     # gcloud beta (depth 3)
     ("gcloud beta run services list", True),
@@ -274,12 +274,12 @@ TESTS = [
     ("gcloud iap settings get --project=my-project", True),
     ("gcloud iap settings set iap-settings.yaml --project=my-project", False),
     (
-    "gcloud iap web get-iam-policy --resource-type=backend-services --service=my-service",
-    True,
+        "gcloud iap web get-iam-policy --resource-type=backend-services --service=my-service",
+        True,
     ),
     (
-    "gcloud iap web set-iam-policy policy.json --resource-type=backend-services",
-    False,
+        "gcloud iap web set-iam-policy policy.json --resource-type=backend-services",
+        False,
     ),
     ("gcloud iap tcp tunnels list", True),
     # gcloud sql (depth 2 - default)
@@ -296,8 +296,8 @@ TESTS = [
     ("gcloud sql export sql my-instance gs://my-bucket/dump.sql", False),
     ("gcloud sql export sql my-instance gs://my-bucket/dump.sql --async", False),
     (
-    "gcloud sql export sql my-instance gs://my-bucket/dump.sql --database=mydb",
-    False,
+        "gcloud sql export sql my-instance gs://my-bucket/dump.sql --database=mydb",
+        False,
     ),
     ("gcloud sql import sql my-instance gs://my-bucket/dump.sql", False),
     # gcloud kms (depth 2 - default)
@@ -307,16 +307,16 @@ TESTS = [
     ("gcloud kms keys list --keyring=my-keyring --location=global", True),
     ("gcloud kms keys describe my-key --keyring=my-keyring --location=global", True),
     (
-    "gcloud kms keys create my-key --keyring=my-keyring --location=global --purpose=encryption",
-    False,
+        "gcloud kms keys create my-key --keyring=my-keyring --location=global --purpose=encryption",
+        False,
     ),
     (
-    "gcloud kms decrypt --key=my-key --keyring=my-keyring --location=global --ciphertext-file=cipher.enc --plaintext-file=plain.txt",
-    False,
+        "gcloud kms decrypt --key=my-key --keyring=my-keyring --location=global --ciphertext-file=cipher.enc --plaintext-file=plain.txt",
+        False,
     ),
     (
-    "gcloud kms encrypt --key=my-key --keyring=my-keyring --location=global --plaintext-file=plain.txt --ciphertext-file=cipher.enc",
-    False,
+        "gcloud kms encrypt --key=my-key --keyring=my-keyring --location=global --plaintext-file=plain.txt --ciphertext-file=cipher.enc",
+        False,
     ),
     # gcloud pubsub (depth 2 - default)
     ("gcloud pubsub topics list", True),
@@ -336,8 +336,8 @@ TESTS = [
     ("gcloud --region=us-central1 compute instances list", True),
     ("gcloud --zone=us-central1-a compute instances list", True),
     (
-    "gcloud --project=my-project --format=json compute instances describe my-instance",
-    True,
+        "gcloud --project=my-project --format=json compute instances describe my-instance",
+        True,
     ),
     ("gcloud --project=my-project compute instances delete my-instance", False),
     # gcloud help/info/version/init

@@ -8,24 +8,40 @@ We approve xargs if the inner command it runs is safe.
 COMMANDS = ["xargs"]
 
 # Flags that take an argument (skip these when finding the inner command)
-FLAGS_WITH_ARG = frozenset({
-    "-a", "--arg-file",
-    "-d", "--delimiter",
-    "-E", "-e", "--eof",
-    "-I", "-J", "--replace",
-    "-L", "-l", "--max-lines",
-    "-n", "--max-args",
-    "-P", "--max-procs",
-    "-R",  # BSD: max replacements with -I
-    "-s", "-S", "--max-chars",
-    "--process-slot-var",
-})
+FLAGS_WITH_ARG = frozenset(
+    {
+        "-a",
+        "--arg-file",
+        "-d",
+        "--delimiter",
+        "-E",
+        "-e",
+        "--eof",
+        "-I",
+        "-J",
+        "--replace",
+        "-L",
+        "-l",
+        "--max-lines",
+        "-n",
+        "--max-args",
+        "-P",
+        "--max-procs",
+        "-R",  # BSD: max replacements with -I
+        "-s",
+        "-S",
+        "--max-chars",
+        "--process-slot-var",
+    }
+)
 
 # Flags that make xargs interactive/unsafe regardless of command
 UNSAFE_FLAGS = frozenset({"-p", "--interactive", "-o", "--open-tty"})
 
 
-def _skip_flags(tokens: list[str], flags_with_arg: frozenset, stop_at_double_dash: bool = False) -> int:
+def _skip_flags(
+    tokens: list[str], flags_with_arg: frozenset, stop_at_double_dash: bool = False
+) -> int:
     """Skip flags and their arguments, return index of first non-flag token."""
     i = 0
     while i < len(tokens):
@@ -84,6 +100,8 @@ def check(tokens: list[str]) -> bool:
     from dippy.dippy import _check_single_command
     import shlex
 
-    inner_cmd = " ".join(shlex.quote(t) if ' ' in t or not t else t for t in inner_tokens)
+    inner_cmd = " ".join(
+        shlex.quote(t) if " " in t or not t else t for t in inner_tokens
+    )
     decision, _ = _check_single_command(inner_cmd)
     return decision == "approve"

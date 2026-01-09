@@ -64,12 +64,15 @@ TESTS = [
     # --- Aggregation ---
     ("awk '{s+=$1} END {print s}' file.txt", True),
     ("awk '{s+=$1; n++} END {print s/n}' file.txt", True),  # average
-    ("awk 'NR==1 {min=max=$1} {if($1<min)min=$1;if($1>max)max=$1} END{print min,max}' file.txt", True),
+    (
+        "awk 'NR==1 {min=max=$1} {if($1<min)min=$1;if($1>max)max=$1} END{print min,max}' file.txt",
+        True,
+    ),
     #
     # --- Conditionals ---
     ("awk '{if ($1 > 10) print}' file.txt", True),
     ("awk '$1 > 10 {print}' file.txt", True),
-    ("awk '{print ($1 > 0 ? \"positive\" : \"non-positive\")}' file.txt", True),
+    ('awk \'{print ($1 > 0 ? "positive" : "non-positive")}\' file.txt', True),
     #
     # --- Multiple input files ---
     ("awk '{print}' file1.txt file2.txt", True),
@@ -94,7 +97,7 @@ TESTS = [
     ("awk '{print > \"output.txt\"}' file.txt", False),
     ("awk '{print >> \"output.txt\"}' file.txt", False),
     ("awk '{print $1 > \"out.txt\"}' file.txt", False),
-    ("awk 'BEGIN {print \"test\" > \"file.txt\"}'", False),
+    ('awk \'BEGIN {print "test" > "file.txt"}\'', False),
     #
     # --- Dynamic file redirection ---
     ("awk '{print > $1\".txt\"}' file.txt", False),
@@ -125,7 +128,7 @@ TESTS = [
     ("awk '{print > \"/dev/null\"}' file.txt", False),
     #
     # --- Complex programs ---
-    ("awk 'BEGIN {FS=\":\"; OFS=\",\"} NR>1 {print $1,$2}' file.txt", True),
+    ('awk \'BEGIN {FS=":"; OFS=","} NR>1 {print $1,$2}\' file.txt', True),
     ("awk '{arr[$1]+=$2} END {for (k in arr) print k, arr[k]}' file.txt", True),
     #
     # --- Help/version flags ---

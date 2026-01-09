@@ -8,29 +8,48 @@ Some commands need special handling for inner command checking.
 COMMANDS = ["uv", "uvx"]
 
 # Safe uv commands
-SAFE_COMMANDS = frozenset({
-    "sync",     # Sync dependencies
-    "lock",     # Generate lockfile
-    "tree",     # Show dependency tree
-    "version",
-    "help",
-    "--version",
-    "--help",
-    "venv",     # Create virtual environment
-    "export",   # Export lockfile to requirements.txt (read-only)
-})
+SAFE_COMMANDS = frozenset(
+    {
+        "sync",  # Sync dependencies
+        "lock",  # Generate lockfile
+        "tree",  # Show dependency tree
+        "version",
+        "help",
+        "--version",
+        "--help",
+        "venv",  # Create virtual environment
+        "export",  # Export lockfile to requirements.txt (read-only)
+    }
+)
 
 # UV pip subcommands that need confirmation
-UV_PIP_UNSAFE = frozenset({
-    "install", "uninstall", "sync", "compile",
-})
+UV_PIP_UNSAFE = frozenset(
+    {
+        "install",
+        "uninstall",
+        "sync",
+        "compile",
+    }
+)
 
 # Commands that can execute arbitrary code - always need confirmation in uv run
-UV_RUN_UNSAFE_INNER = frozenset({
-    "bash", "sh", "zsh", "dash", "ksh", "fish",  # Shells with -c
-    "perl", "ruby", "node", "deno", "bun",  # Script interpreters
-    "make", "cmake",  # Build systems
-})
+UV_RUN_UNSAFE_INNER = frozenset(
+    {
+        "bash",
+        "sh",
+        "zsh",
+        "dash",
+        "ksh",
+        "fish",  # Shells with -c
+        "perl",
+        "ruby",
+        "node",
+        "deno",
+        "bun",  # Script interpreters
+        "make",
+        "cmake",  # Build systems
+    }
+)
 
 # Commands with subcommands
 SAFE_SUBCOMMANDS = {
@@ -39,9 +58,15 @@ SAFE_SUBCOMMANDS = {
 }
 
 # UV pip safe subcommands (handled separately)
-UV_PIP_SAFE = frozenset({
-    "list", "freeze", "show", "check", "tree",
-})
+UV_PIP_SAFE = frozenset(
+    {
+        "list",
+        "freeze",
+        "show",
+        "check",
+        "tree",
+    }
+)
 
 UNSAFE_SUBCOMMANDS = {
     "cache": {"clean", "prune"},
@@ -49,13 +74,19 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 # UV run flags that take an argument
-RUN_FLAGS_WITH_ARG = frozenset({
-    "--python", "-p",
-    "--with", "--with-requirements",
-    "--project", "--directory",
-    "--group", "--extra",
-    "--package",
-})
+RUN_FLAGS_WITH_ARG = frozenset(
+    {
+        "--python",
+        "-p",
+        "--with",
+        "--with-requirements",
+        "--project",
+        "--directory",
+        "--group",
+        "--extra",
+        "--package",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:
@@ -79,7 +110,10 @@ def check(tokens: list[str]) -> bool:
             subcommand = tokens[2]
             if action in SAFE_SUBCOMMANDS and subcommand in SAFE_SUBCOMMANDS[action]:
                 return True
-            if action in UNSAFE_SUBCOMMANDS and subcommand in UNSAFE_SUBCOMMANDS[action]:
+            if (
+                action in UNSAFE_SUBCOMMANDS
+                and subcommand in UNSAFE_SUBCOMMANDS[action]
+            ):
                 return False
         return action in SAFE_SUBCOMMANDS
 
@@ -141,6 +175,7 @@ def _check_uv_run(tokens: list[str]) -> bool:
         # Check the inner command using main dippy logic
         inner_cmd = " ".join(inner_tokens)
         from dippy.dippy import check_command
+
         result = check_command(inner_cmd)
         output = result.get("hookSpecificOutput", {})
         return output.get("permissionDecision") == "allow"

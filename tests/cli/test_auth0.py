@@ -249,8 +249,8 @@ TESTS = [
     ("auth0 api put clients/client_id", False),
     ("auth0 api patch clients/client_id", False),
     ("auth0 api delete actions/actions/act_id", False),
-    ("auth0 api clients --data '{\"name\":\"test\"}'", False),
-    ("auth0 api clients -d '{\"name\":\"test\"}'", False),
+    ('auth0 api clients --data \'{"name":"test"}\'', False),
+    ('auth0 api clients -d \'{"name":"test"}\'', False),
     #
     # === GLOBAL FLAGS ===
     #

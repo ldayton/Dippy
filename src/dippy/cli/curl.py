@@ -7,21 +7,34 @@ Approves GET/HEAD requests, blocks data-sending operations.
 COMMANDS = ["curl"]
 
 # Flags that send data (always unsafe unless explicit GET)
-DATA_FLAGS = frozenset({
-    "-d", "--data",
-    "--data-binary", "--data-raw", "--data-ascii", "--data-urlencode",
-    "-F", "--form", "--form-string",
-    "-T", "--upload-file",
-    "--json",
-})
+DATA_FLAGS = frozenset(
+    {
+        "-d",
+        "--data",
+        "--data-binary",
+        "--data-raw",
+        "--data-ascii",
+        "--data-urlencode",
+        "-F",
+        "--form",
+        "--form-string",
+        "-T",
+        "--upload-file",
+        "--json",
+    }
+)
 
 
 # Flags that are always unsafe
-UNSAFE_FLAGS = frozenset({
-    "-K", "--config",
-    "--ftp-create-dirs",
-    "--mail-from", "--mail-rcpt",
-})
+UNSAFE_FLAGS = frozenset(
+    {
+        "-K",
+        "--config",
+        "--ftp-create-dirs",
+        "--mail-from",
+        "--mail-rcpt",
+    }
+)
 
 
 # Safe HTTP methods (read-only)
@@ -29,11 +42,24 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 
 # Safe FTP commands (read-only)
-SAFE_FTP_COMMANDS = frozenset({
-    "PWD", "LIST", "NLST", "STAT", "SIZE",
-    "MDTM", "NOOP", "HELP", "SYST", "TYPE",
-    "PASV", "CWD", "CDUP", "FEAT",
-})
+SAFE_FTP_COMMANDS = frozenset(
+    {
+        "PWD",
+        "LIST",
+        "NLST",
+        "STAT",
+        "SIZE",
+        "MDTM",
+        "NOOP",
+        "HELP",
+        "SYST",
+        "TYPE",
+        "PASV",
+        "CWD",
+        "CDUP",
+        "FEAT",
+    }
+)
 
 
 def check(tokens: list[str]) -> bool:

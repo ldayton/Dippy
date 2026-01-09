@@ -7,77 +7,120 @@ Approves read-only git operations, blocks mutations.
 COMMANDS = ["git"]
 
 # Actions that only read data (no subcommands to check)
-SAFE_ACTIONS = frozenset({
-    # Status and info
-    "status", "log", "show", "diff", "blame", "annotate",
-    "shortlog", "describe", "rev-parse", "rev-list",
-
-    # History navigation
-    "reflog", "whatchanged",
-
-    # Diff and comparison
-    "diff-tree", "diff-files", "diff-index",
-    "range-diff", "format-patch", "difftool",
-
-    # Search
-    "grep",
-
-    # Inspection
-    "ls-files", "ls-tree", "ls-remote",
-    "cat-file", "verify-commit", "verify-tag",
-    "name-rev", "merge-base",
-    "show-ref", "show-branch",
-
-    # Read-only utilities
-    "check-ignore", "cherry", "for-each-ref",
-    "count-objects", "fsck",
-    "var", "request-pull",
-
-    # Export (read-only, creates archive from repo content)
-    "archive",
-
-    # Fetch is read-only (downloads from remote but doesn't merge)
-    "fetch",
-})
+SAFE_ACTIONS = frozenset(
+    {
+        # Status and info
+        "status",
+        "log",
+        "show",
+        "diff",
+        "blame",
+        "annotate",
+        "shortlog",
+        "describe",
+        "rev-parse",
+        "rev-list",
+        # History navigation
+        "reflog",
+        "whatchanged",
+        # Diff and comparison
+        "diff-tree",
+        "diff-files",
+        "diff-index",
+        "range-diff",
+        "format-patch",
+        "difftool",
+        # Search
+        "grep",
+        # Inspection
+        "ls-files",
+        "ls-tree",
+        "ls-remote",
+        "cat-file",
+        "verify-commit",
+        "verify-tag",
+        "name-rev",
+        "merge-base",
+        "show-ref",
+        "show-branch",
+        # Read-only utilities
+        "check-ignore",
+        "cherry",
+        "for-each-ref",
+        "count-objects",
+        "fsck",
+        "var",
+        "request-pull",
+        # Export (read-only, creates archive from repo content)
+        "archive",
+        # Fetch is read-only (downloads from remote but doesn't merge)
+        "fetch",
+    }
+)
 
 
 # Actions that modify repository state
-UNSAFE_ACTIONS = frozenset({
-    # Commits and changes
-    "commit", "add", "rm", "mv",
-    "restore", "reset", "revert",
-
-    # Remote operations (push modifies remote)
-    "push", "pull",  # pull includes merge
-
-    # Branch mutations (checkout can modify working tree)
-    "checkout", "switch",
-    "merge", "rebase", "cherry-pick",
-
-    # Dangerous operations
-    "clean", "gc", "prune",
-    "filter-branch", "filter-repo",
-
-    # Submodule mutations
-    "submodule",  # Some subcommands mutate
-
-    # Worktree mutations
-    "worktree",
-})
+UNSAFE_ACTIONS = frozenset(
+    {
+        # Commits and changes
+        "commit",
+        "add",
+        "rm",
+        "mv",
+        "restore",
+        "reset",
+        "revert",
+        # Remote operations (push modifies remote)
+        "push",
+        "pull",  # pull includes merge
+        # Branch mutations (checkout can modify working tree)
+        "checkout",
+        "switch",
+        "merge",
+        "rebase",
+        "cherry-pick",
+        # Dangerous operations
+        "clean",
+        "gc",
+        "prune",
+        "filter-branch",
+        "filter-repo",
+        # Submodule mutations
+        "submodule",  # Some subcommands mutate
+        # Worktree mutations
+        "worktree",
+    }
+)
 
 
 # Git global flags that take an argument (need to skip the argument)
-GLOBAL_FLAGS_WITH_ARG = frozenset({
-    "-C", "-c", "--git-dir", "--work-tree", "--namespace",
-    "--super-prefix", "--config-env",
-})
+GLOBAL_FLAGS_WITH_ARG = frozenset(
+    {
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--super-prefix",
+        "--config-env",
+    }
+)
 
 # Git global flags that don't take an argument
-GLOBAL_FLAGS_NO_ARG = frozenset({
-    "--no-pager", "--paginate", "-p", "--no-replace-objects",
-    "--bare", "--literal-pathspecs", "--glob-pathspecs",
-    "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
-})
+GLOBAL_FLAGS_NO_ARG = frozenset(
+    {
+        "--no-pager",
+        "--paginate",
+        "-p",
+        "--no-replace-objects",
+        "--bare",
+        "--literal-pathspecs",
+        "--glob-pathspecs",
+        "--noglob-pathspecs",
+        "--icase-pathspecs",
+        "--no-optional-locks",
+    }
+)
 
 
 def _find_action(tokens: list[str]) -> tuple[int, str | None]:
@@ -129,7 +172,7 @@ def check(tokens: list[str]) -> bool:
     if action is None:
         return False
 
-    rest = tokens[action_idx + 1:] if action_idx + 1 < len(tokens) else []
+    rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
     # Handle commands with subcommands that need special checks
     if action == "branch":
@@ -178,7 +221,15 @@ def check(tokens: list[str]) -> bool:
 def _check_branch(rest: list[str]) -> bool:
     """Check git branch subcommand."""
     unsafe_flags = {"-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy"}
-    listing_flags_with_arg = {"--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
+    listing_flags_with_arg = {
+        "--list",
+        "-l",
+        "--contains",
+        "--no-contains",
+        "--merged",
+        "--no-merged",
+        "--points-at",
+    }
 
     for token in rest:
         if token in unsafe_flags:
@@ -186,7 +237,9 @@ def _check_branch(rest: list[str]) -> bool:
         if token.startswith("--set-upstream-to") or token == "-u":
             return False
 
-    has_listing_flag = any(t in listing_flags_with_arg or t.startswith("--list") for t in rest)
+    has_listing_flag = any(
+        t in listing_flags_with_arg or t.startswith("--list") for t in rest
+    )
     if has_listing_flag:
         return True
 
@@ -200,7 +253,15 @@ def _check_branch(rest: list[str]) -> bool:
 def _check_tag(rest: list[str]) -> bool:
     """Check git tag subcommand."""
     unsafe_flags = {"-d", "--delete"}
-    listing_flags = {"-l", "--list", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
+    listing_flags = {
+        "-l",
+        "--list",
+        "--contains",
+        "--no-contains",
+        "--merged",
+        "--no-merged",
+        "--points-at",
+    }
 
     for token in rest:
         if token in unsafe_flags:
@@ -227,7 +288,16 @@ def _check_remote(rest: list[str]) -> bool:
     if subcommand in safe:
         return True
 
-    unsafe = {"add", "remove", "rm", "rename", "set-url", "prune", "set-head", "set-branches"}
+    unsafe = {
+        "add",
+        "remove",
+        "rm",
+        "rename",
+        "set-url",
+        "prune",
+        "set-head",
+        "set-branches",
+    }
     if subcommand in unsafe:
         return False
 
@@ -257,13 +327,27 @@ def _check_stash(rest: list[str]) -> bool:
 def _check_config(rest: list[str]) -> bool:
     """Check git config subcommand."""
     edit_flags = {"-e", "--edit"}
-    unsafe_flags = {"--unset", "--unset-all", "--add", "--replace-all", "--remove-section", "--rename-section"}
+    unsafe_flags = {
+        "--unset",
+        "--unset-all",
+        "--add",
+        "--replace-all",
+        "--remove-section",
+        "--rename-section",
+    }
 
     for token in rest:
         if token in edit_flags or token in unsafe_flags:
             return False
 
-    safe_flags = {"--get", "--get-all", "--list", "-l", "--get-regexp", "--get-urlmatch"}
+    safe_flags = {
+        "--get",
+        "--get-all",
+        "--list",
+        "-l",
+        "--get-regexp",
+        "--get-urlmatch",
+    }
     for token in rest:
         if token in safe_flags:
             return True

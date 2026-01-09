@@ -1,6 +1,5 @@
 """Test cases for dippy."""
 
-
 import pytest
 
 from conftest import is_approved, needs_confirmation
@@ -2367,7 +2366,10 @@ TESTS = [
     ("az aks show --name mycluster -g mygroup", True),
     ("az aks show --name mycluster -g mygroup --output json", True),
     ("az aks get-versions --location eastus", True),
-    ("az aks get-credentials --name mycluster -g mygroup", False),  # modifies kubeconfig
+    (
+        "az aks get-credentials --name mycluster -g mygroup",
+        False,
+    ),  # modifies kubeconfig
     ("az aks get-credentials --name mycluster -g mygroup --overwrite-existing", False),
     ("az aks get-upgrades --name mycluster -g mygroup", True),
     ("az aks nodepool list --cluster-name mycluster -g mygroup", True),

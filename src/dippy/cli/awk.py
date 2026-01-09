@@ -29,7 +29,7 @@ OUTPUT_REDIRECT_PATTERN = re.compile(
         \|\s*["']                     # | followed by quote (pipe to command)
     )
     """,
-    re.VERBOSE
+    re.VERBOSE,
 )
 
 
