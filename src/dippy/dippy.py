@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Dippy - Approval autopilot for Claude Code.
+Dippy - Approval autopilot for Claude Code, Gemini CLI, and Cursor.
 
-A PreToolUse hook that auto-approves safe commands while prompting for
-anything destructive. Stay in the flow.
+A PreToolUse/BeforeTool/beforeShellExecution hook that auto-approves safe
+commands while prompting for anything destructive. Stay in the flow.
 
 Usage:
-    Add to ~/.claude/settings.json hooks configuration.
+    Claude Code: Add to ~/.claude/settings.json hooks configuration.
+    Gemini CLI:  Add to ~/.gemini/settings.json with --gemini flag.
+    Cursor:      Add to .cursor/hooks.json with --cursor flag.
     See README.md for details.
 """
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -34,30 +37,99 @@ from dippy.core.patterns import (
 from dippy.cli import get_handler, get_description
 
 
+# === Mode Detection ===
+
+
+def _env_flag(name: str) -> bool:
+    """Check if an environment variable is truthy."""
+    return os.environ.get(name, "").lower() in ("1", "true", "yes")
+
+
+def _detect_mode_from_flags() -> Optional[str]:
+    """Detect mode from command-line flags or env vars. Returns None if not set."""
+    if "--claude" in sys.argv or _env_flag("DIPPY_CLAUDE"):
+        return "claude"
+    if "--gemini" in sys.argv or _env_flag("DIPPY_GEMINI"):
+        return "gemini"
+    if "--cursor" in sys.argv or _env_flag("DIPPY_CURSOR"):
+        return "cursor"
+    return None
+
+
+def _detect_mode_from_input(input_data: dict) -> str:
+    """Auto-detect mode from input JSON structure."""
+    # Cursor: {"command": "...", "cwd": "..."}
+    if "command" in input_data and "tool_name" not in input_data:
+        return "cursor"
+
+    # Claude/Gemini: {"tool_name": "...", "tool_input": {...}}
+    tool_name = input_data.get("tool_name", "")
+
+    # Gemini uses "shell", "run_shell_command", etc.
+    if tool_name in ("shell", "run_shell", "run_shell_command", "execute_shell"):
+        return "gemini"
+
+    # Claude uses "Bash" - warn if unexpected tool_name
+    if tool_name and tool_name != "Bash":
+        logging.warning(f"Unknown tool_name '{tool_name}', defaulting to Claude mode")
+    return "claude"
+
+
+# Initial mode from flags/env (may be overridden by auto-detect)
+_EXPLICIT_MODE = _detect_mode_from_flags()
+MODE = _EXPLICIT_MODE or "claude"  # Default for logging setup
+GEMINI_MODE = MODE == "gemini"  # Backwards compat
+CURSOR_MODE = MODE == "cursor"
+
+
 # === Logging Setup ===
 
-LOG_FILE = Path.home() / ".claude" / "hook-approvals.log"
+
+def _get_log_file() -> Path:
+    """Get log file path based on mode."""
+    if MODE == "gemini":
+        return Path.home() / ".gemini" / "hook-approvals.log"
+    if MODE == "cursor":
+        return Path.home() / ".cursor" / "hook-approvals.log"
+    return Path.home() / ".claude" / "hook-approvals.log"
 
 # Module-level config (set per check_command call)
 _current_aliases: dict[str, str] = {}
 
 
 def setup_logging():
-    """Configure logging to file."""
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        filename=str(LOG_FILE),
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    """Configure logging to file. Fails silently if unable to write."""
+    try:
+        log_file = _get_log_file()
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            filename=str(log_file),
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    except (OSError, PermissionError):
+        pass  # Logging is optional - don't crash if we can't write
 
 
 # === Response Helpers ===
 
+
 def approve(reason: str = "all commands safe") -> dict:
     """Return approval response."""
     logging.info(f"APPROVED: {reason}")
+    if MODE == "gemini":
+        return {"decision": "allow", "reason": f"🐤 {reason}"}
+    if MODE == "cursor":
+        # Include both snake_case (v2.0+) and camelCase (v1.7.x) for compatibility
+        msg = f"🐤 {reason}"
+        return {
+            "permission": "allow",
+            "user_message": msg,
+            "agent_message": msg,
+            "userMessage": msg,
+            "agentMessage": msg,
+        }
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -70,6 +142,18 @@ def approve(reason: str = "all commands safe") -> dict:
 def ask(reason: str = "needs approval") -> dict:
     """Return ask response to prompt user for confirmation."""
     logging.info(f"ASK: {reason}")
+    if MODE == "gemini":
+        return {"decision": "ask", "reason": f"🐤 {reason}"}
+    if MODE == "cursor":
+        # Include both snake_case (v2.0+) and camelCase (v1.7.x) for compatibility
+        msg = f"🐤 {reason}"
+        return {
+            "permission": "ask",
+            "user_message": msg,
+            "agent_message": msg,
+            "userMessage": msg,
+            "agentMessage": msg,
+        }
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -386,24 +470,53 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
 
 # === Hook Entry Point ===
 
+# Tool names that indicate shell/bash commands
+SHELL_TOOL_NAMES = frozenset({
+    "Bash",  # Claude Code
+    "shell",  # Gemini CLI
+    "run_shell",  # Gemini CLI alternate
+    "run_shell_command",  # Gemini CLI official name
+    "execute_shell",  # Gemini CLI alternate
+})
+
+
 def main():
     """Main entry point for the hook."""
+    global MODE, GEMINI_MODE, CURSOR_MODE
+
     setup_logging()
 
     try:
         # Read hook input from stdin
         input_data = json.load(sys.stdin)
 
-        tool_name = input_data.get("tool_name", "")
-        tool_input = input_data.get("tool_input", {})
-        cwd = input_data.get("cwd")
+        # Auto-detect mode from input if no explicit flag/env was set
+        if _EXPLICIT_MODE is None:
+            MODE = _detect_mode_from_input(input_data)
+            GEMINI_MODE = MODE == "gemini"
+            CURSOR_MODE = MODE == "cursor"
+            logging.info(f"Auto-detected mode: {MODE}")
 
-        # Only handle Bash commands
-        if tool_name != "Bash":
-            print(json.dumps({}))
-            return
+        # Extract command and cwd based on mode
+        # Cursor: {"command": "...", "cwd": "..."}
+        # Claude/Gemini: {"tool_name": "...", "tool_input": {"command": "..."}}
+        if MODE == "cursor":
+            # Cursor sends command directly (beforeShellExecution hook)
+            command = input_data.get("command", "")
+            cwd = input_data.get("cwd")
+        else:
+            # Claude Code and Gemini CLI use tool_name/tool_input format
+            tool_name = input_data.get("tool_name", "")
+            tool_input = input_data.get("tool_input", {})
+            cwd = input_data.get("cwd")
 
-        command = tool_input.get("command", "")
+            # Only handle shell/bash commands
+            if tool_name not in SHELL_TOOL_NAMES:
+                print(json.dumps({}))
+                return
+
+            command = tool_input.get("command", "")
+
         logging.info(f"Checking: {command}")
 
         # Load config
