@@ -72,9 +72,9 @@ jobs:
         if: always()
         run: |
           FILE="${{ steps.claude.outputs.execution_file }}"
-          COST=$(grep -o '"total_cost_usd": [0-9.]*' "$FILE" | tail -1 | grep -o '[0-9.]*' || echo 0)
-          INPUT=$(grep -o '"input_tokens": [0-9]*' "$FILE" | tail -1 | grep -o '[0-9]*' || echo 0)
-          OUTPUT=$(grep -o '"output_tokens": [0-9]*' "$FILE" | tail -1 | grep -o '[0-9]*' || echo 0)
+          COST=$(jq -r '.[-1].total_cost_usd // 0 | . * 100 | round / 100' "$FILE")
+          INPUT=$(jq -r '.[-1].usage.input_tokens // 0' "$FILE")
+          OUTPUT=$(jq -r '.[-1].usage.output_tokens // 0' "$FILE")
           echo "## Fix Bug: ${{ inputs.title }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
