@@ -150,6 +150,17 @@ aliases = { k = "kubectl", tf = "terraform", g = "git" }
 
 ---
 
+## Development
+
+```bash
+just test        # Run tests (Python 3.14)
+just test-py312  # Run tests on specific version
+just test-all    # Run tests on all versions (3.11-3.14)
+just fmt         # Format and lint (ruff)
+```
+
+---
+
 ## Contributing
 
 PRs welcome! See [prompts/adding-commands.md](prompts/adding-commands.md) for instructions on adding support for new CLI tools.
@@ -192,6 +203,6 @@ Workflow:
 1. User pastes "Hook PreToolUse:Bash requires confirmation" output
 2. Add pattern to appropriate handler in `src/dippy/cli/`
 3. Add test case to `tests/cli/test_*.py`
-4. Run `uv run pytest`
+4. Run `just test` (must pass `just test-all` before committing)
 
 </details>

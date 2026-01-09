@@ -81,7 +81,7 @@ Group tests logically with comments. Include:
 
 Run the tests:
 ```bash
-uv run pytest tests/cli/test_<tool>.py -v
+just test
 ```
 
 For each failure:
@@ -93,9 +93,9 @@ Repeat until all tests pass.
 
 ### 6. Verify Full Suite
 
-Run the full test suite to ensure no regressions:
+Run all Python versions before committing:
 ```bash
-uv run pytest tests/ -q
+just test-all
 ```
 
 ## Output

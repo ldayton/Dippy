@@ -1,7 +1,0 @@
-#!/bin/bash
-set -e
-for v in 3.11 3.12 3.13 3.14; do
-  echo "=== Python $v ==="
-  uv run --python $v pytest -q
-done
-echo "All versions passed!"
