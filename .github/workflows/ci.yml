@@ -16,6 +16,17 @@ jobs:
 
       - uses: extractions/setup-just@v2
 
+      - name: Job summary
+        run: |
+          echo "## 🐤 Dippy CI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Trigger** | ![](https://img.shields.io/badge/${{ github.event_name }}-blue?style=flat-square&logo=githubactions) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+
       - name: Run checks
         run: just check
 

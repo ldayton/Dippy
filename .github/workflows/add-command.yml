@@ -82,6 +82,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Run Claude Code
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           use_bedrock: "true"
@@ -91,6 +92,25 @@ jobs:
           claude_args: |
             --model us.anthropic.claude-opus-4-5-20251101-v1:0
             --allowedTools Read,Edit,Write,Bash,Glob,Grep
+
+      - name: Job summary
+        if: always()
+        run: |
+          RESULT=$(grep '"type": "result"' "${{ steps.claude.outputs.execution_file }}" || echo '{}')
+          COST=$(echo "$RESULT" | jq -r '.total_cost_usd // 0 | . * 100 | round / 100')
+          INPUT=$(echo "$RESULT" | jq -r '.usage.input_tokens // 0')
+          OUTPUT=$(echo "$RESULT" | jq -r '.usage.output_tokens // 0')
+          echo "## Add Command: ${{ inputs.command }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Trigger** | ![](https://img.shields.io/badge/manual-blue?style=flat-square&logo=githubactions) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Input tokens** | ${INPUT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Output tokens** | ${OUTPUT} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cost** | ![](https://img.shields.io/badge/\$${COST}-green?style=flat-square) |" >> $GITHUB_STEP_SUMMARY
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
