@@ -1,0 +1,33 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - uses: extractions/setup-just@v2
+
+      - name: Run checks
+        run: just check
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            /tmp/dippy-test-py3.11.log
+            /tmp/dippy-test-py3.12.log
+            /tmp/dippy-test-py3.13.log
+            /tmp/dippy-test-py3.14.log
+            /tmp/dippy-lint.log
+            /tmp/dippy-fmt.log
