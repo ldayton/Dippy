@@ -174,9 +174,10 @@ def _check_uv_run(tokens: list[str]) -> bool:
 
         # Check the inner command using main dippy logic
         inner_cmd = " ".join(inner_tokens)
-        from dippy.dippy import check_command
+        from dippy.dippy import check_command, get_current_context
 
-        result = check_command(inner_cmd)
+        config, cwd = get_current_context()
+        result = check_command(inner_cmd, config, cwd)
         output = result.get("hookSpecificOutput", {})
         return output.get("permissionDecision") == "allow"
 

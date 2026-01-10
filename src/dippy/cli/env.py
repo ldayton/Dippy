@@ -56,7 +56,8 @@ def check(tokens: list[str]) -> bool:
     inner_tokens = tokens[i:]
     inner_cmd = " ".join(inner_tokens)
 
-    from dippy.dippy import _check_single_command
+    from dippy.dippy import _check_single_command, get_current_context
 
-    decision, _ = _check_single_command(inner_cmd)
+    config, cwd = get_current_context()
+    decision, _ = _check_single_command(inner_cmd, config, cwd)
     return decision == "approve"

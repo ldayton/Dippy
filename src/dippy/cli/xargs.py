@@ -97,11 +97,12 @@ def check(tokens: list[str]) -> bool:
         return False
 
     # Import here to avoid circular dependency
-    from dippy.dippy import _check_single_command
+    from dippy.dippy import _check_single_command, get_current_context
     import shlex
 
     inner_cmd = " ".join(
         shlex.quote(t) if " " in t or not t else t for t in inner_tokens
     )
-    decision, _ = _check_single_command(inner_cmd)
+    config, cwd = get_current_context()
+    decision, _ = _check_single_command(inner_cmd, config, cwd)
     return decision == "approve"

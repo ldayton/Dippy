@@ -34,9 +34,10 @@ def check(tokens: list[str]) -> bool:
         return False
 
     # Import here to avoid circular dependency
-    from dippy.dippy import check_command
+    from dippy.dippy import check_command, get_current_context
 
     # Check the inner command - returns dict with hookSpecificOutput
-    result = check_command(inner_cmd)
+    config, cwd = get_current_context()
+    result = check_command(inner_cmd, config, cwd)
     output = result.get("hookSpecificOutput", {})
     return output.get("permissionDecision") == "allow"

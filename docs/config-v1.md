@@ -163,7 +163,6 @@ set sticky-session       # remember approvals for session
 set verbose              # show reason on auto-approve
 set log-full             # log full commands (requires log path set)
 set warn-banner          # visual warning for prompts
-set disabled             # disable Dippy entirely
 ```
 
 **Value settings:**

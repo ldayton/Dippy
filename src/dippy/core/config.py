@@ -56,7 +56,6 @@ class Config:
     log: Path | None = None  # None = no logging
     log_full: bool = False  # log full command (requires log path)
     warn_banner: bool = False
-    disabled: bool = False
 
 
 @dataclass
@@ -121,7 +120,6 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
         log=overlay.log if overlay.log is not None else base.log,
         log_full=overlay.log_full if overlay.log_full else base.log_full,
         warn_banner=overlay.warn_banner if overlay.warn_banner else base.warn_banner,
-        disabled=overlay.disabled if overlay.disabled else base.disabled,
     )
 
 
@@ -248,7 +246,6 @@ def parse_config(text: str) -> Config:
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
         warn_banner=settings.get("warn_banner", False),
-        disabled=settings.get("disabled", False),
     )
 
 
@@ -320,7 +317,6 @@ def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> N
         "verbose",
         "log_full",
         "warn_banner",
-        "disabled",
     ):
         if value is not None:
             raise ValueError(f"'{key}' takes no value")

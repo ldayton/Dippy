@@ -118,7 +118,7 @@ class TestMergeConfigs:
     def test_triple_merge_preserves_order(self):
         user = Config(rules=[Rule("allow", "git *")], default="allow")
         project = Config(rules=[Rule("ask", "git push *")], verbose=True)
-        env = Config(rules=[Rule("allow", "git push --dry-run *")], disabled=True)
+        env = Config(rules=[Rule("allow", "git push --dry-run *")], warn_banner=True)
 
         merged = _merge_configs(_merge_configs(user, project), env)
         assert len(merged.rules) == 3
@@ -127,7 +127,7 @@ class TestMergeConfigs:
         assert merged.rules[2].pattern == "git push --dry-run *"
         assert merged.default == "allow"
         assert merged.verbose is True
-        assert merged.disabled is True
+        assert merged.warn_banner is True
 
 
 class TestTagRules:
@@ -337,16 +337,16 @@ class TestScopeIsolation:
 
         def mock_parse(text):
             if "project" in text:
-                return Config(verbose=True, disabled=False)
+                return Config(verbose=True, warn_banner=False)
             else:
-                return Config(disabled=True)
+                return Config(warn_banner=True)
 
         monkeypatch.setattr("dippy.core.config.parse_config", mock_parse)
 
         config = load_config(proj)
 
         assert config.verbose is True
-        assert config.disabled is True
+        assert config.warn_banner is True
 
 
 class TestLogging:

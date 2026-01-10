@@ -19,7 +19,17 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dippy.core.config import (
+    Config,
+    ConfigError,
+    SimpleCommand,
+    configure_logging,
+    load_config,
+    match_command,
+    match_redirect,
+)
 from dippy.core.parser import (
+    extract_redirect_targets,
     get_command_substitutions,
     has_command_list,
     has_output_redirect,
@@ -79,6 +89,20 @@ _EXPLICIT_MODE = _detect_mode_from_flags()
 MODE = _EXPLICIT_MODE or "claude"  # Default for logging setup
 GEMINI_MODE = MODE == "gemini"  # Backwards compat
 CURSOR_MODE = MODE == "cursor"
+
+# Request-scoped state (set at start of main(), used by handlers)
+_current_config: Config | None = None
+_current_cwd: Path | None = None
+
+
+def get_current_context() -> tuple[Config, Path]:
+    """Get current config and cwd for use by handlers.
+
+    Returns (config, cwd) tuple. Uses defaults if not set.
+    """
+    config = _current_config if _current_config is not None else Config()
+    cwd = _current_cwd if _current_cwd is not None else Path.cwd()
+    return config, cwd
 
 
 # === Logging Setup ===
@@ -204,7 +228,7 @@ def is_version_or_help(tokens: list[str]) -> bool:
 
 
 def check_simple_command(
-    cmd: str, tokens: list[str]
+    cmd: str, tokens: list[str], config: Config, cwd: Path
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Check simple commands that don't need CLI-specific handling.
@@ -254,7 +278,7 @@ def check_simple_command(
         if j < len(rest):
             # Use full check for inner command (it might need a handler)
             inner_cmd = " ".join(rest[j:])
-            return _check_single_command(inner_cmd)
+            return _check_single_command(inner_cmd, config, cwd)
         return (None, base)
 
     # Simple safe commands
@@ -268,7 +292,9 @@ def check_simple_command(
     return (None, None)
 
 
-def _check_command_substitutions(command: str) -> Optional[dict]:
+def _check_command_substitutions(
+    command: str, config: Config, cwd: Path
+) -> Optional[dict]:
     """
     Check command substitutions in a command.
 
@@ -295,12 +321,12 @@ def _check_command_substitutions(command: str) -> Optional[dict]:
 
     for inner_cmd, is_pure, position in cmdsubs:
         # Recursively check inner command's cmdsubs first
-        inner_cmdsub_result = _check_command_substitutions(inner_cmd)
+        inner_cmdsub_result = _check_command_substitutions(inner_cmd, config, cwd)
         if inner_cmdsub_result is not None:
             return inner_cmdsub_result
 
         # Check inner command itself is safe
-        inner_decision, inner_desc = _check_single_command(inner_cmd)
+        inner_decision, inner_desc = _check_single_command(inner_cmd, config, cwd)
         if inner_decision != "approve":
             return ask(f"cmdsub: {inner_desc}")
 
@@ -312,7 +338,7 @@ def _check_command_substitutions(command: str) -> Optional[dict]:
     return None
 
 
-def check_command(command: str) -> dict:
+def check_command(command: str, config: Config, cwd: Path) -> dict:
     """
     Main entry point: check if a command should be approved.
 
@@ -324,10 +350,24 @@ def check_command(command: str) -> dict:
 
     # Check for output redirects
     if has_output_redirect(command):
+        # Check redirect rules from config
+        try:
+            targets = extract_redirect_targets(command)
+        except ValueError:
+            return ask("invalid bash")
+        for target in targets:
+            redirect_match = match_redirect(target, config, cwd)
+            if redirect_match:
+                if redirect_match.decision == "allow":
+                    continue  # This target is allowed by config
+                else:
+                    msg = redirect_match.message or redirect_match.pattern
+                    return ask(f"redirect to {target}: {msg}")
+        # No config match for any redirect - default ask
         return ask("output redirect")
 
     # Check command substitutions - inner commands must be safe
-    cmdsub_result = _check_command_substitutions(command)
+    cmdsub_result = _check_command_substitutions(command, config, cwd)
     if cmdsub_result is not None:
         return cmdsub_result
 
@@ -337,7 +377,7 @@ def check_command(command: str) -> dict:
         unsafe = []
         safe = []
         for cmd in commands:
-            decision, desc = _check_single_command(cmd.strip())
+            decision, desc = _check_single_command(cmd.strip(), config, cwd)
             if decision != "approve":
                 unsafe.append(desc)
             else:
@@ -352,7 +392,7 @@ def check_command(command: str) -> dict:
         unsafe = []
         safe = []
         for cmd in commands:
-            decision, desc = _check_single_command(cmd.strip())
+            decision, desc = _check_single_command(cmd.strip(), config, cwd)
             if decision != "approve":
                 unsafe.append(desc)
             else:
@@ -362,14 +402,16 @@ def check_command(command: str) -> dict:
         return approve(", ".join(safe))
 
     # Single command
-    decision, desc = _check_single_command(command)
+    decision, desc = _check_single_command(command, config, cwd)
 
     if decision == "approve":
         return approve(desc)
     return ask(desc)
 
 
-def _check_single_command(command: str) -> tuple[Optional[str], str]:
+def _check_single_command(
+    command: str, config: Config, cwd: Path
+) -> tuple[Optional[str], str]:
     """
     Check a single (non-pipeline) command.
 
@@ -381,8 +423,18 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
 
     base = tokens[0]
 
-    # Try simple command check first (fast path)
-    decision, desc = check_simple_command(command, tokens)
+    # Check config rules first (highest priority)
+    cmd = SimpleCommand(words=tokens)
+    config_match = match_command(cmd, config, cwd)
+    if config_match:
+        if config_match.decision == "allow":
+            return ("approve", f"{base} ({config_match.pattern})")
+        else:
+            msg = config_match.message or config_match.pattern
+            return (None, f"{base}: {msg}")
+
+    # Try simple command check (fast path)
+    decision, desc = check_simple_command(command, tokens, config, cwd)
     if decision is not None or desc is not None:
         # check_simple_command handled this command
         return (decision, desc if desc else base)
@@ -419,7 +471,7 @@ SHELL_TOOL_NAMES = frozenset(
 
 def main():
     """Main entry point for the hook."""
-    global MODE, GEMINI_MODE, CURSOR_MODE
+    global MODE, GEMINI_MODE, CURSOR_MODE, _current_config, _current_cwd
 
     setup_logging()
 
@@ -433,6 +485,26 @@ def main():
             GEMINI_MODE = MODE == "gemini"
             CURSOR_MODE = MODE == "cursor"
             logging.info(f"Auto-detected mode: {MODE}")
+
+        # Extract cwd from input (Cursor provides it, Claude/Gemini may not)
+        cwd_str = input_data.get("cwd")
+        if cwd_str:
+            cwd = Path(cwd_str).resolve()
+        else:
+            cwd = Path.cwd()
+
+        # Load config (fails hard on errors)
+        try:
+            config = load_config(cwd)
+            configure_logging(config)
+        except ConfigError as e:
+            logging.error(f"Config error: {e}")
+            print(json.dumps(ask(f"config error: {e}")))
+            return
+
+        # Set module state for handlers
+        _current_config = config
+        _current_cwd = cwd
 
         # Extract command based on mode
         # Cursor: {"command": "...", "cwd": "..."}
@@ -453,7 +525,7 @@ def main():
             command = tool_input.get("command", "")
 
         logging.info(f"Checking: {command}")
-        result = check_command(command)
+        result = check_command(command, config, cwd)
         print(json.dumps(result))
 
     except json.JSONDecodeError:
