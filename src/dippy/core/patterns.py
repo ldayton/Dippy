@@ -38,6 +38,7 @@ SIMPLE_SAFE = frozenset(
         "basename",
         "dirname",
         "pwd",
+        "cd",
         "readlink",
         "realpath",
         # Search/filter (read-only)
