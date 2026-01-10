@@ -11,15 +11,32 @@ PROJECT_CONFIG_NAME = ".dippy"
 ENV_CONFIG = "DIPPY_CONFIG"
 
 
+# Config scopes in priority order (lowest to highest)
+SCOPE_USER = "user"
+SCOPE_PROJECT = "project"
+SCOPE_ENV = "env"
+
+
+@dataclass
+class Rule:
+    """A single config rule with origin tracking."""
+
+    decision: str  # 'allow' | 'ask'
+    pattern: str
+    message: str | None = None
+    source: str | None = None  # file path
+    scope: str | None = None  # user/project/env
+
+
 @dataclass
 class Config:
     """Parsed configuration."""
 
-    rules: list[tuple[str, str, str | None]] = field(default_factory=list)
-    """Command rules: [('allow'|'ask', glob, message|None), ...]"""
+    rules: list[Rule] = field(default_factory=list)
+    """Command rules in load order."""
 
-    redirect_rules: list[tuple[str, str, str | None]] = field(default_factory=list)
-    """Redirect rules: [('allow'|'ask', glob, message|None), ...]"""
+    redirect_rules: list[Rule] = field(default_factory=list)
+    """Redirect rules in load order."""
 
     sticky_session: bool = False
     suggest_after: int | None = None
@@ -38,6 +55,8 @@ class Match:
     decision: str  # 'allow' | 'ask'
     pattern: str  # the glob pattern that matched
     message: str | None = None  # shown to AI on ask
+    source: str | None = None  # file path where rule was defined
+    scope: str | None = None  # user/project/env
 
 
 # === Config Loading ===
@@ -57,11 +76,13 @@ def _find_project_config(cwd: Path) -> Path | None:
 
 
 def _merge_configs(base: Config, overlay: Config) -> Config:
-    """Merge overlay config into base. Rules concatenate, settings override."""
+    """Merge overlay config into base. Rules accumulate in order, settings override."""
     return replace(
         base,
+        # Rules accumulate in load order (like git)
         rules=base.rules + overlay.rules,
         redirect_rules=base.redirect_rules + overlay.redirect_rules,
+        # Settings: overlay wins if set
         sticky_session=overlay.sticky_session
         if overlay.sticky_session
         else base.sticky_session,
@@ -77,27 +98,41 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
     )
 
 
+def _tag_rules(config: Config, source: str, scope: str) -> Config:
+    """Tag all rules in config with source file and scope."""
+    return replace(
+        config,
+        rules=[replace(r, source=source, scope=scope) for r in config.rules],
+        redirect_rules=[
+            replace(r, source=source, scope=scope) for r in config.redirect_rules
+        ],
+    )
+
+
 def load_config(cwd: Path) -> Config:
     """Load config from ~/.dippy/config, .dippy, and $DIPPY_CONFIG. Last match wins."""
     config = Config()
 
-    # 1. User config
+    # 1. User config (lowest priority)
     if USER_CONFIG.is_file():
         user_config = parse_config(USER_CONFIG.read_text())
+        user_config = _tag_rules(user_config, str(USER_CONFIG), SCOPE_USER)
         config = _merge_configs(config, user_config)
 
     # 2. Project config (walk up from cwd)
     project_path = _find_project_config(cwd)
     if project_path is not None:
         project_config = parse_config(project_path.read_text())
+        project_config = _tag_rules(project_config, str(project_path), SCOPE_PROJECT)
         config = _merge_configs(config, project_config)
 
-    # 3. Env override (highest precedence)
+    # 3. Env override (highest priority)
     env_path = os.environ.get(ENV_CONFIG)
     if env_path:
         env_config_path = Path(env_path).expanduser()
         if env_config_path.is_file():
             env_config = parse_config(env_config_path.read_text())
+            env_config = _tag_rules(env_config, str(env_config_path), SCOPE_ENV)
             config = _merge_configs(config, env_config)
 
     return config
