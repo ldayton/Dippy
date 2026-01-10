@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
 ]
 dependencies = [
-    "parable @ git+https://github.com/ldayton/Parable.git",
+    "parable @ git+https://github.com/ldayton/Parable.git@465fa111a2669437442a74f97f2b78ae7f273fd3",
 ]
 
 [project.urls]

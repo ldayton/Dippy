@@ -1,200 +1,84 @@
-"""
-Configuration system for Dippy.
+"""Dippy configuration system v1."""
 
-Loads config from:
-- ~/.dippy/settings.toml (global defaults)
-- dippy.toml or .dippy.toml in project root (first found wins, merged with global)
-
-Example config:
-    # What you want auto-approved
-    approve = [
-        "mkdir",                      # Simple command
-        "git stash",                  # CLI action
-        "./scripts/deploy.sh",        # Script (relative to project root)
-        "re:^make (lint|test|build)", # Regex (explicit re: prefix)
-    ]
-
-    # Override: always ask, even if rules would approve
-    confirm = [
-        "docker run",
-        "git push --force",
-    ]
-
-    # Map aliases to CLI handlers
-    aliases = { k = "kubectl", tf = "terraform", g = "git" }
-"""
-
-import logging
-import re
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
-
-CURRENT_VERSION = 1
 
 
 @dataclass
 class Config:
-    """Dippy configuration."""
+    """Parsed configuration."""
 
-    version: int = CURRENT_VERSION
-    approve: list[str] = field(default_factory=list)
-    confirm: list[str] = field(default_factory=list)
-    aliases: dict[str, str] = field(default_factory=dict)
-    project_root: Optional[Path] = None
+    rules: list[tuple[str, str, str | None]] = field(default_factory=list)
+    """Command rules: [('allow'|'ask', glob, message|None), ...]"""
 
-    def merge(self, other: "Config") -> "Config":
-        """Merge another config into this one (other takes precedence)."""
-        return Config(
-            version=max(self.version, other.version),
-            approve=self.approve + other.approve,
-            confirm=self.confirm + other.confirm,
-            aliases={**self.aliases, **other.aliases},
-            project_root=other.project_root or self.project_root,
-        )
+    redirect_rules: list[tuple[str, str, str | None]] = field(default_factory=list)
+    """Redirect rules: [('allow'|'ask', glob, message|None), ...]"""
 
-
-def load_config(cwd: Optional[str] = None) -> Config:
-    """
-    Load config from global and project locations.
-
-    Args:
-        cwd: Current working directory (for finding project config)
-
-    Returns:
-        Merged config (project overrides global)
-    """
-    config = Config()
-
-    # Load global config
-    global_path = Path.home() / ".dippy" / "settings.toml"
-    if global_path.exists():
-        global_config = _load_config_file(global_path)
-        config = config.merge(global_config)
-
-    # Load project config
-    if cwd:
-        project_path = _find_project_config(Path(cwd))
-        if project_path:
-            project_config = _load_config_file(project_path)
-            project_config.project_root = project_path.parent
-            config = config.merge(project_config)
-
-    return config
+    sticky_session: bool = False
+    suggest_after: int | None = None
+    default: str = "ask"  # 'allow' | 'ask'
+    verbose: bool = False
+    log: Path | None = None  # None = no logging
+    log_full: bool = False  # log full command (requires log path)
+    warn_banner: bool = False
+    disabled: bool = False
 
 
-def _load_config_file(path: Path) -> Config:
-    """Load a single config file."""
-    try:
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
+@dataclass
+class Match:
+    """Result of matching against config rules."""
 
-        version = data.get("version", 1)
-        if version > CURRENT_VERSION:
-            logging.warning(
-                f"Config {path} has version {version}, "
-                f"but dippy only supports version {CURRENT_VERSION}. Skipping."
-            )
-            return Config()
-
-        return Config(
-            version=version,
-            approve=data.get("approve", []),
-            confirm=data.get("confirm", []),
-            aliases=data.get("aliases", {}),
-        )
-    except Exception as e:
-        logging.warning(f"Failed to load config {path}: {e}")
-        return Config()
+    decision: str  # 'allow' | 'ask'
+    pattern: str  # the glob pattern that matched
+    message: str | None = None  # shown to AI on ask
 
 
-def _find_project_config(cwd: Path) -> Optional[Path]:
-    """Walk up from cwd to find dippy.toml or .dippy.toml (first found wins)."""
-    current = cwd.resolve()
-    while current != current.parent:
-        # dippy.toml takes priority over .dippy.toml
-        for name in ("dippy.toml", ".dippy.toml"):
-            config_path = current / name
-            if config_path.exists():
-                return config_path
-        current = current.parent
-    return None
+def load_config(cwd: Path) -> Config:
+    """Load config from ~/.dippy/config and .dippy (walk up from cwd). Last match wins."""
+    ...
 
 
-def matches_pattern(
-    command: str,
-    pattern: str,
-    tokens: list[str],
-    project_root: Optional[Path] = None,
-    cwd: Optional[Path] = None,
-) -> bool:
-    """
-    Check if a command matches a config pattern.
-
-    Pattern types:
-    - "re:..." - Regex match against full command
-    - "*.sh" or path with / - Script path (resolved against project root)
-    - "git stash" - Prefix match on tokens
-    - "mkdir" - Simple command match
-    """
-    # Regex pattern
-    if pattern.startswith("re:"):
-        regex = pattern[3:]
-        try:
-            return bool(re.match(regex, command))
-        except re.error:
-            return False
-
-    # Script path (contains / or ends with script extension)
-    script_extensions = (".sh", ".bash", ".py", ".rb", ".pl")
-    if "/" in pattern or pattern.endswith(script_extensions):
-        return _matches_script_path(command, pattern, tokens, project_root, cwd)
-
-    # Token prefix match
-    pattern_tokens = pattern.split()
-    if len(pattern_tokens) <= len(tokens):
-        return tokens[: len(pattern_tokens)] == pattern_tokens
-
-    return False
+def parse_config(text: str) -> Config:
+    """Parse config text into Config object. Raises on syntax errors."""
+    ...
 
 
-def _matches_script_path(
-    command: str,
-    pattern: str,
-    tokens: list[str],
-    project_root: Optional[Path] = None,
-    cwd: Optional[Path] = None,
-) -> bool:
-    """
-    Check if command invokes a script matching the pattern.
+def match_command(command: str, config: Config, cwd: Path) -> Match | None:
+    """Match command against rules. Resolves relative paths against cwd."""
+    ...
 
-    Resolves both pattern and command to absolute paths to ensure
-    we're matching the exact file, not just the basename.
-    """
-    if not tokens:
-        return False
 
-    cmd_path_str = tokens[0]
+def match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
+    """Match redirect target against rules. Resolves relative paths against cwd."""
+    ...
 
-    # Resolve pattern to absolute path
-    if pattern.startswith("/"):
-        pattern_path = Path(pattern).resolve()
-    elif project_root:
-        pattern_path = (project_root / pattern).resolve()
-    else:
-        # No project root, can't safely resolve relative pattern
-        return False
 
-    # Resolve command path to absolute
-    if cmd_path_str.startswith("/"):
-        cmd_path = Path(cmd_path_str).resolve()
-    elif cwd:
-        cmd_path = (cwd / cmd_path_str).resolve()
-    else:
-        # No cwd, can't resolve relative command
-        return False
+# === Logging ===
 
-    # Match resolved paths
-    return cmd_path == pattern_path
+_config: Config | None = None
+
+
+def configure_logging(config: Config) -> None:
+    """Configure logging based on config settings. Call once at startup."""
+    global _config
+    _config = config
+    if config.log is None:
+        return
+    # TODO: configure structlog to write JSON to config.log
+    ...
+
+
+def log_decision(
+    decision: str,
+    cmd: str,
+    rule: str | None = None,
+    message: str | None = None,
+    command: str | None = None,
+) -> None:
+    """Log a decision. No-op if logging not configured."""
+    if _config is None or _config.log is None:
+        return
+    # TODO: structlog output
+    # - always: ts, decision, cmd, rule (if set), message (if set)
+    # - only if log_full: command
+    ...
