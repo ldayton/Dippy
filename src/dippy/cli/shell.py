@@ -2,19 +2,18 @@
 Shell command handler for Dippy.
 
 Handles bash, sh, zsh with -c flag (inline commands).
-We approve if the inner command is safe.
+Delegates to inner command check.
 """
+
+from dippy.cli import Classification
 
 COMMANDS = ["bash", "sh", "zsh", "dash", "ksh", "fish"]
 
-# Shells we handle
-SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish"})
 
-
-def check(tokens: list[str]) -> bool:
-    """Check if shell -c command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify shell command."""
     if len(tokens) < 2:
-        return False
+        return Classification("ask")
 
     # Find -c flag (standalone or combined like -lc, -cl, -xcl, etc.)
     c_idx = None
@@ -24,20 +23,14 @@ def check(tokens: list[str]) -> bool:
             break
 
     if c_idx is None:
-        return False  # No -c flag - not running inline command
+        return Classification("ask")  # No -c flag - not running inline command
 
     if c_idx + 1 >= len(tokens):
-        return False  # No command after -c
+        return Classification("ask")  # No command after -c
 
     inner_cmd = tokens[c_idx + 1]
     if not inner_cmd:
-        return False
+        return Classification("ask")
 
-    # Import here to avoid circular dependency
-    from dippy.dippy import check_command, get_current_context
-
-    # Check the inner command - returns dict with hookSpecificOutput
-    config, cwd = get_current_context()
-    result = check_command(inner_cmd, config, cwd)
-    output = result.get("hookSpecificOutput", {})
-    return output.get("permissionDecision") == "allow"
+    # Delegate to inner command check
+    return Classification("delegate", inner_command=inner_cmd)

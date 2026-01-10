@@ -90,21 +90,6 @@ MODE = _EXPLICIT_MODE or "claude"  # Default for logging setup
 GEMINI_MODE = MODE == "gemini"  # Backwards compat
 CURSOR_MODE = MODE == "cursor"
 
-# Request-scoped state (set at start of main(), used by handlers)
-_current_config: Config | None = None
-_current_cwd: Path | None = None
-
-
-def get_current_context() -> tuple[Config, Path]:
-    """Get current config and cwd for use by handlers.
-
-    Returns (config, cwd) tuple. Uses defaults if not set.
-    """
-    config = _current_config if _current_config is not None else Config()
-    cwd = _current_cwd if _current_cwd is not None else Path.cwd()
-    return config, cwd
-
-
 # === Logging Setup ===
 
 
@@ -442,9 +427,24 @@ def _check_single_command(
     # Try CLI-specific handler
     handler = get_handler(base)
     if handler:
-        desc = get_description(tokens, base)
-        approved = handler.check(tokens)
-        return ("approve", desc) if approved else (None, desc)
+        result = handler.classify(tokens)
+        desc = result.description or get_description(tokens, base)
+        if result.action == "approve":
+            return ("approve", desc)
+        elif result.action == "delegate" and result.inner_command:
+            # Delegate to inner command (e.g., bash -c 'inner')
+            # Use check_command to handle pipes, command lists, redirects, etc.
+            inner_result = check_command(result.inner_command, config, cwd)
+            inner_output = inner_result.get("hookSpecificOutput", {})
+            inner_decision = inner_output.get("permissionDecision")
+            inner_reason = inner_output.get("permissionDecisionReason", "").lstrip(
+                "🐤 "
+            )
+            if inner_decision == "allow":
+                return ("approve", inner_reason)
+            return (None, inner_reason)
+        else:
+            return (None, desc)
 
     # Check unsafe patterns (fallback for unknown commands)
     # This comes after handlers so they can approve things like "aws s3 rm --help"
@@ -471,7 +471,7 @@ SHELL_TOOL_NAMES = frozenset(
 
 def main():
     """Main entry point for the hook."""
-    global MODE, GEMINI_MODE, CURSOR_MODE, _current_config, _current_cwd
+    global MODE, GEMINI_MODE, CURSOR_MODE
 
     setup_logging()
 
@@ -501,10 +501,6 @@ def main():
             logging.error(f"Config error: {e}")
             print(json.dumps(ask(f"config error: {e}")))
             return
-
-        # Set module state for handlers
-        _current_config = config
-        _current_cwd = cwd
 
         # Extract command based on mode
         # Cursor: {"command": "...", "cwd": "..."}

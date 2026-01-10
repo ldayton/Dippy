@@ -5,6 +5,8 @@ CDK commands for infrastructure as code.
 Most commands modify infrastructure, only a few are safe.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["cdk"]
 
 # Safe CDK commands (read-only)
@@ -26,15 +28,21 @@ SAFE_ACTIONS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if CDK command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify CDK command."""
+    base = tokens[0] if tokens else "cdk"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     action = tokens[1]
+    desc = f"{base} {action}"
 
     # Special handling for context command
     if action == "context":
-        return not any(t in {"--reset", "--clear"} for t in tokens)
+        if any(t in {"--reset", "--clear"} for t in tokens):
+            return Classification("ask", description=desc)
+        return Classification("approve", description=desc)
 
-    return action in SAFE_ACTIONS
+    if action in SAFE_ACTIONS:
+        return Classification("approve", description=desc)
+    return Classification("ask", description=desc)

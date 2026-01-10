@@ -2,8 +2,12 @@
 Xargs command handler for Dippy.
 
 Xargs executes commands with arguments from stdin.
-We approve xargs if the inner command it runs is safe.
+Delegates to inner command check.
 """
+
+import shlex
+
+from dippy.cli import Classification
 
 COMMANDS = ["xargs"]
 
@@ -72,37 +76,32 @@ def _skip_flags(
     return i
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if xargs command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify xargs command by extracting the inner command."""
     if len(tokens) < 2:
-        return False
+        return Classification("ask")
 
     # Check for unsafe flags (interactive mode)
     for token in tokens[1:]:
         if token == "--":
             break
         if token in UNSAFE_FLAGS:
-            return False
+            return Classification("ask")
         if token.startswith(("--interactive", "--open-tty")):
-            return False
+            return Classification("ask")
 
     # Find the inner command (skip xargs and its flags)
     inner_start = 1 + _skip_flags(tokens[1:], FLAGS_WITH_ARG, stop_at_double_dash=True)
 
     if inner_start >= len(tokens):
-        return False
+        return Classification("ask")
 
     inner_tokens = tokens[inner_start:]
     if not inner_tokens:
-        return False
+        return Classification("ask")
 
-    # Import here to avoid circular dependency
-    from dippy.dippy import _check_single_command, get_current_context
-    import shlex
-
+    # Delegate to inner command check
     inner_cmd = " ".join(
         shlex.quote(t) if " " in t or not t else t for t in inner_tokens
     )
-    config, cwd = get_current_context()
-    decision, _ = _check_single_command(inner_cmd, config, cwd)
-    return decision == "approve"
+    return Classification("delegate", inner_command=inner_cmd)

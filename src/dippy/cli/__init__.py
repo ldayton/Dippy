@@ -3,22 +3,38 @@ CLI-specific command handlers for Dippy.
 
 Each handler module exports:
 - COMMANDS: list[str] - command names this handler supports
-- check(tokens: list[str]) -> bool - returns True to approve, False to ask user
+- classify(tokens: list[str]) -> Classification - classify command for approval
 """
 
 import importlib
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Literal, Optional, Protocol
+
+
+@dataclass(frozen=True, slots=True)
+class Classification:
+    """Result of classifying a command.
+
+    Handlers return this to indicate:
+    - approve: command is safe, no further checking needed
+    - ask: command needs user confirmation
+    - delegate: check inner_command to determine safety
+    """
+
+    action: Literal["approve", "ask", "delegate"]
+    inner_command: str | None = None  # Required when action="delegate"
+    description: str | None = None  # Optional, overrides default description
 
 
 class CLIHandler(Protocol):
     """Protocol for CLI handler modules."""
 
-    def check(self, tokens: list[str]) -> bool:
-        """Check if command should be approved.
+    def classify(self, tokens: list[str]) -> Classification:
+        """Classify command for approval.
 
-        Returns True to approve, False to ask user.
+        Returns Classification with action and optional description.
         """
         ...
 

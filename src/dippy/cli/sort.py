@@ -4,14 +4,17 @@ Sort command handler for Dippy.
 Sort is safe for text processing, but -o flag writes to a file.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["sort"]
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if sort command is safe (no output to file)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify sort command (no output to file is safe)."""
+    base = tokens[0] if tokens else "sort"
     for t in tokens[1:]:
         if t == "-o" or t.startswith("-o"):
-            return False
+            return Classification("ask", description=f"{base} -o")
         if t == "--output" or t.startswith("--output"):
-            return False
-    return True
+            return Classification("ask", description=f"{base} --output")
+    return Classification("approve", description=base)

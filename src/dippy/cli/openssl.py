@@ -5,6 +5,8 @@ OpenSSL has various commands, some are read-only (viewing certs)
 and some modify files or do crypto operations.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["openssl"]
 
 SAFE_COMMANDS = frozenset(
@@ -16,22 +18,24 @@ SAFE_COMMANDS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if openssl command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify openssl command."""
+    base = tokens[0] if tokens else "openssl"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     subcommand = tokens[1]
+    desc = f"{base} {subcommand}"
 
     if subcommand in SAFE_COMMANDS:
-        return True
+        return Classification("approve", description=desc)
 
     # x509 with -noout is just viewing
     if subcommand == "x509" and "-noout" in tokens:
-        return True
+        return Classification("approve", description=desc)
 
     # s_client for connection testing
     if subcommand == "s_client":
-        return True
+        return Classification("approve", description=desc)
 
-    return False
+    return Classification("ask", description=desc)

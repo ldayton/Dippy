@@ -4,6 +4,8 @@ Kubectl command handler for Dippy.
 Handles kubectl and similar Kubernetes CLI tools.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["kubectl", "k"]
 
 # Safe read-only actions
@@ -93,10 +95,11 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if kubectl command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify kubectl command."""
+    base = tokens[0] if tokens else "kubectl"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     # Find the action (skip global flags)
     action = None
@@ -127,28 +130,29 @@ def check(tokens: list[str]) -> bool:
         break
 
     if not action:
-        return False
+        return Classification("ask", description=base)
 
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
+    desc = f"{base} {action}"
 
     # Check for subcommands first
     if action in SAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return True
+                    return Classification("approve", description=f"{desc} {token}")
                 break
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in UNSAFE_SUBCOMMANDS[action]:
-                    return False
+                    return Classification("ask", description=f"{desc} {token}")
                 break
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return True
+        return Classification("approve", description=desc)
 
     # Unsafe actions or unknown
-    return False
+    return Classification("ask", description=desc)

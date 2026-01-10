@@ -9,6 +9,8 @@ Unsafe operations:
 - --bind with execute/execute-silent/become: Can run arbitrary commands
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["fzf"]
 
 # Unsafe bind actions that execute external commands
@@ -21,15 +23,13 @@ UNSAFE_BIND_ACTIONS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if fzf command is safe.
-
-    Returns True to approve, False to ask user.
-    """
+def classify(tokens: list[str]) -> Classification:
+    """Classify fzf command."""
+    base = tokens[0] if tokens else "fzf"
     for i, token in enumerate(tokens):
         # Check for --listen-unsafe flag
         if token == "--listen-unsafe" or token.startswith("--listen-unsafe="):
-            return False
+            return Classification("ask", description=f"{base} --listen-unsafe")
 
         # Check for --bind with unsafe actions
         if token == "--bind" or token.startswith("--bind="):
@@ -45,9 +45,9 @@ def check(tokens: list[str]) -> bool:
                 bind_value = token[7:]  # len("--bind=") == 7
 
             if _has_unsafe_bind_action(bind_value):
-                return False
+                return Classification("ask", description=f"{base} --bind")
 
-    return True
+    return Classification("approve", description=base)
 
 
 def _has_unsafe_bind_action(bind_value: str) -> bool:

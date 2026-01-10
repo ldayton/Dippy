@@ -8,6 +8,8 @@ Unsafe operations include building images (external effects),
 installing plugins, and modifying template files.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["packer"]
 
 # Safe read-only actions
@@ -47,21 +49,19 @@ UNSAFE_PLUGINS_SUBCOMMANDS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if packer command is safe.
-
-    Returns True to approve, False to ask user.
-    """
+def classify(tokens: list[str]) -> Classification:
+    """Classify packer command."""
+    base = tokens[0] if tokens else "packer"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     # Check for help flags anywhere
     if "--help" in tokens or "-help" in tokens or "-h" in tokens:
-        return True
+        return Classification("approve", description=f"{base} --help")
 
     # Check for version flag
     if "--version" in tokens or "-version" in tokens:
-        return True
+        return Classification("approve", description=f"{base} --version")
 
     # Find action (skip global flags)
     action = None
@@ -78,33 +78,38 @@ def check(tokens: list[str]) -> bool:
         break
 
     if not action:
-        return False
+        return Classification("ask", description=base)
 
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
+    desc = f"{base} {action}"
 
     # Handle plugins subcommand
     if action == "plugins":
         subcommand = _find_subcommand(rest)
+        if subcommand:
+            desc = f"{desc} {subcommand}"
         if subcommand in SAFE_PLUGINS_SUBCOMMANDS:
-            return True
+            return Classification("approve", description=desc)
         if subcommand in UNSAFE_PLUGINS_SUBCOMMANDS:
-            return False
-        return False
+            return Classification("ask", description=desc)
+        return Classification("ask", description=desc)
 
     # Handle fmt - safe only with -check, -diff, or -write=false
     if action == "fmt":
-        return _is_fmt_safe(rest)
+        if _is_fmt_safe(rest):
+            return Classification("approve", description=desc)
+        return Classification("ask", description=desc)
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return True
+        return Classification("approve", description=desc)
 
     # Unsafe actions
     if action in UNSAFE_ACTIONS:
-        return False
+        return Classification("ask", description=desc)
 
     # Unknown actions require confirmation
-    return False
+    return Classification("ask", description=desc)
 
 
 def _find_subcommand(rest: list[str]) -> str | None:

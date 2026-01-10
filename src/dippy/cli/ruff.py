@@ -5,6 +5,8 @@ Ruff is a Python linter/formatter. Most commands are safe,
 but "ruff clean" modifies files by removing cached data.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["ruff"]
 
 UNSAFE_ACTIONS = frozenset(
@@ -14,10 +16,14 @@ UNSAFE_ACTIONS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if ruff command is safe (not clean)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify ruff command (not clean is safe)."""
+    base = tokens[0] if tokens else "ruff"
     if len(tokens) < 2:
-        return True  # Just "ruff" shows help
+        return Classification("approve", description=base)  # Just "ruff" shows help
 
     action = tokens[1]
-    return action not in UNSAFE_ACTIONS
+    desc = f"{base} {action}"
+    if action in UNSAFE_ACTIONS:
+        return Classification("ask", description=desc)
+    return Classification("approve", description=desc)

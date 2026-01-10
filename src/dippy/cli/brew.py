@@ -2,6 +2,8 @@
 Homebrew CLI handler for Dippy.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["brew"]
 
 # Actions that only read data
@@ -100,49 +102,51 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if brew command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify brew command."""
+    base = tokens[0] if tokens else "brew"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
+    desc = f"{base} {action}"
 
     # Check global flags that act like commands
     if action in SAFE_GLOBAL_FLAGS:
-        return True
+        return Classification("approve", description=desc)
 
     # Check subcommands for multi-level commands
     if action in SAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand in SAFE_SUBCOMMANDS[action]:
-            return True
+            return Classification("approve", description=f"{desc} {subcommand}")
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand in UNSAFE_SUBCOMMANDS[action]:
-            return False
+            return Classification("ask", description=f"{desc} {subcommand}")
         if action == "services":
-            return False
+            return Classification("ask", description=desc)
 
     if action == "services":
-        return False
+        return Classification("ask", description=desc)
 
     if action == "bundle":
-        return False
+        return Classification("ask", description=desc)
 
     # analytics: 'state' is safe, 'on'/'off' modify settings
     if action == "analytics":
         if rest:
             subcommand = _find_subcommand(rest)
             if subcommand in {"on", "off"}:
-                return False
-        return True
+                return Classification("ask", description=f"{desc} {subcommand}")
+        return Classification("approve", description=desc)
 
     if action in SAFE_ACTIONS:
-        return True
+        return Classification("approve", description=desc)
 
-    return False
+    return Classification("ask", description=desc)
 
 
 def _find_subcommand(rest: list[str]) -> str | None:

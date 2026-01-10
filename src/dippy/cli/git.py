@@ -4,6 +4,8 @@ Git command handler for Dippy.
 Approves read-only git operations, blocks mutations.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["git"]
 
 # Actions that only read data (no subcommands to check)
@@ -170,60 +172,61 @@ def get_description(tokens: list[str]) -> str:
     return "git"
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if git command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify git command."""
+    desc = get_description(tokens)
+
     if len(tokens) < 2:
-        return False  # Just "git" with no subcommand
+        return Classification("ask", description=desc)
 
     # Find the actual action, skipping global flags
     action_idx, action = _find_action(tokens)
     if action is None:
-        return False
+        return Classification("ask", description=desc)
 
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
     # Handle commands with subcommands that need special checks
     if action == "branch":
-        return _check_branch(rest)
+        safe = _check_branch(rest)
     elif action == "tag":
-        return _check_tag(rest)
+        safe = _check_tag(rest)
     elif action == "remote":
-        return _check_remote(rest)
+        safe = _check_remote(rest)
     elif action == "stash":
-        return _check_stash(rest)
+        safe = _check_stash(rest)
     elif action == "config":
-        return _check_config(rest)
+        safe = _check_config(rest)
     elif action == "notes":
-        return _check_notes(rest)
+        safe = _check_notes(rest)
     elif action == "bisect":
-        return _check_bisect(rest)
+        safe = _check_bisect(rest)
     elif action == "worktree":
-        return _check_worktree(rest)
+        safe = _check_worktree(rest)
     elif action == "submodule":
-        return _check_submodule(rest)
+        safe = _check_submodule(rest)
     elif action == "apply":
-        return _check_apply(rest)
+        safe = _check_apply(rest)
     elif action == "sparse-checkout":
-        return _check_sparse_checkout(rest)
+        safe = _check_sparse_checkout(rest)
     elif action == "bundle":
-        return _check_bundle(rest)
+        safe = _check_bundle(rest)
     elif action == "lfs":
-        return _check_lfs(rest)
+        safe = _check_lfs(rest)
     elif action == "hash-object":
-        return _check_hash_object(rest)
+        safe = _check_hash_object(rest)
     elif action == "symbolic-ref":
-        return _check_symbolic_ref(rest)
+        safe = _check_symbolic_ref(rest)
     elif action == "replace":
-        return _check_replace(rest)
+        safe = _check_replace(rest)
     elif action == "rerere":
-        return _check_rerere(rest)
+        safe = _check_rerere(rest)
+    elif action in SAFE_ACTIONS:
+        safe = True
+    else:
+        safe = False
 
-    # Explicitly safe actions
-    if action in SAFE_ACTIONS:
-        return True
-
-    # Explicitly unsafe actions or unknown - ask user
-    return False
+    return Classification("approve" if safe else "ask", description=desc)
 
 
 def _check_branch(rest: list[str]) -> bool:

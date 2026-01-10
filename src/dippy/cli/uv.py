@@ -5,6 +5,8 @@ UV is a Python package manager with various commands.
 Some commands need special handling for inner command checking.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["uv", "uvx"]
 
 # Safe uv commands
@@ -89,58 +91,65 @@ RUN_FLAGS_WITH_ARG = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if uv command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify uv command."""
     if len(tokens) < 2:
-        return True  # Just "uv" shows help
+        return Classification("approve")  # Just "uv" shows help
 
     action = tokens[1]
 
     # Version/help checks
     if action in {"--version", "-v", "--help", "-h", "version", "help"}:
-        return True
+        return Classification("approve", description=f"uv {action}")
 
     # Safe commands
     if action in SAFE_COMMANDS:
-        return True
+        return Classification("approve", description=f"uv {action}")
 
     # Check commands with subcommands
     if action in SAFE_SUBCOMMANDS or action in UNSAFE_SUBCOMMANDS:
         if len(tokens) > 2:
             subcommand = tokens[2]
             if action in SAFE_SUBCOMMANDS and subcommand in SAFE_SUBCOMMANDS[action]:
-                return True
+                return Classification(
+                    "approve", description=f"uv {action} {subcommand}"
+                )
             if (
                 action in UNSAFE_SUBCOMMANDS
                 and subcommand in UNSAFE_SUBCOMMANDS[action]
             ):
-                return False
-        return action in SAFE_SUBCOMMANDS
+                return Classification("ask", description=f"uv {action} {subcommand}")
+        if action in SAFE_SUBCOMMANDS:
+            return Classification("approve", description=f"uv {action}")
+        return Classification("ask", description=f"uv {action}")
 
     # Handle "uv pip" - check subcommand
     if action == "pip":
         if len(tokens) > 2:
             subcommand = tokens[2]
             if subcommand in UV_PIP_UNSAFE:
-                return False
+                return Classification("ask", description=f"uv pip {subcommand}")
             if subcommand in UV_PIP_SAFE:
-                return True
-            return False
-        return True  # Just "uv pip" shows help
+                return Classification("approve", description=f"uv pip {subcommand}")
+            return Classification("ask", description=f"uv pip {subcommand}")
+        return Classification(
+            "approve", description="uv pip"
+        )  # Just "uv pip" shows help
 
     # Handle "uv run" - need to check the inner command
     if action == "run":
-        return _check_uv_run(tokens)
+        return _classify_uv_run(tokens)
 
     # Handle "uv tool" - always need confirmation
     if action == "tool":
-        return False
+        subcommand = tokens[2] if len(tokens) > 2 else ""
+        return Classification("ask", description=f"uv tool {subcommand}".strip())
 
-    return False
+    return Classification("ask", description=f"uv {action}")
 
 
-def _check_uv_run(tokens: list[str]) -> bool:
-    """Check uv run commands by extracting and checking the inner command."""
+def _classify_uv_run(tokens: list[str]) -> Classification:
+    """Classify uv run commands by extracting and checking the inner command."""
     i = 2  # Start after "uv run"
     while i < len(tokens):
         token = tokens[i]
@@ -156,29 +165,28 @@ def _check_uv_run(tokens: list[str]) -> bool:
 
         inner_tokens = tokens[i:]
         if not inner_tokens:
-            return False
+            return Classification("ask", description="uv run")
 
         inner_cmd_name = inner_tokens[0]
 
         # Block shells and script interpreters
         if inner_cmd_name in UV_RUN_UNSAFE_INNER:
-            return False
+            return Classification("ask", description=f"uv run {inner_cmd_name}")
 
         # Block python running scripts (but allow python --version)
         if inner_cmd_name in ("python", "python3"):
             if len(inner_tokens) >= 2:
                 second = inner_tokens[1]
                 if second in ("--version", "-V", "--help", "-h"):
-                    return True
-            return False
+                    return Classification(
+                        "approve", description=f"uv run {inner_cmd_name} {second}"
+                    )
+            return Classification("ask", description=f"uv run {inner_cmd_name}")
 
-        # Check the inner command using main dippy logic
+        # Delegate to inner command check
         inner_cmd = " ".join(inner_tokens)
-        from dippy.dippy import check_command, get_current_context
+        return Classification(
+            "delegate", inner_command=inner_cmd, description=f"uv run {inner_cmd_name}"
+        )
 
-        config, cwd = get_current_context()
-        result = check_command(inner_cmd, config, cwd)
-        output = result.get("hookSpecificOutput", {})
-        return output.get("permissionDecision") == "allow"
-
-    return False
+    return Classification("ask", description="uv run")
