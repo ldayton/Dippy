@@ -9,6 +9,7 @@ import pytest
 
 from dippy.core.config import (
     Config,
+    ConfigError,
     Rule,
     SCOPE_ENV,
     SCOPE_PROJECT,
@@ -249,7 +250,7 @@ class TestLoadConfig:
 
         monkeypatch.setattr("dippy.core.config.parse_config", mock_parse_error)
 
-        with pytest.raises(ValueError, match="syntax error"):
+        with pytest.raises(ConfigError, match="syntax error"):
             load_config(tmp_path)
 
     @pytest.mark.skipif(os.name == "nt", reason="Unix permissions only")
@@ -260,7 +261,7 @@ class TestLoadConfig:
         monkeypatch.setattr("dippy.core.config.USER_CONFIG", user_cfg)
 
         try:
-            with pytest.raises(PermissionError):
+            with pytest.raises(ConfigError, match="permission denied"):
                 load_config(tmp_path)
         finally:
             user_cfg.chmod(stat.S_IRUSR | stat.S_IWUSR)

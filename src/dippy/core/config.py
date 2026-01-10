@@ -8,9 +8,18 @@ from pathlib import Path
 
 import structlog
 
-USER_CONFIG = Path.home() / ".dippy" / "config"
+# Cache home directory at module load - fails fast if HOME is unset
+_HOME = Path.home()
+
+USER_CONFIG = _HOME / ".dippy" / "config"
 PROJECT_CONFIG_NAME = ".dippy"
 ENV_CONFIG = "DIPPY_CONFIG"
+
+
+class ConfigError(Exception):
+    """Raised when config loading fails due to I/O or parse errors."""
+
+    pass
 
 
 # Config scopes in priority order (lowest to highest)
@@ -127,20 +136,41 @@ def _tag_rules(config: Config, source: str, scope: str) -> Config:
     )
 
 
+def _load_config_file(path: Path) -> Config:
+    """Read and parse a config file. Raises ConfigError on failure."""
+    try:
+        text = path.read_text()
+    except PermissionError:
+        raise ConfigError(f"permission denied reading config: {path}") from None
+    except OSError as e:
+        raise ConfigError(f"cannot read config {path}: {e}") from None
+    try:
+        return parse_config(text)
+    except ValueError as e:
+        raise ConfigError(f"{path}: {e}") from None
+
+
 def load_config(cwd: Path) -> Config:
-    """Load config from ~/.dippy/config, .dippy, and $DIPPY_CONFIG. Last match wins."""
+    """Load config from ~/.dippy/config, .dippy, and $DIPPY_CONFIG.
+
+    Raises ConfigError if any config file exists but cannot be read or parsed.
+    Missing files are silently skipped.
+    """
     config = Config()
 
     # 1. User config (lowest priority)
-    if USER_CONFIG.is_file():
-        user_config = parse_config(USER_CONFIG.read_text())
-        user_config = _tag_rules(user_config, str(USER_CONFIG), SCOPE_USER)
-        config = _merge_configs(config, user_config)
+    try:
+        if USER_CONFIG.is_file():
+            user_config = _load_config_file(USER_CONFIG)
+            user_config = _tag_rules(user_config, str(USER_CONFIG), SCOPE_USER)
+            config = _merge_configs(config, user_config)
+    except PermissionError:
+        raise ConfigError(f"permission denied accessing {USER_CONFIG}") from None
 
     # 2. Project config (walk up from cwd)
     project_path = _find_project_config(cwd)
     if project_path is not None:
-        project_config = parse_config(project_path.read_text())
+        project_config = _load_config_file(project_path)
         project_config = _tag_rules(project_config, str(project_path), SCOPE_PROJECT)
         config = _merge_configs(config, project_config)
 
@@ -148,10 +178,15 @@ def load_config(cwd: Path) -> Config:
     env_path = os.environ.get(ENV_CONFIG)
     if env_path:
         env_config_path = Path(env_path).expanduser()
-        if env_config_path.is_file():
-            env_config = parse_config(env_config_path.read_text())
-            env_config = _tag_rules(env_config, str(env_config_path), SCOPE_ENV)
-            config = _merge_configs(config, env_config)
+        try:
+            if env_config_path.is_file():
+                env_config = _load_config_file(env_config_path)
+                env_config = _tag_rules(env_config, str(env_config_path), SCOPE_ENV)
+                config = _merge_configs(config, env_config)
+        except PermissionError:
+            raise ConfigError(
+                f"permission denied accessing {env_config_path}"
+            ) from None
 
     return config
 
@@ -328,7 +363,7 @@ def _normalize_words(words: list[str], cwd: Path) -> str:
     - Resolves explicit relative paths (./foo, ../bar) against cwd
     - Leaves bare filenames and other tokens alone
     """
-    home = str(Path.home())
+    home = str(_HOME)
     result = []
     for word in words:
         if word.startswith("~/"):
@@ -348,7 +383,7 @@ def _normalize_path(path: str, cwd: Path) -> str:
     """
     path = path.rstrip("/")
     if path.startswith("~/"):
-        return str(Path.home()) + path[1:]
+        return str(_HOME) + path[1:]
     if not path.startswith("/"):
         return str((cwd / path).resolve())
     return path
@@ -517,17 +552,28 @@ def match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
 # === Logging ===
 
 _logger: structlog.BoundLogger | None = None
+_log_disabled: bool = False  # Set on first failure, prevents repeated attempts
 
 
 def configure_logging(config: Config) -> None:
-    """Configure logging based on config settings. Call once at startup."""
-    global _logger
+    """Configure logging based on config settings. Call once at startup.
+
+    Logging failures are silently ignored - logging should never crash the program.
+    """
+    global _logger, _log_disabled
+    _log_disabled = False
+
     if config.log is None:
         _logger = None
         return
 
-    # Ensure log directory exists
-    config.log.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        config.log.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Can't create log directory - disable logging silently
+        _logger = None
+        _log_disabled = True
+        return
 
     # Configure structlog for JSON output to file
     structlog.configure(
@@ -551,8 +597,14 @@ def log_decision(
     message: str | None = None,
     command: str | None = None,
 ) -> None:
-    """Log a decision. No-op if logging not configured."""
-    if _logger is None:
+    """Log a decision. No-op if logging not configured or disabled.
+
+    Logging failures are silently ignored - logging should never crash the program.
+    On first failure, logging is disabled for the session.
+    """
+    global _log_disabled
+
+    if _logger is None or _log_disabled:
         return
 
     log_path = _logger._context.get("_log_path")
@@ -573,5 +625,9 @@ def log_decision(
         from datetime import datetime, timezone
 
         entry["ts"] = datetime.now(timezone.utc).isoformat()
-        with open(log_path, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except OSError:
+            # Disable logging on failure - don't keep retrying
+            _log_disabled = True
