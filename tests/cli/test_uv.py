@@ -118,11 +118,11 @@ TESTS = [
     ("uv python pin 3.12", False),
     ("uv python pin --resolved 3.12", False),
     #
-    # === SAFE: uv run with safe tools ===
-    ("uv run pytest", True),
-    ("uv run pytest -v tests/", True),
+    # === UNSAFE: uv run pytest (executes arbitrary code) ===
+    ("uv run pytest", False),
+    ("uv run pytest -v tests/", False),
     ("uv run ruff check", True),
-    ("uv run ruff format", True),
+    ("uv run ruff format", False),  # ruff format modifies code
     ("uv run mypy .", True),
     #
     # === UNSAFE: uv run with unsafe inner commands ===

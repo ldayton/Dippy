@@ -161,7 +161,7 @@ class TestLoadConfig:
         user_cfg.write_text("allow git *")
         monkeypatch.setattr("dippy.core.config.USER_CONFIG", user_cfg)
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             if "git" in text:
                 return Config(rules=[Rule("allow", "git *")])
             return Config()
@@ -179,7 +179,7 @@ class TestLoadConfig:
         proj.mkdir()
         (proj / ".dippy").write_text("ask rm *")
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             if "rm" in text:
                 return Config(rules=[Rule("ask", "rm *")])
             return Config()
@@ -197,7 +197,7 @@ class TestLoadConfig:
         env_cfg.write_text("allow docker *")
         monkeypatch.setenv("DIPPY_CONFIG", str(env_cfg))
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             if "docker" in text:
                 return Config(rules=[Rule("allow", "docker *")])
             return Config()
@@ -225,7 +225,7 @@ class TestLoadConfig:
         monkeypatch.setenv("HOME", str(fake_home))
         monkeypatch.setenv("DIPPY_CONFIG", "~/my.cfg")
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             return Config(rules=[Rule("allow", text.strip())])
 
         monkeypatch.setattr("dippy.core.config.parse_config", mock_parse)
@@ -240,18 +240,15 @@ class TestLoadConfig:
         config = load_config(tmp_path)
         assert config.rules == []
 
-    def test_parse_error_propagates(self, tmp_path, monkeypatch):
+    def test_invalid_lines_skipped(self, tmp_path, monkeypatch):
         user_cfg = tmp_path / "user.cfg"
-        user_cfg.write_text("invalid config")
+        user_cfg.write_text("invalid directive\nallow git *\nbad line too")
         monkeypatch.setattr("dippy.core.config.USER_CONFIG", user_cfg)
 
-        def mock_parse_error(text):
-            raise ValueError("syntax error on line 1")
-
-        monkeypatch.setattr("dippy.core.config.parse_config", mock_parse_error)
-
-        with pytest.raises(ConfigError, match="syntax error"):
-            load_config(tmp_path)
+        config = load_config(tmp_path)
+        # Invalid lines skipped, valid line parsed
+        assert len(config.rules) == 1
+        assert config.rules[0].pattern == "git *"
 
     @pytest.mark.skipif(os.name == "nt", reason="Unix permissions only")
     def test_unreadable_user_config(self, tmp_path, monkeypatch):
@@ -284,7 +281,7 @@ class TestScopeIsolation:
         env_cfg.write_text("env rule")
         monkeypatch.setenv("DIPPY_CONFIG", str(env_cfg))
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             return Config(rules=[Rule("allow", text.strip())])
 
         monkeypatch.setattr("dippy.core.config.parse_config", mock_parse)
@@ -313,7 +310,7 @@ class TestScopeIsolation:
         env_cfg.write_text("third")
         monkeypatch.setenv("DIPPY_CONFIG", str(env_cfg))
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             return Config(rules=[Rule("allow", text.strip())])
 
         monkeypatch.setattr("dippy.core.config.parse_config", mock_parse)
@@ -335,7 +332,7 @@ class TestScopeIsolation:
         env_cfg.write_text("env")
         monkeypatch.setenv("DIPPY_CONFIG", str(env_cfg))
 
-        def mock_parse(text):
+        def mock_parse(text, source=None):
             if "project" in text:
                 return Config(verbose=True, warn_banner=False)
             else:
@@ -432,13 +429,13 @@ class TestConfigImmutability:
 class TestParseConfig:
     """Test config parsing - focus on security-relevant edge cases."""
 
-    def test_unknown_directive_fails(self):
-        with pytest.raises(ValueError, match="unknown directive 'yolo'"):
-            parse_config("yolo rm -rf /")
+    def test_unknown_directive_skipped(self):
+        cfg = parse_config("yolo rm -rf /")
+        assert cfg.rules == []  # invalid line skipped
 
-    def test_unknown_setting_fails(self):
-        with pytest.raises(ValueError, match="unknown setting 'yolo'"):
-            parse_config("set yolo")
+    def test_unknown_setting_skipped(self):
+        cfg = parse_config("set yolo")
+        assert cfg.sticky_session is False  # no settings applied
 
     def test_message_extraction_space_before_quote(self):
         # Space before quote = message
@@ -507,30 +504,30 @@ class TestParseConfig:
         assert cfg.rules[0].pattern == 'echo "hello"'
         assert cfg.rules[0].message is None
 
-    def test_empty_pattern_before_message_fails(self):
-        with pytest.raises(ValueError, match="pattern required"):
-            parse_config('ask "just a message"')
+    def test_empty_pattern_before_message_skipped(self):
+        cfg = parse_config('ask "just a message"')
+        assert cfg.rules == []  # invalid line skipped
 
-    def test_settings_strict_validation(self):
-        # Boolean with value = error
-        with pytest.raises(ValueError, match="takes no value"):
-            parse_config("set verbose true")
+    def test_settings_invalid_skipped(self):
+        # Boolean with value = skipped
+        cfg = parse_config("set verbose true")
+        assert cfg.verbose is False
 
-        # Integer without value = error
-        with pytest.raises(ValueError, match="requires a number"):
-            parse_config("set suggest-after")
+        # Integer without value = skipped
+        cfg = parse_config("set suggest-after")
+        assert cfg.suggest_after is None
 
-        # Integer with non-number = error
-        with pytest.raises(ValueError, match="requires a number"):
-            parse_config("set suggest-after foo")
+        # Integer with non-number = skipped
+        cfg = parse_config("set suggest-after foo")
+        assert cfg.suggest_after is None
 
-        # default with bad value = error
-        with pytest.raises(ValueError, match="must be 'allow' or 'ask'"):
-            parse_config("set default yolo")
+        # default with bad value = skipped
+        cfg = parse_config("set default yolo")
+        assert cfg.default == "ask"
 
-        # log without path = error
-        with pytest.raises(ValueError, match="requires a path"):
-            parse_config("set log")
+        # log without path = skipped
+        cfg = parse_config("set log")
+        assert cfg.log is None
 
     def test_full_config(self):
         cfg = parse_config("""
@@ -560,6 +557,48 @@ set log ~/.dippy/audit.log
         assert cfg.suggest_after == 5
         assert cfg.default == "allow"
         assert cfg.log == Path.home() / ".dippy" / "audit.log"
+
+    def test_deny_directive(self):
+        cfg = parse_config("deny rm -rf /*")
+        assert len(cfg.rules) == 1
+        assert cfg.rules[0].decision == "deny"
+        assert cfg.rules[0].pattern == "rm -rf /*"
+
+    def test_deny_with_message(self):
+        cfg = parse_config('deny rm -rf /* "too dangerous"')
+        assert cfg.rules[0].decision == "deny"
+        assert cfg.rules[0].pattern == "rm -rf /*"
+        assert cfg.rules[0].message == "too dangerous"
+
+    def test_deny_redirect_directive(self):
+        cfg = parse_config("deny-redirect /etc/**")
+        assert len(cfg.redirect_rules) == 1
+        assert cfg.redirect_rules[0].decision == "deny"
+        assert cfg.redirect_rules[0].pattern == "/etc/**"
+
+    def test_deny_redirect_with_message(self):
+        cfg = parse_config('deny-redirect .env* "never write secrets"')
+        assert cfg.redirect_rules[0].decision == "deny"
+        assert cfg.redirect_rules[0].pattern == ".env*"
+        assert cfg.redirect_rules[0].message == "never write secrets"
+
+    def test_config_with_all_directives(self):
+        cfg = parse_config("""
+allow git *
+ask rm * "careful"
+deny rm -rf /* "never"
+allow-redirect /tmp/*
+ask-redirect .cache/* "check first"
+deny-redirect /etc/* "system files"
+""")
+        assert len(cfg.rules) == 3
+        assert cfg.rules[0].decision == "allow"
+        assert cfg.rules[1].decision == "ask"
+        assert cfg.rules[2].decision == "deny"
+        assert len(cfg.redirect_rules) == 3
+        assert cfg.redirect_rules[0].decision == "allow"
+        assert cfg.redirect_rules[1].decision == "ask"
+        assert cfg.redirect_rules[2].decision == "deny"
 
 
 class TestMatchCommand:
@@ -649,6 +688,36 @@ class TestMatchCommand:
         )
         m = match_command(cmd("rm -i file"), cfg, tmp_path)
         assert m.decision == "allow"  # third rule wins
+
+    def test_deny_last_match_wins(self, tmp_path):
+        cfg = Config(
+            rules=[
+                Rule("allow", "rm *"),
+                Rule("deny", "rm -rf /*"),
+            ]
+        )
+        m = match_command(cmd("rm -rf /tmp"), cfg, tmp_path)
+        assert m.decision == "deny"
+        m2 = match_command(cmd("rm file"), cfg, tmp_path)
+        assert m2.decision == "allow"
+
+    def test_allow_can_override_deny_if_last(self, tmp_path):
+        cfg = Config(
+            rules=[
+                Rule("deny", "rm *"),
+                Rule("allow", "rm -i *"),
+            ]
+        )
+        m = match_command(cmd("rm -i file"), cfg, tmp_path)
+        assert m.decision == "allow"  # allow is last match
+        m2 = match_command(cmd("rm file"), cfg, tmp_path)
+        assert m2.decision == "deny"  # deny is last match
+
+    def test_deny_with_message(self, tmp_path):
+        cfg = Config(rules=[Rule("deny", "rm -rf /*", message="too dangerous")])
+        m = match_command(cmd("rm -rf /tmp"), cfg, tmp_path)
+        assert m.decision == "deny"
+        assert m.message == "too dangerous"
 
     def test_tilde_expansion(self, tmp_path):
         home = str(Path.home())
@@ -787,6 +856,59 @@ class TestMatchCommandWithRedirects:
         m = match_command(c, cfg, tmp_path)
         assert m is None
 
+    def test_command_allow_redirect_deny(self, tmp_path):
+        """Redirect deny should override command allow."""
+        cfg = Config(
+            rules=[Rule("allow", "echo *")],
+            redirect_rules=[Rule("deny", "/etc/*")],
+        )
+        c = SimpleCommand(words=["echo", "data"], redirects=["/etc/passwd"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "deny"
+        assert m.pattern == "/etc/*"
+
+    def test_command_deny_redirect_allow(self, tmp_path):
+        """Command deny should override redirect allow."""
+        cfg = Config(
+            rules=[Rule("deny", "rm *")],
+            redirect_rules=[Rule("allow", "/tmp/*")],
+        )
+        c = SimpleCommand(words=["rm", "-rf", "/"], redirects=["/tmp/log.txt"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "deny"
+        assert m.pattern == "rm *"
+
+    def test_command_ask_redirect_deny(self, tmp_path):
+        """Deny should override ask (deny > ask > allow)."""
+        cfg = Config(
+            rules=[Rule("ask", "echo *")],
+            redirect_rules=[Rule("deny", "/etc/*")],
+        )
+        c = SimpleCommand(words=["echo", "data"], redirects=["/etc/passwd"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "deny"
+
+    def test_multiple_redirects_one_denies(self, tmp_path):
+        """If any redirect triggers deny, result is deny."""
+        cfg = Config(
+            rules=[Rule("allow", "cat *")],
+            redirect_rules=[
+                Rule("allow", "/tmp/*"),
+                Rule("deny", "/etc/*"),
+            ],
+        )
+        c = SimpleCommand(
+            words=["cat", "file"],
+            redirects=["/tmp/safe.txt", "/etc/passwd"],
+        )
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "deny"
+        assert m.pattern == "/etc/*"
+
     def test_redirect_path_normalization(self, tmp_path):
         cfg = Config(redirect_rules=[Rule("ask", f"{tmp_path}/*")])
         c = SimpleCommand(words=["echo", "x"], redirects=["./out.txt"])
@@ -910,6 +1032,30 @@ class TestMatchRedirect:
         assert match_redirect("/etc/passwd", cfg, tmp_path) is not None
         assert match_redirect("/etc/shadow", cfg, tmp_path) is None
 
+    def test_deny_redirect_basic(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/**")])
+        m = match_redirect("/etc/passwd", cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "deny"
+
+    def test_deny_redirect_with_message(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/**", message="system files")])
+        m = match_redirect("/etc/passwd", cfg, tmp_path)
+        assert m.decision == "deny"
+        assert m.message == "system files"
+
+    def test_deny_redirect_last_match_wins(self, tmp_path):
+        cfg = Config(
+            redirect_rules=[
+                Rule("deny", "/etc/**"),
+                Rule("allow", "/etc/hosts"),
+            ]
+        )
+        m = match_redirect("/etc/hosts", cfg, tmp_path)
+        assert m.decision == "allow"  # allow is last match
+        m2 = match_redirect("/etc/passwd", cfg, tmp_path)
+        assert m2.decision == "deny"  # deny is last match
+
 
 class TestMatchEdgeCases:
     """Edge cases from Git's wildmatch tests."""
@@ -966,3 +1112,92 @@ class TestMatchEdgeCases:
         match_command(cmd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"), cfg, tmp_path)
         elapsed = time.time() - start
         assert elapsed < 1.0, f"Matching took too long: {elapsed}s"
+
+
+class TestPatternNormalization:
+    """Test that patterns are normalized against cwd for matching."""
+
+    def test_relative_pattern_matches_absolute_command(self, tmp_path):
+        """Pattern 'bin/*' should match 'node /cwd/bin/script' when cwd is /cwd."""
+        cfg = Config(rules=[Rule("allow", "node bin/*")])
+        # Command with absolute path that's inside cwd/bin
+        assert (
+            match_command(cmd(f"node {tmp_path}/bin/script.js"), cfg, tmp_path)
+            is not None
+        )
+
+    def test_relative_pattern_matches_relative_command(self, tmp_path):
+        """Pattern 'bin/*' should match 'node bin/script'."""
+        cfg = Config(rules=[Rule("allow", "node bin/*")])
+        assert match_command(cmd("node bin/script.js"), cfg, tmp_path) is not None
+
+    def test_relative_pattern_no_match_different_cwd(self, tmp_path):
+        """Pattern 'bin/*' should NOT match '/other/path/bin/script'."""
+        cfg = Config(rules=[Rule("allow", "node bin/*")])
+        assert (
+            match_command(cmd("node /other/path/bin/script.js"), cfg, tmp_path) is None
+        )
+
+    def test_absolute_pattern_still_works(self, tmp_path):
+        """Absolute patterns should work as before."""
+        cfg = Config(rules=[Rule("allow", f"node {tmp_path}/bin/*")])
+        assert (
+            match_command(cmd(f"node {tmp_path}/bin/script.js"), cfg, tmp_path)
+            is not None
+        )
+        assert match_command(cmd("node bin/script.js"), cfg, tmp_path) is not None
+
+    def test_dotslash_pattern_normalized(self, tmp_path):
+        """Pattern './bin/*' should match same as 'bin/*'."""
+        cfg = Config(rules=[Rule("allow", "node ./bin/*")])
+        assert (
+            match_command(cmd(f"node {tmp_path}/bin/script.js"), cfg, tmp_path)
+            is not None
+        )
+        assert match_command(cmd("node bin/script.js"), cfg, tmp_path) is not None
+
+    def test_pattern_normalization_with_glob(self, tmp_path):
+        """Wildcards in pattern should still work after normalization."""
+        cfg = Config(rules=[Rule("allow", "node scripts/*.js")])
+        assert (
+            match_command(cmd(f"node {tmp_path}/scripts/test.js"), cfg, tmp_path)
+            is not None
+        )
+        assert (
+            match_command(cmd(f"node {tmp_path}/scripts/build.js"), cfg, tmp_path)
+            is not None
+        )
+        assert (
+            match_command(cmd(f"node {tmp_path}/scripts/test.py"), cfg, tmp_path)
+            is None
+        )
+
+    def test_redirect_pattern_normalization(self, tmp_path):
+        """Redirect patterns should also be normalized against cwd."""
+        cfg = Config(redirect_rules=[Rule("allow", "output/*")])
+        assert match_redirect(f"{tmp_path}/output/file.txt", cfg, tmp_path) is not None
+        assert match_redirect("output/file.txt", cfg, tmp_path) is not None
+        assert match_redirect("/other/output/file.txt", cfg, tmp_path) is None
+
+    def test_nested_relative_path(self, tmp_path):
+        """Pattern 'src/lib/*' should match nested paths."""
+        cfg = Config(rules=[Rule("allow", "node src/lib/*")])
+        assert (
+            match_command(cmd(f"node {tmp_path}/src/lib/util.js"), cfg, tmp_path)
+            is not None
+        )
+
+    def test_parent_dir_in_command(self, tmp_path):
+        """Command '../script.js' should resolve and match pattern."""
+        subdir = tmp_path / "sub"
+        subdir.mkdir()
+        cfg = Config(rules=[Rule("allow", f"node {tmp_path}/script.js")])
+        assert match_command(cmd("node ../script.js"), cfg, subdir) is not None
+
+    def test_mixed_absolute_and_relative_tokens(self, tmp_path):
+        """Command with some absolute, some relative tokens."""
+        cfg = Config(rules=[Rule("allow", f"cp {tmp_path}/src/* {tmp_path}/dest/*")])
+        assert (
+            match_command(cmd(f"cp {tmp_path}/src/a.txt dest/b.txt"), cfg, tmp_path)
+            is not None
+        )

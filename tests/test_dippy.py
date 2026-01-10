@@ -1142,19 +1142,22 @@ TESTS = [
     ("uv tree", True),
     ("uv pip list", True),
     ("uv pip show foo", True),
-    ("uv run ruff check --fix && uv run ruff format", True),
+    (
+        "uv run ruff check --fix && uv run ruff format",
+        False,
+    ),  # --fix and format modify code
     ("uv run --project tools-base-mcp ruff check", True),
-    ("uv run --project tools-base-mcp ruff format", True),
+    ("uv run --project tools-base-mcp ruff format", False),  # format modifies code
     ("uv run --group cdk cdk synth", True),
     ("uv run --group cdk cdk deploy", False),
-    ("uv run pytest", True),
-    ("uv run pytest -v tests/", True),
-    ("pytest", True),
-    ("pytest -xvs tests/test_foo.py", True),
+    ("uv run pytest", False),  # pytest executes arbitrary code
+    ("uv run pytest -v tests/", False),
+    ("pytest", False),
+    ("pytest -xvs tests/test_foo.py", False),
     ("uv run ruff check", True),
-    ("uv run ruff format", True),
-    ("ruff check --fix", True),
-    ("ruff format .", True),
+    ("uv run ruff format", False),  # format modifies code
+    ("ruff check --fix", False),  # --fix modifies code
+    ("ruff format .", False),  # format modifies code
     ("ruff clean", False),  # not in safe actions
     # Complex chains with wrappers
     ("time git status && git log", True),
@@ -3932,7 +3935,7 @@ TESTS = [
     ("env --ignore-environment PATH=/bin ls", True),
     ("env -u HOME -- git status", True),
     # uv run with multiple flags consuming args
-    ("uv run --python 3.12 --with requests --group dev pytest", True),
+    ("uv run --python 3.12 --with requests --group dev pytest", False),
     ("uv run --no-project --python 3.11 ruff check", True),
     # === Regression tests for refactor 2: token rejection ===
     # sed prefix matching

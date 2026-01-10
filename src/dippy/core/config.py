@@ -30,7 +30,7 @@ SCOPE_ENV = "env"
 class Rule:
     """A single config rule with origin tracking."""
 
-    decision: str  # 'allow' | 'ask'
+    decision: str  # 'allow' | 'ask' | 'deny'
     pattern: str
     message: str | None = None
     source: str | None = None  # file path
@@ -60,9 +60,9 @@ class Config:
 class Match:
     """Result of matching against config rules."""
 
-    decision: str  # 'allow' | 'ask'
+    decision: str  # 'allow' | 'ask' | 'deny'
     pattern: str  # the glob pattern that matched
-    message: str | None = None  # shown to AI on ask
+    message: str | None = None  # shown to AI on ask/deny
     source: str | None = None  # file path where rule was defined
     scope: str | None = None  # user/project/env
 
@@ -133,17 +133,14 @@ def _tag_rules(config: Config, source: str, scope: str) -> Config:
 
 
 def _load_config_file(path: Path) -> Config:
-    """Read and parse a config file. Raises ConfigError on failure."""
+    """Read and parse a config file. Raises ConfigError on I/O failure."""
     try:
         text = path.read_text()
     except PermissionError:
         raise ConfigError(f"permission denied reading config: {path}") from None
     except OSError as e:
         raise ConfigError(f"cannot read config {path}: {e}") from None
-    try:
-        return parse_config(text)
-    except ValueError as e:
-        raise ConfigError(f"{path}: {e}") from None
+    return parse_config(text, source=str(path))
 
 
 def load_config(cwd: Path) -> Config:
@@ -187,11 +184,14 @@ def load_config(cwd: Path) -> Config:
     return config
 
 
-def parse_config(text: str) -> Config:
-    """Parse config text into Config object. Raises ValueError on syntax errors."""
+def parse_config(text: str, source: str | None = None) -> Config:
+    """Parse config text into Config object. Logs and skips invalid lines."""
+    import logging
+
     rules: list[Rule] = []
     redirect_rules: list[Rule] = []
     settings: dict[str, bool | int | str | Path] = {}
+    prefix = f"{source}: " if source else ""
 
     for lineno, raw_line in enumerate(text.splitlines(), 1):
         line = raw_line.strip()
@@ -214,6 +214,12 @@ def parse_config(text: str) -> Config:
                 pattern, message = _extract_message(rest)
                 rules.append(Rule("ask", pattern, message=message))
 
+            elif directive == "deny":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                rules.append(Rule("deny", pattern, message=message))
+
             elif directive == "allow-redirect":
                 if not rest:
                     raise ValueError("requires a pattern")
@@ -225,6 +231,12 @@ def parse_config(text: str) -> Config:
                 pattern, message = _extract_message(rest)
                 redirect_rules.append(Rule("ask", pattern, message=message))
 
+            elif directive == "deny-redirect":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                redirect_rules.append(Rule("deny", pattern, message=message))
+
             elif directive == "set":
                 _apply_setting(settings, rest)
 
@@ -232,7 +244,7 @@ def parse_config(text: str) -> Config:
                 raise ValueError(f"unknown directive '{directive}'")
 
         except ValueError as e:
-            raise ValueError(f"line {lineno}: {e}") from None
+            logging.warning(f"{prefix}line {lineno}: {e} (skipped)")
 
     return Config(
         rules=rules,
@@ -350,22 +362,37 @@ def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> N
 # === Matching ===
 
 
-def _normalize_words(words: list[str], cwd: Path) -> str:
-    """Normalize paths in command words and join into a string for matching.
+def _normalize_token(token: str, cwd: Path) -> str:
+    """Normalize a single path token against cwd.
 
     - Expands ~ to home directory
-    - Resolves explicit relative paths (./foo, ../bar) against cwd
-    - Leaves bare filenames and other tokens alone
+    - Resolves relative paths (./foo, ../bar, foo/bar) against cwd
+    - Absolute paths and non-path tokens left unchanged
     """
-    home = str(_HOME)
-    result = []
-    for word in words:
-        if word.startswith("~/"):
-            word = home + word[1:]
-        elif word.startswith("./") or word.startswith("../"):
-            word = str((cwd / word).resolve())
-        result.append(word)
-    return " ".join(result)
+    if token.startswith("~/"):
+        return str(_HOME) + token[1:]
+    if token.startswith("/"):
+        return token
+    # Relative path (with or without ./) - resolve against cwd
+    if "/" in token or token.startswith("./") or token.startswith(".."):
+        return str((cwd / token).resolve())
+    return token
+
+
+def _normalize_words(words: list[str], cwd: Path) -> str:
+    """Normalize paths in command words and join into a string for matching."""
+    return " ".join(_normalize_token(w, cwd) for w in words)
+
+
+def _normalize_pattern(pattern: str, cwd: Path) -> str:
+    """Normalize paths in a pattern against cwd.
+
+    Splits pattern on spaces (preserving glob chars), normalizes path-like
+    tokens, rejoins. This allows patterns like 'node bin/*' to expand to
+    'node /cwd/bin/*'.
+    """
+    tokens = pattern.split()
+    return " ".join(_normalize_token(t, cwd) for t in tokens)
 
 
 def _normalize_path(path: str, cwd: Path) -> str:
@@ -459,10 +486,11 @@ def _glob_match(text: str, pattern: str) -> bool:
 
 def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
     """Match command words against rules. Returns last matching rule."""
-    normalized = _normalize_words(words, cwd)
+    normalized_cmd = _normalize_words(words, cwd)
     result: Match | None = None
     for rule in config.rules:
-        if fnmatch.fnmatch(normalized, rule.pattern):
+        normalized_pattern = _normalize_pattern(rule.pattern, cwd)
+        if fnmatch.fnmatch(normalized_cmd, normalized_pattern):
             result = Match(
                 decision=rule.decision,
                 pattern=rule.pattern,
@@ -475,10 +503,15 @@ def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
 
 def _match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
     """Match redirect target against rules. Returns last matching rule."""
-    normalized = _normalize_path(target, cwd)
+    normalized_target = _normalize_path(target, cwd)
     result: Match | None = None
     for rule in config.redirect_rules:
-        if _glob_match(normalized, rule.pattern):
+        # Don't normalize patterns with ** - they're meant to match any path
+        if "**" in rule.pattern:
+            normalized_pattern = rule.pattern
+        else:
+            normalized_pattern = _normalize_path(rule.pattern, cwd)
+        if _glob_match(normalized_target, normalized_pattern):
             result = Match(
                 decision=rule.decision,
                 pattern=rule.pattern,
@@ -499,8 +532,8 @@ def match_command(cmd: SimpleCommand, config: Config, cwd: Path) -> Match | None
 
     Returns:
         Match object for the deciding rule, or None if no rules matched.
-        If any match is "ask", returns that match (ask beats allow).
-        If multiple "ask" matches, returns the first one found.
+        Priority when combining command + redirect matches: deny > ask > allow.
+        Returns the first match of the most restrictive decision type.
     """
     matches: list[Match] = []
 
@@ -518,7 +551,10 @@ def match_command(cmd: SimpleCommand, config: Config, cwd: Path) -> Match | None
     if not matches:
         return None
 
-    # Ask beats allow - return first "ask" match, or first match if all "allow"
+    # Priority: deny > ask > allow (most restrictive wins)
+    for m in matches:
+        if m.decision == "deny":
+            return m
     for m in matches:
         if m.decision == "ask":
             return m

@@ -120,7 +120,7 @@ SIMPLE_SAFE = frozenset(
         "info",
         # Testing and linting (safe operations)
         # Note: ruff has a handler due to "ruff clean"
-        "pytest",
+        # Note: pytest has a handler (executes arbitrary code)
         "mypy",
         "black",
         "isort",

@@ -169,6 +169,30 @@ def ask(reason: str = "needs approval") -> dict:
     }
 
 
+def deny(reason: str = "denied by config") -> dict:
+    """Return deny response to block the command."""
+    logging.info(f"DENY: {reason}")
+    if MODE == "gemini":
+        return {"decision": "deny", "reason": f"🐤 {reason}"}
+    if MODE == "cursor":
+        # Include both snake_case (v2.0+) and camelCase (v1.7.x) for compatibility
+        msg = f"🐤 {reason}"
+        return {
+            "permission": "deny",
+            "user_message": msg,
+            "agent_message": msg,
+            "userMessage": msg,
+            "agentMessage": msg,
+        }
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": f"🐤 {reason}",
+        }
+    }
+
+
 # === Safety Checks ===
 
 
@@ -348,7 +372,17 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
             if redirect_match:
                 if redirect_match.decision == "allow":
                     continue  # This target is allowed by config
-                else:
+                elif redirect_match.decision == "deny":
+                    msg = redirect_match.message or redirect_match.pattern
+                    log_decision(
+                        "deny",
+                        f"redirect to {target}",
+                        rule=redirect_match.pattern,
+                        message=msg,
+                        command=command,
+                    )
+                    return deny(f"redirect to {target}: {msg}")
+                else:  # ask
                     msg = redirect_match.message or redirect_match.pattern
                     log_decision(
                         "ask",
@@ -371,14 +405,20 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
     # Handle command lists (&&, ||) - each command must be safe
     if has_command_list(command):
         commands = split_command_list(command)
+        denied = []
         unsafe = []
         safe = []
         for cmd in commands:
             decision, desc = _check_single_command(cmd.strip(), config, cwd)
-            if decision != "approve":
-                unsafe.append(desc)
-            else:
+            if decision == "approve":
                 safe.append(desc)
+            elif decision == "deny":
+                denied.append(desc)
+            else:
+                unsafe.append(desc)
+        if denied:
+            log_decision("deny", ", ".join(denied), command=command)
+            return deny(", ".join(denied))
         if unsafe:
             log_decision("ask", ", ".join(unsafe), command=command)
             return ask(", ".join(unsafe))
@@ -388,14 +428,20 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
     # Handle pipelines - each command must be safe
     if is_piped(command):
         commands = split_pipeline(command)
+        denied = []
         unsafe = []
         safe = []
         for cmd in commands:
             decision, desc = _check_single_command(cmd.strip(), config, cwd)
-            if decision != "approve":
-                unsafe.append(desc)
-            else:
+            if decision == "approve":
                 safe.append(desc)
+            elif decision == "deny":
+                denied.append(desc)
+            else:
+                unsafe.append(desc)
+        if denied:
+            log_decision("deny", ", ".join(denied), command=command)
+            return deny(", ".join(denied))
         if unsafe:
             log_decision("ask", ", ".join(unsafe), command=command)
             return ask(", ".join(unsafe))
@@ -408,6 +454,9 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
     if decision == "approve":
         log_decision("allow", desc, command=command)
         return approve(desc)
+    if decision == "deny":
+        log_decision("deny", desc, command=command)
+        return deny(desc)
     log_decision("ask", desc, command=command)
     return ask(desc)
 
@@ -418,7 +467,7 @@ def _check_single_command(
     """
     Check a single (non-pipeline) command.
 
-    Returns (decision, description) where decision is "approve" or None.
+    Returns (decision, description) where decision is "approve", "deny", or None (ask).
     """
     tokens = tokenize(command)
     if not tokens:
@@ -432,7 +481,10 @@ def _check_single_command(
     if config_match:
         if config_match.decision == "allow":
             return ("approve", f"{base} ({config_match.pattern})")
-        else:
+        elif config_match.decision == "deny":
+            msg = config_match.message or config_match.pattern
+            return ("deny", f"{base}: {msg}")
+        else:  # ask
             msg = config_match.message or config_match.pattern
             return (None, f"{base}: {msg}")
 
@@ -460,6 +512,8 @@ def _check_single_command(
             )
             if inner_decision == "allow":
                 return ("approve", inner_reason)
+            if inner_decision == "deny":
+                return ("deny", inner_reason)
             return (None, inner_reason)
         else:
             return (None, desc)

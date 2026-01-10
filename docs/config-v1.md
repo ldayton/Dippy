@@ -33,10 +33,14 @@ Project config is found by walking up from cwd to filesystem root, stopping at t
 allow <glob>                   # auto-approve matching commands
 ask <glob>                     # always prompt user for matching commands
 ask <glob> "message"           # prompt with message shown to AI
+deny <glob>                    # reject matching commands (no user prompt)
+deny <glob> "message"          # reject with message shown to AI
 
 allow-redirect <glob>          # allow output redirects to matching paths
 ask-redirect <glob>            # prompt for output redirects to matching paths
 ask-redirect <glob> "message"  # prompt with message shown to AI
+deny-redirect <glob>           # reject output redirects to matching paths
+deny-redirect <glob> "message" # reject with message shown to AI
 
 set <key> [value]              # settings
 ```
@@ -49,22 +53,22 @@ set <key> [value]              # settings
 
 **One rule per line.** No line continuation.
 
-**Errors fail hard.** Syntax errors, unknown directives, and invalid settings cause Dippy to exit with an error message. No silent misbehavior.
+**Forgiving parsing.** Invalid lines (unknown directives, malformed rules) are logged and skipped. Valid rules in the same file still take effect. Check `~/.claude/hook-approvals.log` for warnings.
 
-## Ask Messages
+## Messages
 
-When an `ask` or `ask-redirect` rule matches, an optional message can be shown to the AI explaining why approval is needed and what to do instead. This helps the AI learn and adjust.
+When an `ask`, `deny`, or their `-redirect` variants match, an optional message can be shown to the AI explaining why approval is needed (or why the command was rejected) and what to do instead. This helps the AI learn and adjust.
 
 ```
 ask git push --force * "Use --force-with-lease instead"
-ask rm -rf /* "Too dangerous - be more specific about what to delete"
+deny rm -rf /* "Too dangerous - be more specific about what to delete"
 ask *prod* "Production commands require manual review"
-ask-redirect .env* "Don't write secrets to env files"
+deny-redirect .env* "Never write secrets to env files"
 ```
 
-If no message is provided, a default is generated from the pattern (e.g., `"ask: rm -rf /*"`).
+If no message is provided, a default is generated from the pattern (e.g., `"deny: rm -rf /*"`).
 
-Only `ask` supports messages - approval messages don't reliably reach the AI across all platforms.
+Only `ask` and `deny` support messages - approval messages don't reliably reach the AI across all platforms.
 
 ## Pattern Matching
 
@@ -78,22 +82,31 @@ Patterns match the full command string using fnmatch-style globs:
 
 **Last match wins.** Rules are evaluated top-to-bottom; the last matching rule determines the decision. This allows broad rules followed by specific exceptions.
 
+**Strictest wins across types.** When a command has both command rules and redirect rules matching, the most restrictive decision wins: `deny` > `ask` > `allow`. This prevents accidentally allowing dangerous redirects just because the command itself was allowed.
+
 **Config wins over built-ins.** If a config rule matches, it takes precedence over Dippy's built-in safety handlers. Config represents explicit user intent.
 
-**Path normalization in commands:**
-- `~` at the start of a token expands to home directory
-- `./foo` and `../foo` are resolved against cwd to absolute paths
-- Bare filenames and other tokens are left unchanged
+**Path normalization:**
+
+Both commands and patterns are normalized before matching:
+- `~` expands to home directory
+- `./foo` and `../foo` resolve against cwd to absolute paths
+- Relative paths without `./` (e.g., `bin/foo`) resolve against cwd to absolute paths
 
 ```
-# Config
-allow /home/user/project/tools/*
+# Config (cwd: /home/user/project)
+allow node bin/*
 
-# Command: ./build.sh (cwd: /home/user/project/tools)
-# Normalized: /home/user/project/tools/build.sh → matches!
+# Command: node bin/script.js
+# Normalized: node /home/user/project/bin/script.js
+# Pattern normalized: node /home/user/project/bin/*
+# → matches!
 
-# Command: ~/bin/tool
-# Normalized: /home/user/bin/tool
+# Command: node /home/user/project/bin/script.js
+# → also matches (already absolute, pattern normalized)
+
+# Command: node /other/path/bin/script.js
+# → does NOT match (different absolute path)
 ```
 
 If no rule matches, built-in handlers decide.
@@ -112,19 +125,25 @@ allow git stash pop
 allow git stash apply
 allow git checkout -- *
 
-# Block dangerous patterns
-ask rm -rf /*
-ask git push --force *
-ask *prod*
+# Prompt for review
+ask *prod* "Production commands require manual review"
+
+# Hard blocks (no user override)
+deny rm -rf /* "Too dangerous"
+deny git push --force * "Use --force-with-lease instead"
 ```
 
-Inverse patterns via ordering:
+Inverse patterns via ordering (last match wins):
 
 ```
 # Allow all docker EXCEPT rm/rmi
 allow docker *
 ask docker rm *
 ask docker rmi *
+
+# Allow rm but never rm -rf /
+allow rm *
+deny rm -rf /*
 ```
 
 ## Redirect Rules
@@ -147,10 +166,13 @@ allow-redirect /tmp/**
 allow-redirect .cache/**
 allow-redirect **/*.log
 
-# Protect sensitive files
-ask-redirect **/.env*
-ask-redirect **/*credential*
+# Prompt for review
 ask-redirect **/.*              # all hidden files
+
+# Hard blocks (no user override)
+deny-redirect **/.env* "Never write secrets to env files"
+deny-redirect **/*credential* "Never write credential files"
+deny-redirect /etc/** "System config is off-limits"
 ```
 
 Note: `**` is only supported in redirect rules. Command rules use standard fnmatch globs.
@@ -183,7 +205,8 @@ When enabled with `set log <path>`, logs are structured (JSON) with minimal info
 ```json
 {"ts": "2024-01-15T10:23:45Z", "decision": "allow", "cmd": "git", "rule": "allow git stash *"}
 {"ts": "2024-01-15T10:23:52Z", "decision": "ask", "cmd": "git", "rule": "ask git push --force *", "message": "Use --force-with-lease"}
-{"ts": "2024-01-15T10:24:01Z", "decision": "ask", "cmd": "rm"}
+{"ts": "2024-01-15T10:24:01Z", "decision": "deny", "cmd": "rm", "rule": "deny rm -rf /*", "message": "Too dangerous"}
+{"ts": "2024-01-15T10:24:15Z", "decision": "ask", "cmd": "rm"}
 ```
 
 The `cmd` field is best-effort extraction of the base command - may be wrong if parsing fails.
@@ -202,7 +225,7 @@ allow ~/bin/*
 
 allow-redirect /tmp/*
 allow-redirect .cache/*
-ask-redirect .env*
+deny-redirect .env* "Never write secrets"
 
 set sticky-session
 set suggest-after 3
@@ -214,7 +237,7 @@ set suggest-after 3
 allow ./tools/*
 allow git stash *
 allow git checkout -- *
-ask git push --force *
+deny git push --force * "Use --force-with-lease"
 
 allow-redirect ./build/*
 ```
@@ -232,3 +255,11 @@ allow-redirect ./build/*
 **Debugging config rules:** Check `~/.claude/hook-approvals.log` to see which rules matched. Entries show the pattern in parentheses when a config rule matches: `APPROVED: rm (rm /tmp/test-*)` vs just `APPROVED: rm` for built-in approval.
 
 **System Python:** The hook runs with `#!/usr/bin/env python3` (system Python), not the uv virtualenv. System Python may be older and lack dependencies like `structlog`. Dippy must use only stdlib imports, or fail gracefully when optional dependencies are missing.
+
+## Errata
+
+**Trailing `*` doesn't match bare commands.** The pattern `python *` matches `python foo` but not bare `python` (the space before `*` is literal). To block both, use two rules:
+```
+deny python "use uv run python"
+deny python * "use uv run python"
+```
