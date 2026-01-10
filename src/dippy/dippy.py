@@ -486,8 +486,13 @@ def main():
             CURSOR_MODE = MODE == "cursor"
             logging.info(f"Auto-detected mode: {MODE}")
 
-        # Extract cwd from input (Cursor provides it, Claude/Gemini may not)
+        # Extract cwd from input
+        # Cursor: top-level "cwd"
+        # Claude Code: may be in tool_input or top-level
         cwd_str = input_data.get("cwd")
+        if not cwd_str:
+            tool_input = input_data.get("tool_input", {})
+            cwd_str = tool_input.get("cwd")
         if cwd_str:
             cwd = Path(cwd_str).resolve()
         else:
