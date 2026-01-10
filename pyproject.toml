@@ -22,6 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "parable @ git+https://github.com/ldayton/Parable.git@465fa111a2669437442a74f97f2b78ae7f273fd3",
+    "structlog>=24.0",
 ]
 
 [project.urls]
