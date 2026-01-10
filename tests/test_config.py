@@ -19,6 +19,7 @@ from dippy.core.config import (
     configure_logging,
     load_config,
     log_decision,
+    parse_config,
 )
 
 
@@ -417,3 +418,136 @@ class TestConfigImmutability:
 
         assert base.rules == original_base_rules
         assert overlay.rules == original_overlay_rules
+
+
+class TestParseConfig:
+    """Test config parsing - focus on security-relevant edge cases."""
+
+    def test_unknown_directive_fails(self):
+        with pytest.raises(ValueError, match="unknown directive 'yolo'"):
+            parse_config("yolo rm -rf /")
+
+    def test_unknown_setting_fails(self):
+        with pytest.raises(ValueError, match="unknown setting 'yolo'"):
+            parse_config("set yolo")
+
+    def test_message_extraction_space_before_quote(self):
+        # Space before quote = message
+        cfg = parse_config('ask rm * "careful"')
+        assert cfg.rules[0].pattern == "rm *"
+        assert cfg.rules[0].message == "careful"
+
+    def test_message_extraction_no_space_before_quote(self):
+        # No space = part of pattern
+        cfg = parse_config('ask echo"hello"')
+        assert cfg.rules[0].pattern == 'echo"hello"'
+        assert cfg.rules[0].message is None
+
+    def test_escaped_quote_in_message(self):
+        cfg = parse_config(r'ask rm * "say \"hello\""')
+        assert cfg.rules[0].pattern == "rm *"
+        assert cfg.rules[0].message == 'say "hello"'
+
+    def test_escaped_backslash_before_quote_in_message(self):
+        # User wants message containing literal backslash + quote: C:\"
+        # Write \\ for literal backslash, \" for literal quote
+        cfg = parse_config(r'ask pattern "C:\\\""')
+        assert cfg.rules[0].pattern == "pattern"
+        assert cfg.rules[0].message == 'C:\\"'  # C, colon, backslash, quote
+
+    def test_message_ending_with_backslash(self):
+        # User wants message ending with backslash: path\
+        # Write \\ for literal backslash
+        cfg = parse_config(r'ask cmd "path\\"')
+        assert cfg.rules[0].pattern == "cmd"
+        assert cfg.rules[0].message == "path\\"  # path + single backslash
+
+    def test_multiple_backslashes_in_message(self):
+        # User wants: a\\b (a, backslash, backslash, b)
+        # Write: \\\\ for two literal backslashes
+        cfg = parse_config(r'ask cmd "a\\\\b"')
+        assert cfg.rules[0].pattern == "cmd"
+        assert cfg.rules[0].message == "a\\\\b"  # a + two backslashes + b
+
+    def test_message_with_escaped_closing_quote_and_real_close(self):
+        # "say \"hi\"" - escaped quotes inside, real close at end
+        cfg = parse_config(r'ask cmd "say \"hi\""')
+        assert cfg.rules[0].pattern == "cmd"
+        assert cfg.rules[0].message == 'say "hi"'
+
+    def test_multiple_quoted_sections_takes_rightmost(self):
+        # Multiple quoted sections - rightmost should be the message
+        cfg = parse_config('ask pattern "not this" "this one"')
+        assert cfg.rules[0].pattern == 'pattern "not this"'
+        assert cfg.rules[0].message == "this one"
+
+    def test_empty_message(self):
+        # Empty quoted string - is this valid?
+        cfg = parse_config('ask pattern ""')
+        assert cfg.rules[0].pattern == "pattern"
+        assert cfg.rules[0].message == ""
+
+    def test_escaped_trailing_quote_no_message(self):
+        cfg = parse_config(r"ask echo \"")
+        assert cfg.rules[0].pattern == r"echo \""
+        assert cfg.rules[0].message is None
+
+    def test_allow_no_message_extraction(self):
+        # allow doesn't extract messages - whole thing is pattern
+        cfg = parse_config('allow echo "hello"')
+        assert cfg.rules[0].pattern == 'echo "hello"'
+        assert cfg.rules[0].message is None
+
+    def test_empty_pattern_before_message_fails(self):
+        with pytest.raises(ValueError, match="pattern required"):
+            parse_config('ask "just a message"')
+
+    def test_settings_strict_validation(self):
+        # Boolean with value = error
+        with pytest.raises(ValueError, match="takes no value"):
+            parse_config("set verbose true")
+
+        # Integer without value = error
+        with pytest.raises(ValueError, match="requires a number"):
+            parse_config("set suggest-after")
+
+        # Integer with non-number = error
+        with pytest.raises(ValueError, match="requires a number"):
+            parse_config("set suggest-after foo")
+
+        # default with bad value = error
+        with pytest.raises(ValueError, match="must be 'allow' or 'ask'"):
+            parse_config("set default yolo")
+
+        # log without path = error
+        with pytest.raises(ValueError, match="requires a path"):
+            parse_config("set log")
+
+    def test_full_config(self):
+        cfg = parse_config("""
+# User config
+allow git *
+ask rm -rf /* "are you sure?"
+allow-redirect /tmp/**
+ask-redirect .env* "don't write secrets"
+
+set sticky-session
+set suggest-after 5
+set default allow
+set log ~/.dippy/audit.log
+""")
+        assert len(cfg.rules) == 2
+        assert cfg.rules[0].decision == "allow"
+        assert cfg.rules[0].pattern == "git *"
+        assert cfg.rules[1].decision == "ask"
+        assert cfg.rules[1].pattern == "rm -rf /*"
+        assert cfg.rules[1].message == "are you sure?"
+
+        assert len(cfg.redirect_rules) == 2
+        assert cfg.redirect_rules[0].pattern == "/tmp/**"
+        assert cfg.redirect_rules[1].message == "don't write secrets"
+
+        assert cfg.sticky_session is True
+        assert cfg.suggest_after == 5
+        assert cfg.default == "allow"
+        assert cfg.log == Path.home() / ".dippy" / "audit.log"

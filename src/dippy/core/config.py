@@ -139,14 +139,165 @@ def load_config(cwd: Path) -> Config:
 
 
 def parse_config(text: str) -> Config:
-    """Parse config text into Config object. Raises on syntax errors."""
-    # TODO: implement parser
-    # - parse lines, skip comments and blanks
-    # - allow/ask <glob> ["message"]
-    # - allow-redirect/ask-redirect <glob> ["message"]
-    # - set <key> [value]
-    # - fail hard on unknown directives
-    raise NotImplementedError("parse_config not yet implemented")
+    """Parse config text into Config object. Raises ValueError on syntax errors."""
+    rules: list[Rule] = []
+    redirect_rules: list[Rule] = []
+    settings: dict[str, bool | int | str | Path] = {}
+
+    for lineno, raw_line in enumerate(text.splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = line.split(None, 1)
+        directive = parts[0].lower()
+        rest = parts[1].strip() if len(parts) > 1 else ""
+
+        try:
+            if directive == "allow":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                rules.append(Rule("allow", rest))
+
+            elif directive == "ask":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                rules.append(Rule("ask", pattern, message=message))
+
+            elif directive == "allow-redirect":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                redirect_rules.append(Rule("allow", rest))
+
+            elif directive == "ask-redirect":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                redirect_rules.append(Rule("ask", pattern, message=message))
+
+            elif directive == "set":
+                _apply_setting(settings, rest)
+
+            else:
+                raise ValueError(f"unknown directive '{directive}'")
+
+        except ValueError as e:
+            raise ValueError(f"line {lineno}: {e}") from None
+
+    return Config(
+        rules=rules,
+        redirect_rules=redirect_rules,
+        sticky_session=settings.get("sticky_session", False),
+        suggest_after=settings.get("suggest_after"),
+        default=settings.get("default", "ask"),
+        verbose=settings.get("verbose", False),
+        log=settings.get("log"),
+        log_full=settings.get("log_full", False),
+        warn_banner=settings.get("warn_banner", False),
+        disabled=settings.get("disabled", False),
+    )
+
+
+def _unescape(s: str) -> str:
+    """Unescape backslash sequences in a message string."""
+    result = []
+    i = 0
+    while i < len(s):
+        if s[i] == "\\" and i + 1 < len(s):
+            next_char = s[i + 1]
+            if next_char in ('"', "\\"):
+                result.append(next_char)
+                i += 2
+                continue
+        result.append(s[i])
+        i += 1
+    return "".join(result)
+
+
+def _extract_message(s: str) -> tuple[str, str | None]:
+    """Extract pattern and optional quoted message from string.
+
+    Message is extracted only if:
+    - String ends with unescaped "
+    - There's an opening " preceded by whitespace
+
+    Returns (pattern, message) where message may be None.
+    """
+    s = s.rstrip()
+    if not s.endswith('"'):
+        return s, None
+
+    # Count trailing backslashes to check if quote is escaped
+    j = len(s) - 2
+    num_bs = 0
+    while j >= 0 and s[j] == "\\":
+        num_bs += 1
+        j -= 1
+    if num_bs % 2 == 1:
+        return s, None  # Trailing quote is escaped
+
+    # Find opening quote (must be preceded by whitespace)
+    i = len(s) - 2
+    while i >= 0:
+        if s[i] == '"' and (i == 0 or s[i - 1].isspace()):
+            message = _unescape(s[i + 1 : -1])
+            pattern = s[:i].rstrip()
+            if not pattern:
+                raise ValueError("pattern required before message")
+            return pattern, message
+        i -= 1
+
+    return s, None  # No valid opening quote, treat as pattern
+
+
+def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> None:
+    """Parse and apply a 'set' directive. Raises ValueError on invalid setting."""
+    if not rest:
+        raise ValueError("'set' requires a setting name")
+
+    parts = rest.split(None, 1)
+    key = parts[0].lower()
+    value = parts[1] if len(parts) > 1 else None
+    key_normalized = key.replace("-", "_")
+
+    # Boolean settings (no value required)
+    if key_normalized in (
+        "sticky_session",
+        "verbose",
+        "log_full",
+        "warn_banner",
+        "disabled",
+    ):
+        if value is not None:
+            raise ValueError(f"'{key}' takes no value")
+        settings[key_normalized] = True
+
+    # Integer settings
+    elif key_normalized == "suggest_after":
+        if value is None:
+            raise ValueError("'suggest-after' requires a number")
+        try:
+            settings[key_normalized] = int(value)
+        except ValueError:
+            raise ValueError(
+                f"'suggest-after' requires a number, got '{value}'"
+            ) from None
+
+    # Choice settings
+    elif key_normalized == "default":
+        if value not in ("allow", "ask"):
+            raise ValueError(f"'default' must be 'allow' or 'ask', got '{value}'")
+        settings[key_normalized] = value
+
+    # Path settings
+    elif key_normalized == "log":
+        if value is None:
+            raise ValueError("'log' requires a path")
+        settings[key_normalized] = Path(value).expanduser()
+
+    else:
+        raise ValueError(f"unknown setting '{key}'")
 
 
 # === Matching ===
