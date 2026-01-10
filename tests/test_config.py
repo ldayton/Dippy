@@ -13,14 +13,22 @@ from dippy.core.config import (
     SCOPE_ENV,
     SCOPE_PROJECT,
     SCOPE_USER,
+    SimpleCommand,
     _find_project_config,
     _merge_configs,
     _tag_rules,
     configure_logging,
     load_config,
     log_decision,
+    match_command,
+    match_redirect,
     parse_config,
 )
+
+
+def cmd(s: str) -> SimpleCommand:
+    """Helper to create SimpleCommand from a string (splits on whitespace)."""
+    return SimpleCommand(words=s.split() if s else [])
 
 
 class TestFindProjectConfig:
@@ -551,3 +559,409 @@ set log ~/.dippy/audit.log
         assert cfg.suggest_after == 5
         assert cfg.default == "allow"
         assert cfg.log == Path.home() / ".dippy" / "audit.log"
+
+
+class TestMatchCommand:
+    """Test command matching against config rules."""
+
+    def test_basic_glob_match(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "git *")])
+        assert match_command(cmd("git status"), cfg, tmp_path) is not None
+        assert match_command(cmd("git commit -m 'msg'"), cfg, tmp_path) is not None
+        assert match_command(cmd("gitk"), cfg, tmp_path) is None  # no space after git
+
+    def test_exact_match(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "git status")])
+        assert match_command(cmd("git status"), cfg, tmp_path) is not None
+        assert match_command(cmd("git statuses"), cfg, tmp_path) is None
+        assert match_command(cmd("git status --short"), cfg, tmp_path) is None
+
+    def test_no_match_returns_none(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "git *")])
+        assert match_command(cmd("ls -la"), cfg, tmp_path) is None
+
+    def test_empty_rules_returns_none(self, tmp_path):
+        cfg = Config(rules=[])
+        assert match_command(cmd("git status"), cfg, tmp_path) is None
+
+    def test_star_alone_matches_any(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "*")])
+        assert match_command(cmd("anything"), cfg, tmp_path) is not None
+        assert match_command(cmd("git status"), cfg, tmp_path) is not None
+
+    def test_star_star_matches_with_space(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "* *")])
+        assert match_command(cmd("git status"), cfg, tmp_path) is not None
+        assert match_command(cmd("ls"), cfg, tmp_path) is None  # no space
+
+    def test_question_mark_matches_single_char(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "git ?")])
+        assert match_command(cmd("git a"), cfg, tmp_path) is not None
+        assert match_command(cmd("git ab"), cfg, tmp_path) is None
+        assert match_command(cmd("git"), cfg, tmp_path) is None
+
+    def test_character_class(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "[abc]*")])
+        assert match_command(cmd("apt install"), cfg, tmp_path) is not None
+        assert match_command(cmd("brew install"), cfg, tmp_path) is not None
+        assert match_command(cmd("cargo build"), cfg, tmp_path) is not None
+        assert match_command(cmd("docker run"), cfg, tmp_path) is None
+
+    def test_negated_character_class(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "[!r]*")])
+        assert match_command(cmd("ls"), cfg, tmp_path) is not None
+        assert match_command(cmd("rm -rf"), cfg, tmp_path) is None  # starts with r
+
+    def test_last_match_wins_allow_then_ask(self, tmp_path):
+        cfg = Config(
+            rules=[
+                Rule("ask", "*"),
+                Rule("allow", "git *"),
+            ]
+        )
+        m = match_command(cmd("git status"), cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+        m2 = match_command(cmd("rm -rf /"), cfg, tmp_path)
+        assert m2 is not None
+        assert m2.decision == "ask"
+
+    def test_last_match_wins_allow_then_ask_specific(self, tmp_path):
+        cfg = Config(
+            rules=[
+                Rule("allow", "*"),
+                Rule("ask", "rm *"),
+            ]
+        )
+        m = match_command(cmd("rm -rf /"), cfg, tmp_path)
+        assert m.decision == "ask"
+        m2 = match_command(cmd("ls"), cfg, tmp_path)
+        assert m2.decision == "allow"
+
+    def test_three_rules_last_wins(self, tmp_path):
+        cfg = Config(
+            rules=[
+                Rule("allow", "*"),  # matches everything
+                Rule("ask", "rm *"),  # doesn't match git
+                Rule("allow", "rm -i *"),  # matches rm -i
+            ]
+        )
+        m = match_command(cmd("rm -i file"), cfg, tmp_path)
+        assert m.decision == "allow"  # third rule wins
+
+    def test_tilde_expansion(self, tmp_path):
+        home = str(Path.home())
+        cfg = Config(rules=[Rule("allow", f"{home}/bin/*")])
+        assert match_command(cmd("~/bin/tool"), cfg, tmp_path) is not None
+        assert match_command(cmd("~/other/tool"), cfg, tmp_path) is None
+
+    def test_relative_path_resolution(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", f"{tmp_path}/script.sh")])
+        assert match_command(cmd("./script.sh"), cfg, tmp_path) is not None
+        assert match_command(cmd("./other.sh"), cfg, tmp_path) is None
+
+    def test_parent_path_resolution(self, tmp_path):
+        subdir = tmp_path / "sub"
+        subdir.mkdir()
+        cfg = Config(rules=[Rule("allow", f"{tmp_path}/script.sh")])
+        assert match_command(cmd("../script.sh"), cfg, subdir) is not None
+
+    def test_pattern_with_wildcards_in_middle(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "git commit -m *")])
+        assert match_command(cmd("git commit -m 'message'"), cfg, tmp_path) is not None
+        assert match_command(cmd("git commit --amend"), cfg, tmp_path) is None
+
+    def test_match_object_fields(self, tmp_path):
+        cfg = Config(
+            rules=[
+                Rule(
+                    "ask",
+                    "rm *",
+                    message="careful!",
+                    source="/path/to/config",
+                    scope="user",
+                )
+            ]
+        )
+        m = match_command(cmd("rm file"), cfg, tmp_path)
+        assert m.decision == "ask"
+        assert m.pattern == "rm *"
+        assert m.message == "careful!"
+        assert m.source == "/path/to/config"
+        assert m.scope == "user"
+
+    def test_message_none_when_not_set(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "ls *")])
+        m = match_command(cmd("ls -la"), cfg, tmp_path)
+        assert m.message is None
+
+    def test_pattern_no_wildcards_exact_only(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "ls")])
+        assert match_command(cmd("ls"), cfg, tmp_path) is not None
+        assert match_command(cmd("ls -la"), cfg, tmp_path) is None
+        assert match_command(cmd("lsof"), cfg, tmp_path) is None
+
+    def test_commands_with_quotes(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "echo *")])
+        assert match_command(cmd('echo "hello world"'), cfg, tmp_path) is not None
+        assert match_command(cmd("echo 'single quotes'"), cfg, tmp_path) is not None
+
+
+class TestMatchCommandWithRedirects:
+    """Test integrated command + redirect matching."""
+
+    def test_command_only_no_redirects(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "echo *")])
+        c = SimpleCommand(words=["echo", "hello"], redirects=[])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+
+    def test_redirect_only_no_command_match(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("ask", "/etc/*")])
+        c = SimpleCommand(words=["echo", "hello"], redirects=["/etc/passwd"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.pattern == "/etc/*"
+
+    def test_both_match_allow(self, tmp_path):
+        cfg = Config(
+            rules=[Rule("allow", "echo *")],
+            redirect_rules=[Rule("allow", "/tmp/*")],
+        )
+        c = SimpleCommand(words=["echo", "hello"], redirects=["/tmp/out.txt"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+
+    def test_command_allow_redirect_ask(self, tmp_path):
+        """Redirect ask should override command allow."""
+        cfg = Config(
+            rules=[Rule("allow", "echo *")],
+            redirect_rules=[Rule("ask", "/etc/*")],
+        )
+        c = SimpleCommand(words=["echo", "data"], redirects=["/etc/passwd"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.pattern == "/etc/*"  # redirect rule wins
+
+    def test_command_ask_redirect_allow(self, tmp_path):
+        """Command ask should win over redirect allow."""
+        cfg = Config(
+            rules=[Rule("ask", "rm *")],
+            redirect_rules=[Rule("allow", "/tmp/*")],
+        )
+        c = SimpleCommand(words=["rm", "-rf", "/"], redirects=["/tmp/log.txt"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.pattern == "rm *"  # command rule wins
+
+    def test_multiple_redirects_one_asks(self, tmp_path):
+        """If any redirect triggers ask, result is ask."""
+        cfg = Config(
+            rules=[Rule("allow", "cat *")],
+            redirect_rules=[
+                Rule("allow", "/tmp/*"),
+                Rule("ask", "/etc/*"),
+            ],
+        )
+        c = SimpleCommand(
+            words=["cat", "file"],
+            redirects=["/tmp/safe.txt", "/etc/passwd"],
+        )
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.pattern == "/etc/*"
+
+    def test_no_rules_match(self, tmp_path):
+        cfg = Config(
+            rules=[Rule("allow", "git *")],
+            redirect_rules=[Rule("allow", "/tmp/*")],
+        )
+        c = SimpleCommand(words=["echo", "hello"], redirects=["/var/log/out"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is None
+
+    def test_redirect_path_normalization(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("ask", f"{tmp_path}/*")])
+        c = SimpleCommand(words=["echo", "x"], redirects=["./out.txt"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "ask"
+
+
+class TestMatchRedirect:
+    """Test redirect target matching against config rules."""
+
+    def test_basic_glob_match(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        assert match_redirect("/tmp/foo", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/bar.txt", cfg, tmp_path) is not None
+        assert match_redirect("/var/foo", cfg, tmp_path) is None
+
+    def test_no_match_returns_none(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        assert match_redirect("/var/log/test", cfg, tmp_path) is None
+
+    def test_empty_rules_returns_none(self, tmp_path):
+        cfg = Config(redirect_rules=[])
+        assert match_redirect("/tmp/foo", cfg, tmp_path) is None
+
+    def test_doublestar_matches_any_depth(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/**")])
+        assert match_redirect("/tmp/foo", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/a/b/c", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/a/b/c/file.txt", cfg, tmp_path) is not None
+
+    def test_doublestar_with_suffix(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/**/*.txt")])
+        assert match_redirect("/tmp/file.txt", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/a/b/file.txt", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/a/b/file.log", cfg, tmp_path) is None
+
+    def test_doublestar_at_start(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "**/foo")])
+        assert match_redirect("/foo", cfg, tmp_path) is not None
+        assert match_redirect("/a/foo", cfg, tmp_path) is not None
+        assert match_redirect("/a/b/c/foo", cfg, tmp_path) is not None
+        assert match_redirect("/a/b/c/bar", cfg, tmp_path) is None
+
+    def test_doublestar_in_middle(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/**/file.txt")])
+        assert match_redirect("/tmp/file.txt", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/a/file.txt", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/a/b/c/file.txt", cfg, tmp_path) is not None
+
+    def test_doublestar_alone_matches_everything(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "**")])
+        assert match_redirect("/any/path", cfg, tmp_path) is not None
+        assert match_redirect("foo", cfg, tmp_path) is not None
+
+    def test_trailing_slash_normalized(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/foo")])
+        assert match_redirect("/tmp/foo/", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/foo", cfg, tmp_path) is not None
+
+    def test_tilde_expansion(self, tmp_path):
+        home = str(Path.home())
+        cfg = Config(redirect_rules=[Rule("allow", f"{home}/logs/*")])
+        assert match_redirect("~/logs/app.log", cfg, tmp_path) is not None
+
+    def test_relative_path_resolution(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", f"{tmp_path}/output.txt")])
+        assert match_redirect("./output.txt", cfg, tmp_path) is not None
+        assert match_redirect("output.txt", cfg, tmp_path) is not None
+
+    def test_character_class(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/[a-z]*")])
+        assert match_redirect("/tmp/foo", cfg, tmp_path) is not None
+        assert match_redirect("/tmp/123", cfg, tmp_path) is None
+
+    def test_last_match_wins(self, tmp_path):
+        cfg = Config(
+            redirect_rules=[
+                Rule("ask", "**"),
+                Rule("allow", "/tmp/**"),
+            ]
+        )
+        m = match_redirect("/tmp/foo", cfg, tmp_path)
+        assert m.decision == "allow"
+        m2 = match_redirect("/var/foo", cfg, tmp_path)
+        assert m2.decision == "ask"
+
+    def test_match_object_fields(self, tmp_path):
+        cfg = Config(
+            redirect_rules=[
+                Rule(
+                    "ask",
+                    "**/.env*",
+                    message="secrets!",
+                    source="/config",
+                    scope="project",
+                )
+            ]
+        )
+        m = match_redirect("/app/.env", cfg, tmp_path)
+        assert m.decision == "ask"
+        assert m.pattern == "**/.env*"
+        assert m.message == "secrets!"
+        assert m.source == "/config"
+        assert m.scope == "project"
+
+    def test_hidden_files_pattern(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("ask", "**/.*")])
+        assert match_redirect("/home/user/.bashrc", cfg, tmp_path) is not None
+        assert match_redirect("/app/.env", cfg, tmp_path) is not None
+        assert match_redirect("/app/config", cfg, tmp_path) is None
+
+    def test_env_file_pattern(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("ask", "**/.env*")])
+        assert match_redirect("/app/.env", cfg, tmp_path) is not None
+        assert match_redirect("/app/.env.local", cfg, tmp_path) is not None
+        assert match_redirect("/app/.envrc", cfg, tmp_path) is not None
+
+    def test_security_etc_passwd(self, tmp_path):
+        cfg = Config(redirect_rules=[Rule("ask", "/etc/passwd")])
+        assert match_redirect("/etc/passwd", cfg, tmp_path) is not None
+        assert match_redirect("/etc/shadow", cfg, tmp_path) is None
+
+
+class TestMatchEdgeCases:
+    """Edge cases from Git's wildmatch tests."""
+
+    def test_empty_pattern_empty_text(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "")])
+        # Empty pattern should only match empty command
+        assert match_command(cmd(""), cfg, tmp_path) is not None
+        assert match_command(cmd("foo"), cfg, tmp_path) is None
+
+    def test_escaped_star_in_pattern(self, tmp_path):
+        # fnmatch uses [] for escaping, not backslash
+        cfg = Config(rules=[Rule("allow", "foo[*]bar")])
+        assert match_command(cmd("foo*bar"), cfg, tmp_path) is not None
+        assert match_command(cmd("fooXbar"), cfg, tmp_path) is None
+
+    def test_bracket_literal(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "[[]ab]")])
+        assert match_command(cmd("[ab]"), cfg, tmp_path) is not None
+
+    def test_range_in_character_class(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "t[a-g]n")])
+        assert match_command(cmd("tan"), cfg, tmp_path) is not None
+        assert match_command(cmd("ten"), cfg, tmp_path) is not None
+        assert match_command(cmd("tin"), cfg, tmp_path) is None  # i > g
+
+    def test_negated_range(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "t[!a-g]n")])
+        assert match_command(cmd("ton"), cfg, tmp_path) is not None  # o > g
+        assert match_command(cmd("tan"), cfg, tmp_path) is None
+
+    def test_close_bracket_in_class(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "a[]]b")])
+        assert match_command(cmd("a]b"), cfg, tmp_path) is not None
+
+    def test_complex_pattern(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "*ob*a*r*")])
+        assert match_command(cmd("foobar"), cfg, tmp_path) is not None
+        assert match_command(cmd("foobazbar"), cfg, tmp_path) is not None
+
+    def test_trailing_star_matches_rest(self, tmp_path):
+        cfg = Config(rules=[Rule("allow", "git *")])
+        assert (
+            match_command(cmd("git status --short --branch"), cfg, tmp_path) is not None
+        )
+
+    def test_performance_not_exponential(self, tmp_path):
+        """Ensure matching doesn't exhibit exponential behavior."""
+        import time
+
+        cfg = Config(rules=[Rule("allow", "*a*a*a*a*a*a*a*a")])
+        start = time.time()
+        # This should complete quickly, not hang
+        match_command(cmd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"), cfg, tmp_path)
+        elapsed = time.time() - start
+        assert elapsed < 1.0, f"Matching took too long: {elapsed}s"

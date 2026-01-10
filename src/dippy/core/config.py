@@ -1,6 +1,8 @@
 """Dippy configuration system v1."""
 
+import fnmatch
 import os
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -57,6 +59,22 @@ class Match:
     message: str | None = None  # shown to AI on ask
     source: str | None = None  # file path where rule was defined
     scope: str | None = None  # user/project/env
+
+
+@dataclass
+class SimpleCommand:
+    """A simple command extracted from parsed bash.
+
+    This is the intermediate representation passed to the rule engine.
+    Dippy parses raw bash with Parable, walks the AST, and constructs
+    SimpleCommand instances for each command node.
+    """
+
+    words: list[str]
+    """Command words, e.g. ["git", "add", "."]."""
+
+    redirects: list[str] = field(default_factory=list)
+    """Redirect target paths, e.g. ["/tmp/log.txt", "~/.cache/out"]."""
 
 
 # === Config Loading ===
@@ -303,22 +321,197 @@ def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> N
 # === Matching ===
 
 
-def match_command(command: str, config: Config, cwd: Path) -> Match | None:
-    """Match command against rules. Resolves relative paths against cwd."""
-    # TODO: implement matching
-    # - parse command to extract base command
-    # - resolve relative paths against cwd
-    # - iterate rules, last match wins
-    raise NotImplementedError("match_command not yet implemented")
+def _normalize_words(words: list[str], cwd: Path) -> str:
+    """Normalize paths in command words and join into a string for matching.
+
+    - Expands ~ to home directory
+    - Resolves explicit relative paths (./foo, ../bar) against cwd
+    - Leaves bare filenames and other tokens alone
+    """
+    home = str(Path.home())
+    result = []
+    for word in words:
+        if word.startswith("~/"):
+            word = home + word[1:]
+        elif word.startswith("./") or word.startswith("../"):
+            word = str((cwd / word).resolve())
+        result.append(word)
+    return " ".join(result)
+
+
+def _normalize_path(path: str, cwd: Path) -> str:
+    """Normalize a redirect target path.
+
+    - Expands ~ to home directory
+    - Resolves relative paths against cwd
+    - Strips trailing /
+    """
+    path = path.rstrip("/")
+    if path.startswith("~/"):
+        return str(Path.home()) + path[1:]
+    if not path.startswith("/"):
+        return str((cwd / path).resolve())
+    return path
+
+
+def _glob_to_regex(pattern: str) -> re.Pattern:
+    """Convert a glob pattern with ** support to a regex.
+
+    ** matches zero or more path components (including /)
+    * matches anything except /
+    ? matches any single character except /
+    [abc] matches character class
+    """
+    regex = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if i + 1 < n and pattern[i + 1] == "*":
+                # ** - matches anything including /
+                regex.append(".*")
+                i += 2
+                # Skip trailing / after **
+                if i < n and pattern[i] == "/":
+                    regex.append("/?")
+                    i += 1
+            else:
+                # * - matches anything except /
+                regex.append("[^/]*")
+                i += 1
+        elif c == "?":
+            regex.append("[^/]")
+            i += 1
+        elif c == "[":
+            # Character class - find the closing ]
+            j = i + 1
+            if j < n and pattern[j] == "!":
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j >= n:
+                # Unclosed bracket, treat as literal
+                regex.append(re.escape(c))
+                i += 1
+            else:
+                # Convert [!...] to [^...]
+                cls = pattern[i + 1 : j]
+                if cls.startswith("!"):
+                    cls = "^" + cls[1:]
+                regex.append(f"[{cls}]")
+                i = j + 1
+        else:
+            regex.append(re.escape(c))
+            i += 1
+    return re.compile("^" + "".join(regex) + "$")
+
+
+def _glob_match(text: str, pattern: str) -> bool:
+    """Match text against a glob pattern with ** support.
+
+    For patterns without **, uses fnmatch (faster).
+    For patterns with **, converts to regex for proper recursive matching:
+    - ** matches zero or more directories
+    - foo/**/bar matches foo/bar, foo/x/bar, foo/x/y/bar
+    """
+    if "**" not in pattern:
+        return fnmatch.fnmatch(text, pattern)
+    if pattern == "**":
+        return True
+    try:
+        regex = _glob_to_regex(pattern)
+        return regex.match(text) is not None
+    except re.error:
+        return False
+
+
+def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
+    """Match command words against rules. Returns last matching rule."""
+    normalized = _normalize_words(words, cwd)
+    result: Match | None = None
+    for rule in config.rules:
+        if fnmatch.fnmatch(normalized, rule.pattern):
+            result = Match(
+                decision=rule.decision,
+                pattern=rule.pattern,
+                message=rule.message,
+                source=rule.source,
+                scope=rule.scope,
+            )
+    return result
+
+
+def _match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
+    """Match redirect target against rules. Returns last matching rule."""
+    normalized = _normalize_path(target, cwd)
+    result: Match | None = None
+    for rule in config.redirect_rules:
+        if _glob_match(normalized, rule.pattern):
+            result = Match(
+                decision=rule.decision,
+                pattern=rule.pattern,
+                message=rule.message,
+                source=rule.source,
+                scope=rule.scope,
+            )
+    return result
+
+
+def match_command(cmd: SimpleCommand, config: Config, cwd: Path) -> Match | None:
+    """Match command and its redirects against config rules.
+
+    Args:
+        cmd: SimpleCommand with words and redirects from parsed bash.
+        config: Loaded configuration.
+        cwd: Current working directory for path resolution.
+
+    Returns:
+        Match object for the deciding rule, or None if no rules matched.
+        If any match is "ask", returns that match (ask beats allow).
+        If multiple "ask" matches, returns the first one found.
+    """
+    matches: list[Match] = []
+
+    # Match command words
+    cmd_match = _match_words(cmd.words, config, cwd)
+    if cmd_match:
+        matches.append(cmd_match)
+
+    # Match each redirect
+    for target in cmd.redirects:
+        redirect_match = _match_redirect(target, config, cwd)
+        if redirect_match:
+            matches.append(redirect_match)
+
+    if not matches:
+        return None
+
+    # Ask beats allow - return first "ask" match, or first match if all "allow"
+    for m in matches:
+        if m.decision == "ask":
+            return m
+    return matches[0]
 
 
 def match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
-    """Match redirect target against rules. Resolves relative paths against cwd."""
-    # TODO: implement matching
-    # - resolve relative paths against cwd
-    # - iterate redirect_rules, last match wins
-    # - use ** glob for recursive matching
-    raise NotImplementedError("match_redirect not yet implemented")
+    """Match a redirect target against redirect rules.
+
+    This is a convenience function for testing and for cases where you
+    need to match a redirect target in isolation. Normally, redirects
+    are matched as part of match_command() via SimpleCommand.redirects.
+
+    Args:
+        target: Redirect target path.
+        config: Loaded configuration.
+        cwd: Current working directory for path resolution.
+
+    Returns:
+        Match object for the last matching rule, or None if no match.
+    """
+    return _match_redirect(target, config, cwd)
 
 
 # === Logging ===

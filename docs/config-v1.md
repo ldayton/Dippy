@@ -41,9 +41,11 @@ ask-redirect <glob> "message"  # prompt with message shown to AI
 set <key> [value]              # settings
 ```
 
-**Escaping:** Use `[*]`, `[?]`, `[[]` to match literal glob characters. Use `\"` for quotes in messages.
+**Escaping in patterns:** Use `[*]`, `[?]`, `[[]` to match literal glob characters.
 
-**Tilde expansion:** `~` expands to home directory. Environment variables (`$HOME`) are not expanded.
+**Escaping in messages:** Use `\"` for literal quotes, `\\` for literal backslash.
+
+**Tilde expansion:** `~` expands to home directory in both patterns and commands. Environment variables (`$HOME`) are not expanded.
 
 **One rule per line.** No line continuation.
 
@@ -66,26 +68,32 @@ Only `ask` supports messages - approval messages don't reliably reach the AI acr
 
 ## Pattern Matching
 
-Patterns match the full command string using globs:
+Patterns match the full command string using fnmatch-style globs:
 
-- `*` matches any characters
-- `?` matches single character
-- `[abc]` matches character class
+- `*` matches any characters (including none)
+- `?` matches exactly one character
+- `[abc]` matches any of a, b, or c
+- `[a-z]` matches any character in range
+- `[!abc]` or `[^abc]` matches any character NOT in set
 
-**Last match wins.** Rules are evaluated top-to-bottom; the last matching rule determines the decision.
+**Last match wins.** Rules are evaluated top-to-bottom; the last matching rule determines the decision. This allows broad rules followed by specific exceptions.
 
 **Config wins over built-ins.** If a config rule matches, it takes precedence over Dippy's built-in safety handlers. Config represents explicit user intent.
 
-**Commands are parsed, not string-matched.** The command is parsed as bash would parse it. The first token must be a valid command name (executable, builtin, script path). Patterns match against the parsed command, not arbitrary strings.
-
-**Relative paths are resolved.** Script paths starting with `./`, `../`, or a bare filename are resolved against cwd before matching. Write rules with absolute paths:
+**Path normalization in commands:**
+- `~` at the start of a token expands to home directory
+- `./foo` and `../foo` are resolved against cwd to absolute paths
+- Bare filenames and other tokens are left unchanged
 
 ```
 # Config
-allow ~/project/tools/*
+allow /home/user/project/tools/*
 
-# Command: ./build.sh (cwd: ~/project/tools)
-# Resolved: ~/project/tools/build.sh → matches!
+# Command: ./build.sh (cwd: /home/user/project/tools)
+# Normalized: /home/user/project/tools/build.sh → matches!
+
+# Command: ~/bin/tool
+# Normalized: /home/user/bin/tool
 ```
 
 If no rule matches, built-in handlers decide.
@@ -121,9 +129,17 @@ ask docker rmi *
 
 ## Redirect Rules
 
-Redirect patterns match the path as it appears in the command, normalized (no trailing slash).
+Redirect patterns match the target path, normalized:
+- Trailing slashes are stripped (`/tmp/foo/` → `/tmp/foo`)
+- `~` expands to home directory
+- Relative paths are resolved against cwd
 
-Supports `**` for recursive matching:
+Supports `**` for recursive directory matching:
+
+- `**` matches zero or more directories
+- `/tmp/**` matches `/tmp/foo`, `/tmp/a/b/c`, etc.
+- `**/foo` matches `/foo`, `/a/foo`, `/a/b/c/foo`
+- `/tmp/**/file.txt` matches `/tmp/file.txt`, `/tmp/a/file.txt`, `/tmp/a/b/file.txt`
 
 ```
 # Allow temp paths
@@ -134,20 +150,30 @@ allow-redirect **/*.log
 # Protect sensitive files
 ask-redirect **/.env*
 ask-redirect **/*credential*
+ask-redirect **/.*              # all hidden files
 ```
+
+Note: `**` is only supported in redirect rules. Command rules use standard fnmatch globs.
 
 ## Settings
 
+**Boolean flags** (no value):
 ```
 set sticky-session       # remember approvals for session
-set suggest-after 3      # suggest config after N approvals
-set default allow        # YOLO mode (default is ask)
 set verbose              # show reason on auto-approve
-set log ~/.dippy/audit.log  # enable logging (minimal, best-effort safe)
 set log-full             # log full commands (requires log path set)
 set warn-banner          # visual warning for prompts
 set disabled             # disable Dippy entirely
 ```
+
+**Value settings:**
+```
+set suggest-after 3      # suggest config after N approvals (integer)
+set default allow        # YOLO mode: 'allow' or 'ask' (default: ask)
+set log ~/.dippy/audit.log  # enable logging to path
+```
+
+Settings use kebab-case (`sticky-session`) or snake_case (`sticky_session`) interchangeably.
 
 ## Logging
 
