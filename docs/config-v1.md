@@ -218,3 +218,17 @@ ask git push --force *
 
 allow-redirect ./build/*
 ```
+
+## Implementation Notes
+
+**Hook caching:** Claude Code caches hooks at session start. Changes to dippy code or config require restarting the session to take effect.
+
+**Two logging systems:** Dippy has two separate logs:
+- `~/.claude/hook-approvals.log` - written by Python's `logging` module, always works
+- Audit log (configurable path) - written by `log_decision()`, requires `set log <path>`
+
+**Log path:** The `~/.dippy/` directory may have write issues when running as a Claude Code hook. Using `~/.claude/dippy-audit.log` is more reliable.
+
+**Debugging config rules:** Check `~/.claude/hook-approvals.log` to see which rules matched. Entries show the pattern in parentheses when a config rule matches: `APPROVED: rm (rm /tmp/test-*)` vs just `APPROVED: rm` for built-in approval.
+
+**System Python:** The hook runs with `#!/usr/bin/env python3` (system Python), not the uv virtualenv. System Python may be older and lack dependencies like `structlog`. Dippy must use only stdlib imports, or fail gracefully when optional dependencies are missing.

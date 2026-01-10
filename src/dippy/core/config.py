@@ -6,8 +6,6 @@ import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-import structlog
-
 # Cache home directory at module load - fails fast if HOME is unset
 _HOME = Path.home()
 
@@ -547,43 +545,36 @@ def match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
 
 # === Logging ===
 
-_logger: structlog.BoundLogger | None = None
+
+@dataclass(frozen=True, slots=True)
+class _LogConfig:
+    """Internal log configuration."""
+
+    path: Path
+    full: bool = False
+
+
+_log_config: _LogConfig | None = None
 _log_disabled: bool = False  # Set on first failure, prevents repeated attempts
 
 
 def configure_logging(config: Config) -> None:
-    """Configure logging based on config settings. Call once at startup.
-
-    Logging failures are silently ignored - logging should never crash the program.
-    """
-    global _logger, _log_disabled
+    """Configure logging based on config settings. Call once at startup."""
+    global _log_config, _log_disabled
     _log_disabled = False
 
     if config.log is None:
-        _logger = None
+        _log_config = None
         return
 
     try:
         config.log.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
-        # Can't create log directory - disable logging silently
-        _logger = None
+        _log_config = None
         _log_disabled = True
         return
 
-    # Configure structlog for JSON output to file
-    structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso", key="ts"),
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-
-    # Create file handler logger
-    _logger = structlog.get_logger()
-    _logger = _logger.bind(_log_path=str(config.log), _log_full=config.log_full)
+    _log_config = _LogConfig(path=config.log, full=config.log_full)
 
 
 def log_decision(
@@ -593,37 +584,25 @@ def log_decision(
     message: str | None = None,
     command: str | None = None,
 ) -> None:
-    """Log a decision. No-op if logging not configured or disabled.
-
-    Logging failures are silently ignored - logging should never crash the program.
-    On first failure, logging is disabled for the session.
-    """
+    """Log a decision. No-op if logging not configured or disabled."""
     global _log_disabled
+    import json
+    from datetime import datetime, timezone
 
-    if _logger is None or _log_disabled:
+    if _log_config is None or _log_disabled:
         return
 
-    log_path = _logger._context.get("_log_path")
-    log_full = _logger._context.get("_log_full", False)
-
-    # Build log entry
     entry: dict[str, str | None] = {"decision": decision, "cmd": cmd}
     if rule is not None:
         entry["rule"] = rule
     if message is not None:
         entry["message"] = message
-    if log_full and command is not None:
+    if _log_config.full and command is not None:
         entry["command"] = command
+    entry["ts"] = datetime.now(timezone.utc).isoformat()
 
-    # Write JSON line to log file
-    if log_path:
-        import json
-        from datetime import datetime, timezone
-
-        entry["ts"] = datetime.now(timezone.utc).isoformat()
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-        except OSError:
-            # Disable logging on failure - don't keep retrying
-            _log_disabled = True
+    try:
+        with open(_log_config.path, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        _log_disabled = True

@@ -25,6 +25,7 @@ from dippy.core.config import (
     SimpleCommand,
     configure_logging,
     load_config,
+    log_decision,
     match_command,
     match_redirect,
 )
@@ -331,6 +332,7 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
     """
     command = command.strip()
     if not command:
+        log_decision("ask", "empty", command=command)
         return ask("empty command")
 
     # Check for output redirects
@@ -339,6 +341,7 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
         try:
             targets = extract_redirect_targets(command)
         except ValueError:
+            log_decision("ask", "invalid bash", command=command)
             return ask("invalid bash")
         for target in targets:
             redirect_match = match_redirect(target, config, cwd)
@@ -347,13 +350,22 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
                     continue  # This target is allowed by config
                 else:
                     msg = redirect_match.message or redirect_match.pattern
+                    log_decision(
+                        "ask",
+                        f"redirect to {target}",
+                        rule=redirect_match.pattern,
+                        message=msg,
+                        command=command,
+                    )
                     return ask(f"redirect to {target}: {msg}")
         # No config match for any redirect - default ask
+        log_decision("ask", "output redirect", command=command)
         return ask("output redirect")
 
     # Check command substitutions - inner commands must be safe
     cmdsub_result = _check_command_substitutions(command, config, cwd)
     if cmdsub_result is not None:
+        # Logging handled in _check_command_substitutions
         return cmdsub_result
 
     # Handle command lists (&&, ||) - each command must be safe
@@ -368,7 +380,9 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
             else:
                 safe.append(desc)
         if unsafe:
+            log_decision("ask", ", ".join(unsafe), command=command)
             return ask(", ".join(unsafe))
+        log_decision("allow", ", ".join(safe), command=command)
         return approve(", ".join(safe))
 
     # Handle pipelines - each command must be safe
@@ -383,14 +397,18 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
             else:
                 safe.append(desc)
         if unsafe:
+            log_decision("ask", ", ".join(unsafe), command=command)
             return ask(", ".join(unsafe))
+        log_decision("allow", ", ".join(safe), command=command)
         return approve(", ".join(safe))
 
     # Single command
     decision, desc = _check_single_command(command, config, cwd)
 
     if decision == "approve":
+        log_decision("allow", desc, command=command)
         return approve(desc)
+    log_decision("ask", desc, command=command)
     return ask(desc)
 
 

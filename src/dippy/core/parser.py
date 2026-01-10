@@ -9,7 +9,7 @@ from __future__ import annotations
 import shlex
 from typing import TYPE_CHECKING
 
-from parable import parse
+from dippy.vendor.parable import parse
 
 if TYPE_CHECKING:
     from dippy.core.config import SimpleCommand
