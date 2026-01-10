@@ -19,7 +19,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from dippy.core.config import Config, load_config, matches_pattern
 from dippy.core.parser import (
     get_command_substitutions,
     has_command_list,
@@ -92,10 +91,6 @@ def _get_log_file() -> Path:
     if MODE == "cursor":
         return Path.home() / ".cursor" / "hook-approvals.log"
     return Path.home() / ".claude" / "hook-approvals.log"
-
-
-# Module-level config (set per check_command call)
-_current_aliases: dict[str, str] = {}
 
 
 def setup_logging():
@@ -317,82 +312,21 @@ def _check_command_substitutions(command: str) -> Optional[dict]:
     return None
 
 
-def _check_command_substitutions_with_config(
-    command: str,
-    config: Optional[Config],
-    cwd: Optional[str],
-) -> Optional[dict]:
-    """
-    Check command substitutions with full config-aware checking.
-
-    Like _check_command_substitutions but inner commands go through the full
-    check_command flow (including config patterns). Used when a command is
-    approved by config but we still need to verify inner cmdsubs are safe.
-    """
-    cmdsubs = get_command_substitutions(command)
-    if not cmdsubs:
-        return None
-
-    for inner_cmd, _is_pure, _position in cmdsubs:
-        # Recursively check inner command through full flow
-        inner_result = check_command(inner_cmd, config, cwd)
-        if inner_result["hookSpecificOutput"]["permissionDecision"] != "allow":
-            # Inner command not approved - propagate the reason
-            inner_reason = inner_result["hookSpecificOutput"][
-                "permissionDecisionReason"
-            ]
-            # Strip the emoji prefix for cleaner nested message
-            if inner_reason.startswith("🐤 "):
-                inner_reason = inner_reason[2:]
-            return ask(f"cmdsub: {inner_reason}")
-
-    return None
-
-
-def check_command(
-    command: str,
-    config: Optional[Config] = None,
-    cwd: Optional[str] = None,
-) -> dict:
+def check_command(command: str) -> dict:
     """
     Main entry point: check if a command should be approved.
 
     Returns a hook response dict.
     """
-    global _current_aliases
-
     command = command.strip()
-    config = config or Config()
-    cwd_path = Path(cwd) if cwd else None
-    _current_aliases = config.aliases
-
     if not command:
         return ask("empty command")
 
-    tokens = tokenize(command)
-
-    # 1. Config 'confirm' patterns - always ask, wins over everything
-    for pattern in config.confirm:
-        if matches_pattern(command, pattern, tokens, config.project_root, cwd_path):
-            return ask(f"config confirm: {pattern}")
-
-    # 2. Config 'approve' patterns - allow, but still check cmdsubs recursively
-    for pattern in config.approve:
-        if matches_pattern(command, pattern, tokens, config.project_root, cwd_path):
-            # Approved by config, but inner cmdsubs must still be checked
-            # Each inner command goes through full check flow
-            cmdsub_result = _check_command_substitutions_with_config(
-                command, config, cwd
-            )
-            if cmdsub_result is not None:
-                return cmdsub_result
-            return approve(f"config: {pattern}")
-
-    # 3. Check for output redirects
+    # Check for output redirects
     if has_output_redirect(command):
         return ask("output redirect")
 
-    # 4. Check command substitutions - inner commands must be safe
+    # Check command substitutions - inner commands must be safe
     cmdsub_result = _check_command_substitutions(command)
     if cmdsub_result is not None:
         return cmdsub_result
@@ -447,12 +381,6 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
 
     base = tokens[0]
 
-    # Resolve alias (e.g., k -> kubectl)
-    resolved_base = _current_aliases.get(base, base)
-    if resolved_base != base:
-        # Replace alias with resolved command for handler lookup
-        tokens = [resolved_base] + tokens[1:]
-
     # Try simple command check first (fast path)
     decision, desc = check_simple_command(command, tokens)
     if decision is not None or desc is not None:
@@ -460,7 +388,7 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
         return (decision, desc if desc else base)
 
     # Try CLI-specific handler
-    handler = get_handler(resolved_base)
+    handler = get_handler(base)
     if handler:
         desc = get_description(tokens, base)
         approved = handler.check(tokens)
@@ -506,18 +434,16 @@ def main():
             CURSOR_MODE = MODE == "cursor"
             logging.info(f"Auto-detected mode: {MODE}")
 
-        # Extract command and cwd based on mode
+        # Extract command based on mode
         # Cursor: {"command": "...", "cwd": "..."}
         # Claude/Gemini: {"tool_name": "...", "tool_input": {"command": "..."}}
         if MODE == "cursor":
             # Cursor sends command directly (beforeShellExecution hook)
             command = input_data.get("command", "")
-            cwd = input_data.get("cwd")
         else:
             # Claude Code and Gemini CLI use tool_name/tool_input format
             tool_name = input_data.get("tool_name", "")
             tool_input = input_data.get("tool_input", {})
-            cwd = input_data.get("cwd")
 
             # Only handle shell/bash commands
             if tool_name not in SHELL_TOOL_NAMES:
@@ -527,11 +453,7 @@ def main():
             command = tool_input.get("command", "")
 
         logging.info(f"Checking: {command}")
-
-        # Load config
-        config = load_config(cwd)
-
-        result = check_command(command, config, cwd)
+        result = check_command(command)
         print(json.dumps(result))
 
     except json.JSONDecodeError:
