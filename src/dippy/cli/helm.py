@@ -6,6 +6,8 @@ Helm is the Kubernetes package manager. Safe operations are read-only queries
 mutate cluster state, local files, or remote registries.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["helm"]
 
 # Safe top-level commands (read-only)
@@ -69,10 +71,11 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if helm command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify helm command."""
+    base = tokens[0] if tokens else "helm"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     # Handle global flags before subcommand
     idx = 1
@@ -111,29 +114,30 @@ def check(tokens: list[str]) -> bool:
         break
 
     if idx >= len(tokens):
-        return False
+        return Classification("ask", description=base)
 
     action = tokens[idx]
     rest = tokens[idx + 1 :] if idx + 1 < len(tokens) else []
+    desc = f"{base} {action}"
 
     # Help and version flags are always safe
     if action in {"-h", "--help", "--version"}:
-        return True
+        return Classification("approve", description=desc)
 
     # Check for --help anywhere in the command
     if "-h" in tokens or "--help" in tokens:
-        return True
+        return Classification("approve", description=f"{base} --help")
 
     # Simple safe commands
     if action in SAFE_COMMANDS:
-        return True
+        return Classification("approve", description=desc)
 
     # Check for dry-run flag (makes install/upgrade/uninstall/rollback safe)
     if action in {"install", "upgrade", "uninstall", "delete", "del", "un", "rollback"}:
         for t in rest:
             if t == "--dry-run" or t.startswith("--dry-run="):
-                return True
-        return False
+                return Classification("approve", description=f"{desc} --dry-run")
+        return Classification("ask", description=desc)
 
     # Nested commands - check subcommand
     if action in NESTED_COMMANDS:
@@ -142,18 +146,19 @@ def check(tokens: list[str]) -> bool:
             if t.startswith("-"):
                 continue
             # Found subcommand
+            nested_desc = f"{desc} {t}"
             if action in SAFE_SUBCOMMANDS and t in SAFE_SUBCOMMANDS[action]:
-                return True
+                return Classification("approve", description=nested_desc)
             if action in UNSAFE_SUBCOMMANDS and t in UNSAFE_SUBCOMMANDS[action]:
-                return False
+                return Classification("ask", description=nested_desc)
             # Unknown subcommand - be safe
-            return False
+            return Classification("ask", description=nested_desc)
         # No subcommand found
-        return False
+        return Classification("ask", description=desc)
 
     # Known unsafe commands
     if action in UNSAFE_COMMANDS:
-        return False
+        return Classification("ask", description=desc)
 
     # Unknown command - require confirmation
-    return False
+    return Classification("ask", description=desc)

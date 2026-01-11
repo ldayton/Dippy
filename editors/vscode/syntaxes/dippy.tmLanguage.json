@@ -1,0 +1,48 @@
+{
+  "scopeName": "source.dippy",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#rule" },
+    { "include": "#setting" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "^\\s*#.*$",
+      "name": "comment.line.number-sign.dippy"
+    },
+    "rule": {
+      "begin": "^\\s*(allow-redirect|ask-redirect|deny-redirect|allow|ask|deny)\\b",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.dippy" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#message" },
+        { "include": "#glob-chars" }
+      ]
+    },
+    "setting": {
+      "match": "^\\s*(set)\\s+([a-zA-Z_-]+)(?:\\s+(.*))?$",
+      "captures": {
+        "1": { "name": "keyword.control.dippy" },
+        "2": { "name": "variable.parameter.dippy" },
+        "3": { "name": "string.unquoted.dippy" }
+      }
+    },
+    "message": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.dippy",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.dippy"
+        }
+      ]
+    },
+    "glob-chars": {
+      "match": "[*?~]",
+      "name": "keyword.operator.glob.dippy"
+    }
+  }
+}

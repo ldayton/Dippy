@@ -19,7 +19,18 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dippy.core.config import (
+    Config,
+    ConfigError,
+    SimpleCommand,
+    configure_logging,
+    load_config,
+    log_decision,
+    match_command,
+    match_redirect,
+)
 from dippy.core.parser import (
+    extract_redirect_targets,
     get_command_substitutions,
     has_command_list,
     has_output_redirect,
@@ -79,7 +90,6 @@ _EXPLICIT_MODE = _detect_mode_from_flags()
 MODE = _EXPLICIT_MODE or "claude"  # Default for logging setup
 GEMINI_MODE = MODE == "gemini"  # Backwards compat
 CURSOR_MODE = MODE == "cursor"
-
 
 # === Logging Setup ===
 
@@ -159,6 +169,30 @@ def ask(reason: str = "needs approval") -> dict:
     }
 
 
+def deny(reason: str = "denied by config") -> dict:
+    """Return deny response to block the command."""
+    logging.info(f"DENY: {reason}")
+    if MODE == "gemini":
+        return {"decision": "deny", "reason": f"🐤 {reason}"}
+    if MODE == "cursor":
+        # Include both snake_case (v2.0+) and camelCase (v1.7.x) for compatibility
+        msg = f"🐤 {reason}"
+        return {
+            "permission": "deny",
+            "user_message": msg,
+            "agent_message": msg,
+            "userMessage": msg,
+            "agentMessage": msg,
+        }
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": f"🐤 {reason}",
+        }
+    }
+
+
 # === Safety Checks ===
 
 
@@ -204,7 +238,7 @@ def is_version_or_help(tokens: list[str]) -> bool:
 
 
 def check_simple_command(
-    cmd: str, tokens: list[str]
+    cmd: str, tokens: list[str], config: Config, cwd: Path
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Check simple commands that don't need CLI-specific handling.
@@ -254,7 +288,7 @@ def check_simple_command(
         if j < len(rest):
             # Use full check for inner command (it might need a handler)
             inner_cmd = " ".join(rest[j:])
-            return _check_single_command(inner_cmd)
+            return _check_single_command(inner_cmd, config, cwd)
         return (None, base)
 
     # Simple safe commands
@@ -268,7 +302,9 @@ def check_simple_command(
     return (None, None)
 
 
-def _check_command_substitutions(command: str) -> Optional[dict]:
+def _check_command_substitutions(
+    command: str, config: Config, cwd: Path
+) -> Optional[dict]:
     """
     Check command substitutions in a command.
 
@@ -295,12 +331,12 @@ def _check_command_substitutions(command: str) -> Optional[dict]:
 
     for inner_cmd, is_pure, position in cmdsubs:
         # Recursively check inner command's cmdsubs first
-        inner_cmdsub_result = _check_command_substitutions(inner_cmd)
+        inner_cmdsub_result = _check_command_substitutions(inner_cmd, config, cwd)
         if inner_cmdsub_result is not None:
             return inner_cmdsub_result
 
         # Check inner command itself is safe
-        inner_decision, inner_desc = _check_single_command(inner_cmd)
+        inner_decision, inner_desc = _check_single_command(inner_cmd, config, cwd)
         if inner_decision != "approve":
             return ask(f"cmdsub: {inner_desc}")
 
@@ -312,7 +348,7 @@ def _check_command_substitutions(command: str) -> Optional[dict]:
     return None
 
 
-def check_command(command: str) -> dict:
+def check_command(command: str, config: Config, cwd: Path) -> dict:
     """
     Main entry point: check if a command should be approved.
 
@@ -320,60 +356,118 @@ def check_command(command: str) -> dict:
     """
     command = command.strip()
     if not command:
+        log_decision("ask", "empty", command=command)
         return ask("empty command")
 
     # Check for output redirects
     if has_output_redirect(command):
+        # Check redirect rules from config
+        try:
+            targets = extract_redirect_targets(command)
+        except ValueError:
+            log_decision("ask", "invalid bash", command=command)
+            return ask("invalid bash")
+        for target in targets:
+            redirect_match = match_redirect(target, config, cwd)
+            if redirect_match:
+                if redirect_match.decision == "allow":
+                    continue  # This target is allowed by config
+                elif redirect_match.decision == "deny":
+                    msg = redirect_match.message or redirect_match.pattern
+                    log_decision(
+                        "deny",
+                        f"redirect to {target}",
+                        rule=redirect_match.pattern,
+                        message=msg,
+                        command=command,
+                    )
+                    return deny(f"redirect to {target}: {msg}")
+                else:  # ask
+                    msg = redirect_match.message or redirect_match.pattern
+                    log_decision(
+                        "ask",
+                        f"redirect to {target}",
+                        rule=redirect_match.pattern,
+                        message=msg,
+                        command=command,
+                    )
+                    return ask(f"redirect to {target}: {msg}")
+        # No config match for any redirect - default ask
+        log_decision("ask", "output redirect", command=command)
         return ask("output redirect")
 
     # Check command substitutions - inner commands must be safe
-    cmdsub_result = _check_command_substitutions(command)
+    cmdsub_result = _check_command_substitutions(command, config, cwd)
     if cmdsub_result is not None:
+        # Logging handled in _check_command_substitutions
         return cmdsub_result
 
     # Handle command lists (&&, ||) - each command must be safe
     if has_command_list(command):
         commands = split_command_list(command)
+        denied = []
         unsafe = []
         safe = []
         for cmd in commands:
-            decision, desc = _check_single_command(cmd.strip())
-            if decision != "approve":
-                unsafe.append(desc)
-            else:
+            decision, desc = _check_single_command(cmd.strip(), config, cwd)
+            if decision == "approve":
                 safe.append(desc)
+            elif decision == "deny":
+                denied.append(desc)
+            else:
+                unsafe.append(desc)
+        if denied:
+            log_decision("deny", ", ".join(denied), command=command)
+            return deny(", ".join(denied))
         if unsafe:
+            log_decision("ask", ", ".join(unsafe), command=command)
             return ask(", ".join(unsafe))
+        log_decision("allow", ", ".join(safe), command=command)
         return approve(", ".join(safe))
 
     # Handle pipelines - each command must be safe
     if is_piped(command):
         commands = split_pipeline(command)
+        denied = []
         unsafe = []
         safe = []
         for cmd in commands:
-            decision, desc = _check_single_command(cmd.strip())
-            if decision != "approve":
-                unsafe.append(desc)
-            else:
+            decision, desc = _check_single_command(cmd.strip(), config, cwd)
+            if decision == "approve":
                 safe.append(desc)
+            elif decision == "deny":
+                denied.append(desc)
+            else:
+                unsafe.append(desc)
+        if denied:
+            log_decision("deny", ", ".join(denied), command=command)
+            return deny(", ".join(denied))
         if unsafe:
+            log_decision("ask", ", ".join(unsafe), command=command)
             return ask(", ".join(unsafe))
+        log_decision("allow", ", ".join(safe), command=command)
         return approve(", ".join(safe))
 
     # Single command
-    decision, desc = _check_single_command(command)
+    decision, desc = _check_single_command(command, config, cwd)
 
     if decision == "approve":
+        log_decision("allow", desc, command=command)
         return approve(desc)
+    if decision == "deny":
+        log_decision("deny", desc, command=command)
+        return deny(desc)
+    log_decision("ask", desc, command=command)
     return ask(desc)
 
 
-def _check_single_command(command: str) -> tuple[Optional[str], str]:
+def _check_single_command(
+    command: str, config: Config, cwd: Path
+) -> tuple[Optional[str], str]:
     """
     Check a single (non-pipeline) command.
 
-    Returns (decision, description) where decision is "approve" or None.
+    Returns (decision, description) where decision is "approve", "deny", or None (ask).
     """
     tokens = tokenize(command)
     if not tokens:
@@ -381,8 +475,21 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
 
     base = tokens[0]
 
-    # Try simple command check first (fast path)
-    decision, desc = check_simple_command(command, tokens)
+    # Check config rules first (highest priority)
+    cmd = SimpleCommand(words=tokens)
+    config_match = match_command(cmd, config, cwd)
+    if config_match:
+        if config_match.decision == "allow":
+            return ("approve", f"{base} ({config_match.pattern})")
+        elif config_match.decision == "deny":
+            msg = config_match.message or config_match.pattern
+            return ("deny", f"{base}: {msg}")
+        else:  # ask
+            msg = config_match.message or config_match.pattern
+            return (None, f"{base}: {msg}")
+
+    # Try simple command check (fast path)
+    decision, desc = check_simple_command(command, tokens, config, cwd)
     if decision is not None or desc is not None:
         # check_simple_command handled this command
         return (decision, desc if desc else base)
@@ -390,9 +497,26 @@ def _check_single_command(command: str) -> tuple[Optional[str], str]:
     # Try CLI-specific handler
     handler = get_handler(base)
     if handler:
-        desc = get_description(tokens, base)
-        approved = handler.check(tokens)
-        return ("approve", desc) if approved else (None, desc)
+        result = handler.classify(tokens)
+        desc = result.description or get_description(tokens, base)
+        if result.action == "approve":
+            return ("approve", desc)
+        elif result.action == "delegate" and result.inner_command:
+            # Delegate to inner command (e.g., bash -c 'inner')
+            # Use check_command to handle pipes, command lists, redirects, etc.
+            inner_result = check_command(result.inner_command, config, cwd)
+            inner_output = inner_result.get("hookSpecificOutput", {})
+            inner_decision = inner_output.get("permissionDecision")
+            inner_reason = inner_output.get("permissionDecisionReason", "").lstrip(
+                "🐤 "
+            )
+            if inner_decision == "allow":
+                return ("approve", inner_reason)
+            if inner_decision == "deny":
+                return ("deny", inner_reason)
+            return (None, inner_reason)
+        else:
+            return (None, desc)
 
     # Check unsafe patterns (fallback for unknown commands)
     # This comes after handlers so they can approve things like "aws s3 rm --help"
@@ -434,6 +558,27 @@ def main():
             CURSOR_MODE = MODE == "cursor"
             logging.info(f"Auto-detected mode: {MODE}")
 
+        # Extract cwd from input
+        # Cursor: top-level "cwd"
+        # Claude Code: may be in tool_input or top-level
+        cwd_str = input_data.get("cwd")
+        if not cwd_str:
+            tool_input = input_data.get("tool_input", {})
+            cwd_str = tool_input.get("cwd")
+        if cwd_str:
+            cwd = Path(cwd_str).resolve()
+        else:
+            cwd = Path.cwd()
+
+        # Load config (fails hard on errors)
+        try:
+            config = load_config(cwd)
+            configure_logging(config)
+        except ConfigError as e:
+            logging.error(f"Config error: {e}")
+            print(json.dumps(ask(f"config error: {e}")))
+            return
+
         # Extract command based on mode
         # Cursor: {"command": "...", "cwd": "..."}
         # Claude/Gemini: {"tool_name": "...", "tool_input": {"command": "..."}}
@@ -453,7 +598,7 @@ def main():
             command = tool_input.get("command", "")
 
         logging.info(f"Checking: {command}")
-        result = check_command(command)
+        result = check_command(command, config, cwd)
         print(json.dumps(result))
 
     except json.JSONDecodeError:

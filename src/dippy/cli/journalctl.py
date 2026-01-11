@@ -4,6 +4,8 @@ Journalctl command handler for Dippy.
 Journalctl is safe for viewing logs, but modification flags need confirmation.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["journalctl"]
 
 UNSAFE_FLAGS = frozenset(
@@ -19,12 +21,13 @@ UNSAFE_FLAGS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if journalctl command is safe (no modification flags)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify journalctl command (no modification flags is safe)."""
+    base = tokens[0] if tokens else "journalctl"
     for token in tokens[1:]:
         if token in UNSAFE_FLAGS:
-            return False
+            return Classification("ask", description=base)
         for flag in UNSAFE_FLAGS:
             if token.startswith(flag + "="):
-                return False
-    return True
+                return Classification("ask", description=base)
+    return Classification("approve", description=base)

@@ -2,8 +2,10 @@
 Env command handler for Dippy.
 
 Env is used to set environment variables and run commands.
-We need to extract and check the inner command.
+Delegates to inner command check.
 """
+
+from dippy.cli import Classification
 
 COMMANDS = ["env"]
 
@@ -20,10 +22,10 @@ FLAGS_WITH_ARG = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if env command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify env command by extracting the inner command."""
     if len(tokens) < 2:
-        return True  # Just "env" prints environment
+        return Classification("approve")  # Just "env" prints environment
 
     # Find where the inner command starts
     i = 1
@@ -50,13 +52,9 @@ def check(tokens: list[str]) -> bool:
         break
 
     if i >= len(tokens):
-        return True  # Just env with no command
+        return Classification("approve")  # Just env with no command
 
-    # Check the inner command
+    # Delegate to inner command check
     inner_tokens = tokens[i:]
     inner_cmd = " ".join(inner_tokens)
-
-    from dippy.dippy import _check_single_command
-
-    decision, _ = _check_single_command(inner_cmd)
-    return decision == "approve"
+    return Classification("delegate", inner_command=inner_cmd)

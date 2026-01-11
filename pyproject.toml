@@ -20,9 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Build Tools",
 ]
-dependencies = [
-    "parable @ git+https://github.com/ldayton/Parable.git",
-]
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/ldayton/Dippy"
@@ -47,7 +45,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -n auto"
 
 [tool.coverage.run]
 source = ["src/dippy"]
@@ -63,5 +61,6 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-xdist>=3.0",
     "ruff>=0.8.0",
 ]

@@ -2,6 +2,8 @@
 Cargo (Rust) CLI handler for Dippy.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["cargo"]
 
 SAFE_ACTIONS = frozenset(
@@ -36,10 +38,14 @@ SAFE_ACTIONS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if cargo command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify cargo command."""
+    base = tokens[0] if tokens else "cargo"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     action = tokens[1]
-    return action in SAFE_ACTIONS
+    desc = f"{base} {action}"
+    if action in SAFE_ACTIONS:
+        return Classification("approve", description=desc)
+    return Classification("ask", description=desc)

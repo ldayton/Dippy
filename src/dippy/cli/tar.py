@@ -5,17 +5,20 @@ Tar can list, create, or extract archives.
 Only listing (-t/--list) is safe.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["tar"]
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if tar command is safe (list mode only)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify tar command (list mode only is safe)."""
+    base = tokens[0] if tokens else "tar"
     for t in tokens[1:]:
         if t == "-t" or t == "--list":
-            return True
+            return Classification("approve", description=f"{base} list")
         # Combined short flags like -tvf, -tf, -ztf
         if t.startswith("-") and not t.startswith("--") and "t" in t:
-            return True
+            return Classification("approve", description=f"{base} list")
 
     # Old-style (no dash) like "tf", "tvf", "ztf"
     if len(tokens) > 1:
@@ -25,6 +28,6 @@ def check(tokens: list[str]) -> bool:
             and "t" in first_arg
             and not any(c in first_arg for c in "cxru")
         ):
-            return True
+            return Classification("approve", description=f"{base} list")
 
-    return False
+    return Classification("ask", description=base)

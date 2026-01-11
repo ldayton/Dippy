@@ -6,6 +6,8 @@ ansible-inventory, ansible-doc, ansible-pull, ansible-config,
 ansible-console, ansible-lint, and ansible-test commands.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = [
     "ansible",
     "ansible-playbook",
@@ -29,42 +31,44 @@ SAFE_COMMANDS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if an ansible command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify ansible command."""
     if len(tokens) < 1:
-        return False
+        return Classification("ask", description="ansible")
 
     cmd = tokens[0]
 
     # Check for help/version flags anywhere
     if "-h" in tokens or "--help" in tokens or "--version" in tokens:
-        return True
+        return Classification("approve", description=cmd)
 
     # Entirely safe commands
     if cmd in SAFE_COMMANDS:
-        return True
+        return Classification("approve", description=cmd)
 
     # Route to specific handlers
     if cmd == "ansible":
-        return _check_ansible(tokens)
+        safe = _check_ansible(tokens)
     elif cmd == "ansible-playbook":
-        return _check_ansible_playbook(tokens)
+        safe = _check_ansible_playbook(tokens)
     elif cmd == "ansible-vault":
-        return _check_ansible_vault(tokens)
+        safe = _check_ansible_vault(tokens)
     elif cmd == "ansible-galaxy":
-        return _check_ansible_galaxy(tokens)
+        safe = _check_ansible_galaxy(tokens)
     elif cmd == "ansible-inventory":
-        return _check_ansible_inventory(tokens)
+        safe = _check_ansible_inventory(tokens)
     elif cmd == "ansible-pull":
-        return _check_ansible_pull(tokens)
+        safe = _check_ansible_pull(tokens)
     elif cmd == "ansible-config":
-        return _check_ansible_config(tokens)
+        safe = _check_ansible_config(tokens)
     elif cmd == "ansible-console":
-        return _check_ansible_console(tokens)
+        safe = _check_ansible_console(tokens)
     elif cmd == "ansible-test":
-        return _check_ansible_test(tokens)
+        safe = _check_ansible_test(tokens)
+    else:
+        safe = False
 
-    return False
+    return Classification("approve" if safe else "ask", description=cmd)
 
 
 def _check_ansible(tokens: list[str]) -> bool:
