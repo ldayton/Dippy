@@ -4,9 +4,18 @@ Bash command parsing utilities using Parable.
 Provides safe tokenization and AST inspection for analyzing shell commands.
 """
 
-import shlex
+from __future__ import annotations
 
-from parable import parse
+import shlex
+from typing import TYPE_CHECKING
+
+from dippy.vendor.parable import parse
+
+if TYPE_CHECKING:
+    from dippy.core.config import SimpleCommand
+
+# Output redirect operators that write to files
+OUTPUT_REDIRECT_OPS = frozenset({">", ">>", "&>", "&>>", "2>", "2>>"})
 
 
 def tokenize(command: str) -> list[str]:
@@ -227,3 +236,97 @@ def _extract_cmdsubs(nodes: list, results: list):
             for part in node.parts:
                 if part.kind != "operator":
                     _extract_cmdsubs([part], results)
+
+
+def extract_simple_commands(command: str) -> list[SimpleCommand]:
+    """Parse bash and extract SimpleCommand instances for rule matching.
+
+    Returns list of SimpleCommand, one per simple command in the AST.
+    Raises ValueError if bash is invalid (Parable parse failure).
+    """
+
+    if not command or not command.strip():
+        return []
+
+    try:
+        nodes = parse(command)
+    except Exception:
+        raise ValueError("invalid bash") from None
+
+    commands: list[SimpleCommand] = []
+    _extract_simple_commands_recursive(nodes, commands)
+    return commands
+
+
+def _extract_simple_commands_recursive(nodes: list, commands: list) -> None:
+    """Recursively walk AST extracting Command nodes into SimpleCommand instances."""
+    from dippy.core.config import SimpleCommand
+
+    for node in nodes:
+        if node.kind == "command":
+            words = [_strip_quotes(w.value) for w in node.words]
+            redirects = []
+            for r in node.redirects:
+                # Skip heredocs - they don't have .op attribute
+                if r.kind == "heredoc":
+                    continue
+                if r.op in OUTPUT_REDIRECT_OPS and r.target:
+                    target = _strip_quotes(r.target.value)
+                    # Skip safe redirects
+                    if target != "/dev/null" and not target.startswith("&"):
+                        redirects.append(target)
+            commands.append(SimpleCommand(words=words, redirects=redirects))
+
+        elif node.kind == "pipeline":
+            for cmd in node.commands:
+                if hasattr(cmd, "kind") and cmd.kind != "pipe-both":
+                    _extract_simple_commands_recursive([cmd], commands)
+
+        elif node.kind == "list":
+            for part in node.parts:
+                if hasattr(part, "kind") and part.kind != "operator":
+                    _extract_simple_commands_recursive([part], commands)
+
+
+def extract_redirect_targets(command: str) -> list[str]:
+    """Extract output redirect target paths from command.
+
+    Returns list of paths that are targets of output redirects.
+    Raises ValueError if bash is invalid (Parable parse failure).
+    """
+    if not command or not command.strip():
+        return []
+
+    try:
+        nodes = parse(command)
+    except Exception:
+        raise ValueError("invalid bash") from None
+
+    targets: list[str] = []
+    _extract_redirect_targets_recursive(nodes, targets)
+    return targets
+
+
+def _extract_redirect_targets_recursive(nodes: list, targets: list) -> None:
+    """Recursively walk AST extracting redirect targets."""
+    for node in nodes:
+        if node.kind == "command":
+            for r in node.redirects:
+                # Skip heredocs - they don't have .op attribute
+                if r.kind == "heredoc":
+                    continue
+                if r.op in OUTPUT_REDIRECT_OPS and r.target:
+                    target = _strip_quotes(r.target.value)
+                    # Skip safe redirects
+                    if target != "/dev/null" and not target.startswith("&"):
+                        targets.append(target)
+
+        elif node.kind == "pipeline":
+            for cmd in node.commands:
+                if hasattr(cmd, "kind") and cmd.kind != "pipe-both":
+                    _extract_redirect_targets_recursive([cmd], targets)
+
+        elif node.kind == "list":
+            for part in node.parts:
+                if hasattr(part, "kind") and part.kind != "operator":
+                    _extract_redirect_targets_recursive([part], targets)

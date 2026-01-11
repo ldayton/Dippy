@@ -4,6 +4,8 @@ Dmesg command handler for Dippy.
 Dmesg is safe for viewing kernel messages, but -c/--clear clears the ring buffer.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["dmesg"]
 
 UNSAFE_FLAGS = frozenset(
@@ -20,14 +22,15 @@ UNSAFE_FLAGS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if dmesg command is safe (no modification flags)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify dmesg command (no modification flags is safe)."""
+    base = tokens[0] if tokens else "dmesg"
     for token in tokens[1:]:
         if token in UNSAFE_FLAGS:
-            return False
+            return Classification("ask", description=base)
         # Handle combined short flags like -cT
         if token.startswith("-") and not token.startswith("--"):
             for char in token[1:]:
                 if f"-{char}" in UNSAFE_FLAGS:
-                    return False
-    return True
+                    return Classification("ask", description=base)
+    return Classification("approve", description=base)

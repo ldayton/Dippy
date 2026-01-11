@@ -4,6 +4,8 @@ Azure CLI handler for Dippy.
 Handles az commands.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["az"]
 
 # Safe action keywords - if command contains these as action verbs, it's read-only
@@ -146,63 +148,78 @@ FLAGS_WITH_ARG = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if az command is safe."""
+def get_description(tokens: list[str]) -> str:
+    """Compute description for az command."""
     if len(tokens) < 2:
-        return False
+        return "az"
+    parts = _extract_parts(tokens[1:])
+    if not parts:
+        return "az"
+    return f"az {' '.join(parts[:3])}"
+
+
+def classify(tokens: list[str]) -> Classification:
+    """Classify az command."""
+    base = tokens[0] if tokens else "az"
+    if len(tokens) < 2:
+        return Classification("ask", description=base)
 
     parts = _extract_parts(tokens[1:])
     if not parts:
-        return False
+        return Classification("ask", description=base)
+
+    desc = get_description(tokens)
 
     # Help is always safe
     if "help" in parts or "-h" in tokens or "--help" in tokens:
-        return True
+        return Classification("approve", description=desc)
 
     # Check first part for unsafe groups
     if parts[0] in UNSAFE_GROUPS:
-        return False
+        return Classification("ask", description=desc)
 
     # Check first part for safe groups
     if parts[0] in SAFE_GROUPS:
-        return True
+        return Classification("approve", description=desc)
 
     # Handle account specially
     if parts[0] == "account":
         if len(parts) > 1:
             if parts[1] in ACCOUNT_SAFE_COMMANDS:
-                return True
+                return Classification("approve", description=desc)
             if parts[1] in ACCOUNT_UNSAFE_COMMANDS:
-                return False
-        return True
+                return Classification("ask", description=desc)
+        return Classification("approve", description=desc)
 
     # Handle devops configure --list
     if parts[0] == "devops" and len(parts) > 1 and parts[1] == "configure":
-        return "--list" in tokens
+        if "--list" in tokens:
+            return Classification("approve", description=desc)
+        return Classification("ask", description=desc)
 
     # Check commands with safe subcommands (e.g., az bicep version)
     if parts[0] in SAFE_SUBCOMMANDS and len(parts) > 1:
         if parts[1] in SAFE_SUBCOMMANDS[parts[0]]:
-            return True
+            return Classification("approve", description=desc)
 
     # Check unsafe keywords FIRST (they take precedence)
     for part in parts:
         if part in UNSAFE_ACTION_KEYWORDS:
-            return False
+            return Classification("ask", description=desc)
         if part in UNSAFE_EXCEPTIONS:
-            return False
+            return Classification("ask", description=desc)
         if part.startswith("set-"):
-            return False
+            return Classification("ask", description=desc)
 
     # Check if any part is a safe action keyword
     for part in parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return True
+            return Classification("approve", description=desc)
         for prefix in SAFE_ACTION_PREFIXES:
             if part.startswith(prefix):
-                return True
+                return Classification("approve", description=desc)
 
-    return False
+    return Classification("ask", description=desc)
 
 
 def _extract_parts(tokens: list[str]) -> list[str]:

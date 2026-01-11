@@ -4,6 +4,8 @@ Curl command handler for Dippy.
 Approves GET/HEAD requests, blocks data-sending operations.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["curl"]
 
 # Flags that send data (always unsafe unless explicit GET)
@@ -62,44 +64,45 @@ SAFE_FTP_COMMANDS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if curl command is safe (GET/HEAD without data flags)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify curl command (GET/HEAD without data flags is safe)."""
+    base = tokens[0] if tokens else "curl"
     for i, t in enumerate(tokens):
         # Block always-unsafe flags
         if t in UNSAFE_FLAGS:
-            return False
+            return Classification("ask", description=base)
 
         # Block data/upload flags
         if t in DATA_FLAGS:
-            return False
+            return Classification("ask", description=base)
 
         # Check --flag=value variants
         for flag in DATA_FLAGS:
             if t.startswith(flag + "="):
-                return False
+                return Classification("ask", description=base)
 
         # Check -X/--request for non-safe methods
         if t in {"-X", "--request"}:
             if i + 1 < len(tokens):
                 method = tokens[i + 1].upper()
                 if method not in SAFE_METHODS:
-                    return False
+                    return Classification("ask", description=base)
 
         # Also catch --request=METHOD and -XMETHOD
         if t.startswith("--request="):
             method = t.split("=", 1)[1].upper()
             if method not in SAFE_METHODS:
-                return False
+                return Classification("ask", description=base)
         if t.startswith("-X") and len(t) > 2 and not t.startswith("-X="):
             method = t[2:].upper()
             if method not in SAFE_METHODS:
-                return False
+                return Classification("ask", description=base)
 
         # Check -Q/--quote for FTP commands
         if t in {"-Q", "--quote"}:
             if i + 1 < len(tokens):
                 ftp_cmd = tokens[i + 1].strip().strip("'\"").split()[0].upper()
                 if ftp_cmd not in SAFE_FTP_COMMANDS:
-                    return False
+                    return Classification("ask", description=base)
 
-    return True
+    return Classification("approve", description=base)

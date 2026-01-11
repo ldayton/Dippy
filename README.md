@@ -111,6 +111,12 @@ Dippy auto-detects your AI assistant, but you can force a mode:
 | `--gemini` | `DIPPY_GEMINI=true` | Gemini CLI  |
 | `--cursor` | `DIPPY_CURSOR=true` | Cursor      |
 
+### Customization (experimental)
+
+Dippy supports user and project config files with gitignore-style rules. See [docs/config-v1.md](docs/config-v1.md) for details.
+
+> **Warning:** The config system is experimental and may change without notice.
+
 ---
 
 ## Development

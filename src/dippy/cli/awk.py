@@ -7,6 +7,8 @@ and the program can contain output redirects.
 
 import re
 
+from dippy.cli import Classification
+
 COMMANDS = ["awk", "gawk", "mawk", "nawk"]
 
 
@@ -33,14 +35,15 @@ OUTPUT_REDIRECT_PATTERN = re.compile(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if awk command is safe (no script files or output redirects)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify awk command (no script files or output redirects is safe)."""
+    base = tokens[0] if tokens else "awk"
     # Check for -f/--file flag (runs script file)
     for t in tokens[1:]:
         if t == "-f" or t.startswith("-f"):
-            return False
+            return Classification("ask", description=f"{base} -f")
         if t == "--file" or t.startswith("--file="):
-            return False
+            return Classification("ask", description=f"{base} --file")
 
     # Find the awk program string (first non-flag argument)
     program = None
@@ -65,14 +68,14 @@ def check(tokens: list[str]) -> bool:
         break
 
     if not program:
-        return True
+        return Classification("approve", description=base)
 
     # Check for system() calls
     if "system(" in program:
-        return False
+        return Classification("ask", description=base)
 
     # Check for output redirects using pattern matching
     if OUTPUT_REDIRECT_PATTERN.search(program):
-        return False
+        return Classification("ask", description=base)
 
-    return True
+    return Classification("approve", description=base)

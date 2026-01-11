@@ -1,13 +1,20 @@
 """Test cases for hook output format and reasons."""
 
+from pathlib import Path
+
 import pytest
+
+from dippy.core.config import Config
 
 
 @pytest.fixture
 def check():
     from dippy.dippy import check_command
 
-    return check_command
+    def _check(command: str):
+        return check_command(command, Config(), Path.cwd())
+
+    return _check
 
 
 def get_reason(result: dict) -> str:

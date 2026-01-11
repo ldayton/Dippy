@@ -5,9 +5,14 @@ Wget downloads files by default, so most operations are unsafe.
 Only --spider mode (check availability without downloading) is safe.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["wget"]
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if wget command is safe (spider mode only)."""
-    return "--spider" in tokens
+def classify(tokens: list[str]) -> Classification:
+    """Classify wget command (spider mode only is safe)."""
+    base = tokens[0] if tokens else "wget"
+    if "--spider" in tokens:
+        return Classification("approve", description=f"{base} --spider")
+    return Classification("ask", description=base)

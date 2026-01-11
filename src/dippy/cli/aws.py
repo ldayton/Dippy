@@ -4,6 +4,8 @@ AWS CLI handler for Dippy.
 Handles aws, aws-vault, and similar AWS tools.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["aws"]
 
 # Safe action prefixes that appear in AWS CLI commands
@@ -177,14 +179,62 @@ SAFE_COMMANDS = {
 }
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if AWS CLI command is safe."""
+def get_description(tokens: list[str]) -> str:
+    """Compute description for aws command."""
     if len(tokens) < 2:
-        return False
+        return "aws"
+    # Find service and action
+    service = None
+    action = None
+    global_opts_with_value = {
+        "--region",
+        "--profile",
+        "--output",
+        "--endpoint-url",
+        "--cli-connect-timeout",
+        "--cli-read-timeout",
+        "--ca-bundle",
+        "--color",
+        "--query",
+    }
+    i = 1
+    while i < len(tokens):
+        token = tokens[i]
+        if token.startswith("--"):
+            if token in global_opts_with_value:
+                i += 2
+                continue
+            if "=" in token:
+                i += 1
+                continue
+            i += 1
+            continue
+        if service is None:
+            service = token
+            i += 1
+            continue
+        if action is None:
+            action = token
+            break
+        i += 1
+    if service and action:
+        return f"aws {service} {action}"
+    if service:
+        return f"aws {service}"
+    return "aws"
+
+
+def classify(tokens: list[str]) -> Classification:
+    """Classify AWS CLI command."""
+    base = tokens[0] if tokens else "aws"
+    if len(tokens) < 2:
+        return Classification("ask", description=base)
+
+    desc = get_description(tokens)
 
     # Check for --help anywhere (makes command safe)
     if "--help" in tokens or "-h" in tokens:
-        return True
+        return Classification("approve", description=desc)
 
     # Find the service and action
     service = None
@@ -228,51 +278,55 @@ def check(tokens: list[str]) -> bool:
         i += 1
 
     if not service:
-        return False
+        return Classification("ask", description=desc)
 
     # Help is always safe
     if service == "help" or action == "help":
-        return True
+        return Classification("approve", description=desc)
 
     # Always-safe services
     if service in ALWAYS_SAFE_SERVICES:
-        return True
+        return Classification("approve", description=desc)
 
     # STS special handling
     if service == "sts":
-        return action in STS_SAFE_ACTIONS
+        if action in STS_SAFE_ACTIONS:
+            return Classification("approve", description=desc)
+        return Classification("ask", description=desc)
 
     # Configure special handling
     if service == "configure":
-        return action in {"list", "list-profiles", "get"}
+        if action in {"list", "list-profiles", "get"}:
+            return Classification("approve", description=desc)
+        return Classification("ask", description=desc)
 
     # SSM special handling - --with-decryption exposes sensitive data
     if service == "ssm" and "--with-decryption" in tokens:
-        return False
+        return Classification("ask", description=desc)
 
     # Check specific safe commands
     if action and (service, action) in SAFE_COMMANDS:
-        return True
+        return Classification("approve", description=desc)
 
     # Check action patterns
     if action:
         # Check exceptions first (things that look safe but aren't)
         if action in UNSAFE_EXCEPTIONS:
-            return False
+            return Classification("ask", description=desc)
 
         # Exact safe actions
         if action in SAFE_ACTIONS_EXACT:
-            return True
+            return Classification("approve", description=desc)
 
         # Safe prefixes
         for prefix in SAFE_ACTION_PREFIXES:
             if action.startswith(prefix):
-                return True
+                return Classification("approve", description=desc)
 
         # Unsafe keywords
         for keyword in UNSAFE_ACTION_KEYWORDS:
             if keyword in action:
-                return False
+                return Classification("ask", description=desc)
 
     # Default: ask user
-    return False
+    return Classification("ask", description=desc)

@@ -4,6 +4,8 @@ GitHub CLI (gh) command handler for Dippy.
 Approves read-only gh operations, blocks mutations.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["gh"]
 
 # Actions that only read data (second token after gh)
@@ -152,20 +154,29 @@ def _get_subcommand(tokens: list[str]) -> str | None:
     return None
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if gh command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify gh command."""
+    base = tokens[0] if tokens else "gh"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     subcommand = _get_subcommand(tokens)
     if not subcommand:
-        return False
+        return Classification("ask", description=base)
+
+    desc = f"{base} {subcommand}"
 
     if subcommand == "api":
-        return _check_api(tokens)
+        if _check_api(tokens):
+            return Classification("approve", description=desc)
+        return Classification("ask", description=desc)
 
     if subcommand in {"status", "browse", "search"}:
-        return True
+        return Classification("approve", description=desc)
 
     action = _get_action(tokens)
-    return action in SAFE_ACTIONS
+    if action:
+        desc = f"{base} {subcommand} {action}"
+    if action in SAFE_ACTIONS:
+        return Classification("approve", description=desc)
+    return Classification("ask", description=desc)

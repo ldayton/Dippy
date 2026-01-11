@@ -4,6 +4,8 @@ Auth0 CLI command handler for Dippy.
 Auth0 commands for identity management.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["auth0"]
 
 # Safe Auth0 actions (read-only)
@@ -64,29 +66,33 @@ def _check_api(tokens: list[str]) -> bool:
     return True
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if auth0 command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify auth0 command."""
+    base = tokens[0] if tokens else "auth0"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     parts = _extract_parts(tokens[1:])
     if not parts:
-        return False
+        return Classification("ask", description=base)
 
     subcommand = parts[0]
+    desc = f"{base} {subcommand}"
 
     if subcommand == "api":
-        return _check_api(tokens)
+        if _check_api(tokens):
+            return Classification("approve", description=desc)
+        return Classification("ask", description=desc)
 
     for part in parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return True
+            return Classification("approve", description=desc)
 
     for part in parts:
         if part in UNSAFE_ACTION_KEYWORDS:
-            return False
+            return Classification("ask", description=desc)
 
-    return False
+    return Classification("ask", description=desc)
 
 
 def _extract_parts(tokens: list[str]) -> list[str]:

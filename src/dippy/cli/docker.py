@@ -4,6 +4,8 @@ Docker command handler for Dippy.
 Handles docker, docker-compose, and podman commands.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]
 
 # Safe read-only actions (at the top level)
@@ -177,24 +179,43 @@ GLOBAL_FLAGS_WITH_ARG = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if docker command is safe."""
+def _get_description(tokens: list[str]) -> str:
+    """Get description for docker command."""
+    if len(tokens) < 2:
+        return tokens[0]
+    action_idx = _find_action_idx(tokens)
+    if action_idx >= len(tokens):
+        return tokens[0]
+    action = tokens[action_idx]
+    rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
+    # Only include subcommand in description for multi-level commands
+    if action in SAFE_SUBCOMMANDS or action in UNSAFE_SUBCOMMANDS:
+        subcommand = _find_subcommand(rest)
+        if subcommand:
+            return f"{tokens[0]} {action} {subcommand}"
+    return f"{tokens[0]} {action}"
+
+
+def classify(tokens: list[str]) -> Classification:
+    """Classify docker command."""
     base = tokens[0]  # "docker", "podman", "docker-compose", etc.
+    desc = _get_description(tokens)
 
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=desc)
 
     # Find action (skip global flags)
     action_idx = _find_action_idx(tokens)
     if action_idx >= len(tokens):
-        return False
+        return Classification("ask", description=desc)
 
     action = tokens[action_idx]
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
     # Handle docker-compose / docker compose
     if action == "compose" or tokens[0] in {"docker-compose", "podman-compose"}:
-        return _check_compose(tokens, action_idx, base)
+        safe = _check_compose(tokens, action_idx, base)
+        return Classification("approve" if safe else "ask", description=desc)
 
     # Check subcommands for multi-level commands
     if action in SAFE_SUBCOMMANDS or action in UNSAFE_SUBCOMMANDS:
@@ -206,7 +227,8 @@ def check(tokens: list[str]) -> bool:
                     rest[rest.index(subcommand) + 1 :] if subcommand in rest else []
                 )
                 imagetools_action = _find_subcommand(sub_rest)
-                return imagetools_action == "inspect"
+                safe = imagetools_action == "inspect"
+                return Classification("approve" if safe else "ask", description=desc)
 
             if subcommand in SAFE_SUBCOMMANDS.get(action, set()):
                 # Special case: image save -o writes to file
@@ -215,20 +237,20 @@ def check(tokens: list[str]) -> bool:
                     and subcommand == "save"
                     and _has_output_flag(rest)
                 ):
-                    return False
-                return True
+                    return Classification("ask", description=desc)
+                return Classification("approve", description=desc)
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
-                return False
+                return Classification("ask", description=desc)
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
         # export/save without -o writes to stdout (safe)
         if action in {"export", "save"} and _has_output_flag(rest):
-            return False
-        return True
+            return Classification("ask", description=desc)
+        return Classification("approve", description=desc)
 
     # Unsafe actions or unknown
-    return False
+    return Classification("ask", description=desc)
 
 
 def _find_action_idx(tokens: list[str]) -> int:

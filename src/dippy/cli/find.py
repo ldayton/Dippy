@@ -7,6 +7,8 @@ Find is mostly safe for searching, but has dangerous flags:
 - -delete: Delete found files
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["find"]
 
 UNSAFE_FLAGS = frozenset(
@@ -20,9 +22,10 @@ UNSAFE_FLAGS = frozenset(
 )
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if find command is safe (no exec or delete)."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify find command (no exec or delete is safe)."""
+    base = tokens[0] if tokens else "find"
     for token in tokens:
         if token in UNSAFE_FLAGS:
-            return False
-    return True
+            return Classification("ask", description=f"{base} {token}")
+    return Classification("approve", description=base)

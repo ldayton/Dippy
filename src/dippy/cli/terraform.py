@@ -4,6 +4,8 @@ Terraform command handler for Dippy.
 Handles terraform and tofu (OpenTofu) commands.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["terraform", "tf"]
 
 # Safe read-only actions
@@ -59,14 +61,15 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if terraform command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify terraform command."""
+    base = tokens[0] if tokens else "terraform"
     if len(tokens) < 2:
-        return False
+        return Classification("ask", description=base)
 
     # Check for -help flag anywhere (common pattern: terraform -help)
     if "-help" in tokens or "--help" in tokens or "-h" in tokens:
-        return True
+        return Classification("approve", description=f"{base} --help")
 
     # Find action (skip global flags)
     action = None
@@ -86,30 +89,32 @@ def check(tokens: list[str]) -> bool:
         break
 
     if not action:
-        return False
+        return Classification("ask", description=base)
 
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
+    desc = f"{base} {action}"
 
     # Check subcommands
     if action in SAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand:
+            sub_desc = f"{desc} {subcommand}"
             if subcommand in SAFE_SUBCOMMANDS[action]:
-                return True
+                return Classification("approve", description=sub_desc)
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
-                return False
+                return Classification("ask", description=sub_desc)
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         subcommand = _find_subcommand(rest)
         if subcommand and subcommand in UNSAFE_SUBCOMMANDS[action]:
-            return False
+            return Classification("ask", description=f"{desc} {subcommand}")
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return True
+        return Classification("approve", description=desc)
 
     # Unsafe actions or unknown
-    return False
+    return Classification("ask", description=desc)
 
 
 def _find_subcommand(rest: list[str]) -> str | None:

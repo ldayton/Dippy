@@ -4,6 +4,8 @@ Python package manager CLI handler for Dippy.
 Handles pip, pip3, and uv commands.
 """
 
+from dippy.cli import Classification
+
 COMMANDS = ["pip", "pip3"]
 
 SAFE_ACTIONS = frozenset(
@@ -56,14 +58,16 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if pip command is safe."""
+def classify(tokens: list[str]) -> Classification:
+    """Classify pip command."""
     if len(tokens) < 2:
-        return False
+        base = tokens[0] if tokens else "pip"
+        return Classification("ask", description=base)
 
     base = tokens[0]
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
+    desc = f"{base} {action}"
 
     # Handle uv which wraps pip
     if base == "uv":
@@ -71,29 +75,32 @@ def check(tokens: list[str]) -> bool:
             if rest:
                 action = rest[0]
                 rest = rest[1:] if len(rest) > 1 else []
+                desc = f"{base} pip {action}"
             else:
-                return False
+                return Classification("ask", description=desc)
         elif action in {"run", "tool", "sync", "lock", "add", "remove"}:
-            return False  # uv-specific unsafe commands
+            return Classification(
+                "ask", description=desc
+            )  # uv-specific unsafe commands
         elif action in {"version", "--version", "-V", "help", "--help"}:
-            return True
+            return Classification("approve", description=desc)
 
     # Check subcommands
     if action in SAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return True
+                    return Classification("approve", description=f"{desc} {token}")
                 break
 
     if action in UNSAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in UNSAFE_SUBCOMMANDS[action]:
-                    return False
+                    return Classification("ask", description=f"{desc} {token}")
                 break
 
     if action in SAFE_ACTIONS:
-        return True
+        return Classification("approve", description=desc)
 
-    return False
+    return Classification("ask", description=desc)

@@ -1,0 +1,24 @@
+{
+  "name": "dippy-syntax",
+  "displayName": "Dippy Config Syntax",
+  "description": "Syntax highlighting for Dippy config files",
+  "version": "0.0.6",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [{
+      "id": "dippy",
+      "aliases": ["Dippy Config", "dippy"],
+      "extensions": [".dippy"],
+      "filenames": [".dippy", "config"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "dippy",
+      "scopeName": "source.dippy",
+      "path": "./syntaxes/dippy.tmLanguage.json"
+    }]
+  }
+}

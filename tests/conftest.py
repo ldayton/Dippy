@@ -3,7 +3,11 @@ Shared test fixtures for Dippy tests.
 """
 
 import json
+from pathlib import Path
+
 import pytest
+
+from dippy.core.config import Config
 
 
 @pytest.fixture
@@ -18,18 +22,32 @@ def hook_input():
 
 @pytest.fixture
 def check():
-    """Import and return the check_command function."""
+    """Return a check_command wrapper with default config and cwd."""
     from dippy.dippy import check_command
 
-    return check_command
+    def _check(command: str, config: Config | None = None, cwd: Path | None = None):
+        if config is None:
+            config = Config()
+        if cwd is None:
+            cwd = Path.cwd()
+        return check_command(command, config, cwd)
+
+    return _check
 
 
 @pytest.fixture
 def check_single():
-    """Import and return the _check_single_command function."""
+    """Return a _check_single_command wrapper with default config and cwd."""
     from dippy.dippy import _check_single_command
 
-    return _check_single_command
+    def _check(command: str, config: Config | None = None, cwd: Path | None = None):
+        if config is None:
+            config = Config()
+        if cwd is None:
+            cwd = Path.cwd()
+        return _check_single_command(command, config, cwd)
+
+    return _check
 
 
 def is_approved(result: dict) -> bool:

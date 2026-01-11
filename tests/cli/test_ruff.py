@@ -26,8 +26,8 @@ TESTS = [
     ("ruff check src/ tests/", True),
     ("ruff check --select E501", True),
     ("ruff check --ignore E501", True),
-    ("ruff check --fix", True),  # fixes are shown, applied on confirmation
-    ("ruff check --fix-only", True),
+    ("ruff check --fix", False),  # modifies code
+    ("ruff check --fix-only", False),  # modifies code
     ("ruff check --unsafe-fixes", True),
     ("ruff check --show-fixes", True),
     ("ruff check --diff", True),
@@ -42,16 +42,16 @@ TESTS = [
     ("ruff lint .", True),
     ("ruff lint src/", True),
     #
-    # === SAFE: Formatting ===
-    ("ruff format", True),
-    ("ruff format .", True),
-    ("ruff format src/", True),
-    ("ruff format file.py", True),
-    ("ruff format --check", True),
-    ("ruff format --diff", True),
-    ("ruff format --line-length 100", True),
-    ("ruff format --config ruff.toml", True),
-    ("ruff format --preview", True),
+    # === UNSAFE: Formatting (modifies code) ===
+    ("ruff format", False),
+    ("ruff format .", False),
+    ("ruff format src/", False),
+    ("ruff format file.py", False),
+    ("ruff format --check", False),  # doesn't modify but same command family
+    ("ruff format --diff", False),  # doesn't modify but same command family
+    ("ruff format --line-length 100", False),
+    ("ruff format --config ruff.toml", False),
+    ("ruff format --preview", False),
     #
     # === SAFE: Info commands ===
     ("ruff rule E501", True),
