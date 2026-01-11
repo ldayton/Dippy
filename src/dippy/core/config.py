@@ -505,16 +505,31 @@ def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
     return result
 
 
+def _normalize_redirect_pattern(pattern: str, cwd: Path) -> str:
+    """Normalize a redirect pattern, handling ** specially.
+
+    For patterns with **, normalize the prefix before ** and keep the rest.
+    For example: 'src/**' -> '/abs/path/to/src/**'
+    """
+    if "**" not in pattern:
+        return _normalize_path(pattern, cwd)
+    # Split at first **, normalize prefix, rejoin
+    idx = pattern.index("**")
+    prefix = pattern[:idx].rstrip("/")
+    suffix = pattern[idx:]
+    if prefix:
+        normalized_prefix = _normalize_path(prefix, cwd)
+        return f"{normalized_prefix}/{suffix}"
+    # Pattern starts with ** (e.g., "**/foo") - no prefix to normalize
+    return pattern
+
+
 def _match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
     """Match redirect target against rules. Returns last matching rule."""
     normalized_target = _normalize_path(target, cwd)
     result: Match | None = None
     for rule in config.redirect_rules:
-        # Don't normalize patterns with ** - they're meant to match any path
-        if "**" in rule.pattern:
-            normalized_pattern = rule.pattern
-        else:
-            normalized_pattern = _normalize_path(rule.pattern, cwd)
+        normalized_pattern = _normalize_redirect_pattern(rule.pattern, cwd)
         if _glob_match(normalized_target, normalized_pattern):
             result = Match(
                 decision=rule.decision,

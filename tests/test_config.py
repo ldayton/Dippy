@@ -1205,6 +1205,13 @@ class TestPatternNormalization:
         assert match_redirect("output/file.txt", cfg, tmp_path) is not None
         assert match_redirect("/other/output/file.txt", cfg, tmp_path) is None
 
+    def test_redirect_pattern_normalization_with_globstar(self, tmp_path):
+        """Redirect patterns with ** should also be normalized against cwd."""
+        cfg = Config(redirect_rules=[Rule("allow", "src/**")])
+        assert match_redirect("src/foo.go", cfg, tmp_path) is not None
+        assert match_redirect(f"{tmp_path}/src/foo.go", cfg, tmp_path) is not None
+        assert match_redirect("/other/src/foo.go", cfg, tmp_path) is None
+
     def test_nested_relative_path(self, tmp_path):
         """Pattern 'src/lib/*' should match nested paths."""
         cfg = Config(rules=[Rule("allow", "node src/lib/*")])
