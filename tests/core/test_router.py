@@ -59,6 +59,14 @@ class TestOutputRedirects:
         result = check("cat foo.txt > bar.txt")
         assert needs_confirmation(result)
 
+    def test_redirect_allowed_by_config(self, check, tmp_path):
+        """Redirect to path allowed by config should be approved."""
+        from dippy.core.config import Config, Rule
+
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/**")])
+        result = check("echo test > /tmp/foo.txt", config=cfg, cwd=tmp_path)
+        assert is_approved(result)
+
 
 class TestPipelines:
     """Tests for pipeline command handling."""
