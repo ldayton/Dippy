@@ -1060,6 +1060,32 @@ class TestMatchRedirect:
 class TestMatchEdgeCases:
     """Edge cases from Git's wildmatch tests."""
 
+    def test_trailing_star_matches_bare_command(self, tmp_path):
+        """Pattern 'python *' should match both 'python foo' AND bare 'python'.
+
+        This is the errata case: users expect 'python *' to match any python
+        invocation, but the space before * is literal, so bare 'python' fails.
+        """
+        cfg = Config(rules=[Rule("deny", "python *", message="use uv run python")])
+        # This works - has arguments
+        assert match_command(cmd("python foo"), cfg, tmp_path) is not None
+        assert match_command(cmd("python -c 'print(1)'"), cfg, tmp_path) is not None
+        # This should also work but currently fails - bare command
+        assert match_command(cmd("python"), cfg, tmp_path) is not None
+
+    def test_trailing_question_star_requires_arguments(self, tmp_path):
+        """Pattern 'python ?*' requires at least one argument character.
+
+        Use ?* instead of * when you want to match only commands WITH args,
+        not bare commands. This is the escape hatch for the old behavior.
+        """
+        cfg = Config(rules=[Rule("allow", "python ?*")])
+        # Matches - has arguments
+        assert match_command(cmd("python foo"), cfg, tmp_path) is not None
+        assert match_command(cmd("python -c 'print(1)'"), cfg, tmp_path) is not None
+        # Does NOT match - bare command
+        assert match_command(cmd("python"), cfg, tmp_path) is None
+
     def test_empty_pattern_empty_text(self, tmp_path):
         cfg = Config(rules=[Rule("allow", "")])
         # Empty pattern should only match empty command

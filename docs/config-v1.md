@@ -80,6 +80,12 @@ Patterns match the full command string using fnmatch-style globs:
 - `[a-z]` matches any character in range
 - `[!abc]` or `[^abc]` matches any character NOT in set
 
+**Trailing `*` matches bare commands.** The pattern `python *` matches both `python foo` AND bare `python`. To match only commands with arguments, use `?*`:
+```
+allow python ?*   # matches 'python foo', NOT bare 'python'
+allow python *    # matches both 'python foo' AND bare 'python'
+```
+
 **Last match wins.** Rules are evaluated top-to-bottom; the last matching rule determines the decision. This allows broad rules followed by specific exceptions.
 
 **Strictest wins across types.** When a command has both command rules and redirect rules matching, the most restrictive decision wins: `deny` > `ask` > `allow`. This prevents accidentally allowing dangerous redirects just because the command itself was allowed.
@@ -255,11 +261,3 @@ allow-redirect ./build/*
 **Debugging config rules:** Check `~/.claude/hook-approvals.log` to see which rules matched. Entries show the pattern in parentheses when a config rule matches: `APPROVED: rm (rm /tmp/test-*)` vs just `APPROVED: rm` for built-in approval.
 
 **System Python:** The hook runs with `#!/usr/bin/env python3` (system Python), not the uv virtualenv. System Python may be older and lack dependencies like `structlog`. Dippy must use only stdlib imports, or fail gracefully when optional dependencies are missing.
-
-## Errata
-
-**Trailing `*` doesn't match bare commands.** The pattern `python *` matches `python foo` but not bare `python` (the space before `*` is literal). To block both, use two rules:
-```
-deny python "use uv run python"
-deny python * "use uv run python"
-```

@@ -490,7 +490,11 @@ def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
     result: Match | None = None
     for rule in config.rules:
         normalized_pattern = _normalize_pattern(rule.pattern, cwd)
-        if fnmatch.fnmatch(normalized_cmd, normalized_pattern):
+        matched = fnmatch.fnmatch(normalized_cmd, normalized_pattern)
+        # Trailing ' *' also matches bare command (no args)
+        if not matched and normalized_pattern.endswith(" *"):
+            matched = normalized_cmd == normalized_pattern[:-2]
+        if matched:
             result = Match(
                 decision=rule.decision,
                 pattern=rule.pattern,
