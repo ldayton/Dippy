@@ -1,0 +1,250 @@
+# =============================================================================
+# Dippy Config Syntax - Exhaustive Sample
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# COMMENTS
+# -----------------------------------------------------------------------------
+
+# This is a comment
+    # Indented comment
+# Multiple # # # hash marks
+
+# -----------------------------------------------------------------------------
+# COMMAND RULES: allow, ask, deny
+# -----------------------------------------------------------------------------
+
+# Basic allow (no message)
+allow ls
+allow cat *
+allow echo *
+
+# Allow with glob patterns
+allow git status
+allow git diff *
+allow git log *
+allow git stash *
+
+# Ask (prompts user)
+ask rm *
+ask git push *
+ask kubectl *
+
+# Ask with message
+ask git push --force * "Use --force-with-lease instead"
+ask *prod* "Production commands require manual review"
+ask sudo * "Sudo requires explicit approval"
+
+# Deny (hard block, no user override)
+deny rm -rf /*
+deny dd if=*
+
+# Deny with message
+deny rm -rf /* "Too dangerous - be more specific"
+deny git push --force origin main "Never force push to main"
+deny chmod 777 * "Don't use 777 permissions"
+
+# -----------------------------------------------------------------------------
+# GLOB PATTERNS
+# -----------------------------------------------------------------------------
+
+# * matches any characters (including none)
+allow python *
+allow node *
+
+# ? matches exactly one character
+allow python ?*
+allow test-?.sh
+
+# [abc] matches any of a, b, or c
+allow git log --oneline -[123456789]
+allow file[abc].txt
+
+# [a-z] matches character range
+allow script-[a-z].sh
+allow test_[0-9].py
+
+# [!abc] matches any character NOT in set
+allow log-[!0-9]*
+allow file[!xyz].txt
+
+# [^abc] alternate negation syntax
+allow data[^_-]*
+
+# Escaping literal glob characters with brackets
+allow find * -name [*].txt
+allow echo [?]
+allow test[[]bracket
+
+# -----------------------------------------------------------------------------
+# PATH PATTERNS
+# -----------------------------------------------------------------------------
+
+# Tilde expansion (home directory)
+allow ~/bin/*
+allow ~/.local/bin/*
+deny ~/secrets/*
+
+# Relative paths (resolved against cwd)
+allow ./scripts/*
+allow ./bin/*
+allow ../shared/tools/*
+allow node bin/*
+
+# Absolute paths
+allow /usr/local/bin/*
+deny /etc/*
+deny /root/*
+
+# -----------------------------------------------------------------------------
+# REDIRECT RULES: allow-redirect, ask-redirect, deny-redirect
+# -----------------------------------------------------------------------------
+
+# Allow redirects to temp/cache paths
+allow-redirect /tmp/*
+allow-redirect /tmp/**
+allow-redirect .cache/*
+allow-redirect .cache/**
+
+# ** matches zero or more directories (redirect rules only)
+allow-redirect ./build/**
+allow-redirect ./dist/**
+allow-redirect **/*.log
+allow-redirect **/tmp/**
+
+# Ask for redirects to sensitive locations
+ask-redirect **/.*
+ask-redirect ~/.*
+ask-redirect **/.config/*
+
+# Ask with message
+ask-redirect ~/.bashrc "Modifying shell config requires review"
+ask-redirect ~/.ssh/* "SSH config changes require review"
+
+# Deny dangerous redirects
+deny-redirect .env*
+deny-redirect **/.env*
+deny-redirect **/*credential*
+deny-redirect **/*secret*
+deny-redirect /etc/**
+
+# Deny with message
+deny-redirect **/.env* "Never write secrets to env files"
+deny-redirect ~/.ssh/id_* "Never overwrite SSH keys"
+deny-redirect /etc/** "System config is off-limits"
+
+# -----------------------------------------------------------------------------
+# SETTINGS
+# -----------------------------------------------------------------------------
+
+# Boolean flags (no value)
+set sticky-session
+set verbose
+set log-full
+set warn-banner
+
+# Snake_case also works
+set sticky_session
+set log_full
+set warn_banner
+
+# Value settings
+set suggest-after 3
+set suggest-after 0
+set default allow
+set default ask
+
+# Log path setting
+set log ~/.dippy/audit.log
+set log ~/.claude/dippy-audit.log
+set log /tmp/dippy.log
+
+# -----------------------------------------------------------------------------
+# MESSAGE ESCAPING
+# -----------------------------------------------------------------------------
+
+# Escaped quotes in messages
+deny echo * "Don't use \"echo\" for secrets"
+ask eval * "The \"eval\" command is dangerous"
+
+# Escaped backslashes
+deny cat * "Use less or view instead of cat\\more"
+ask rm * "Think twice before \"rm\"\\\"unlink\""
+
+# -----------------------------------------------------------------------------
+# LAST-MATCH-WINS PATTERNS
+# -----------------------------------------------------------------------------
+
+# Allow all docker EXCEPT rm/rmi
+allow docker *
+ask docker rm *
+ask docker rmi *
+deny docker rm -f *
+
+# Allow rm but never rm -rf /
+allow rm *
+ask rm -r *
+deny rm -rf /*
+deny rm -rf /
+
+# Allow git but restrict force operations
+allow git *
+ask git push *
+deny git push --force *
+deny git push -f *
+deny git reset --hard *
+
+# -----------------------------------------------------------------------------
+# REAL-WORLD EXAMPLES
+# -----------------------------------------------------------------------------
+
+# Development tools
+allow just *
+allow make *
+allow cargo *
+allow npm *
+allow yarn *
+allow pnpm *
+allow uv *
+allow uv run *
+allow poetry *
+allow pip install *
+
+# Version control
+allow git add *
+allow git commit *
+allow git checkout *
+allow git branch *
+allow git merge *
+allow git rebase *
+ask git push *
+deny git push --force *
+
+# Container tools
+allow docker build *
+allow docker run *
+allow docker compose *
+ask docker exec *
+deny docker run --privileged *
+
+# Kubernetes
+allow kubectl get *
+allow kubectl describe *
+allow kubectl logs *
+ask kubectl apply *
+ask kubectl delete *
+deny kubectl delete namespace *
+
+# File operations
+allow touch *
+allow mkdir *
+allow cp *
+allow mv *
+ask rm *
+deny rm -rf /*
+
+# Network tools
+allow curl *
+allow wget *
+ask ssh *
+deny nc -l *

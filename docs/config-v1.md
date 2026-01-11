@@ -261,3 +261,11 @@ allow-redirect ./build/*
 **Debugging config rules:** Check `~/.claude/hook-approvals.log` to see which rules matched. Entries show the pattern in parentheses when a config rule matches: `APPROVED: rm (rm /tmp/test-*)` vs just `APPROVED: rm` for built-in approval.
 
 **System Python:** The hook runs with `#!/usr/bin/env python3` (system Python), not the uv virtualenv. System Python may be older and lack dependencies like `structlog`. Dippy must use only stdlib imports, or fail gracefully when optional dependencies are missing.
+
+**VS Code syntax highlighting:** Install the extension from `editors/vscode/`:
+```bash
+cd editors/vscode
+npx @vscode/vsce package
+code --install-extension dippy-syntax-*.vsix
+```
+Highlights `.dippy` files and files named `config` (for `~/.dippy/config`).
