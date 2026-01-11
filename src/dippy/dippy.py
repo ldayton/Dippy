@@ -367,6 +367,7 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
         except ValueError:
             log_decision("ask", "invalid bash", command=command)
             return ask("invalid bash")
+        all_allowed = True
         for target in targets:
             redirect_match = match_redirect(target, config, cwd)
             if redirect_match:
@@ -392,9 +393,12 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
                         command=command,
                     )
                     return ask(f"redirect to {target}: {msg}")
-        # No config match for any redirect - default ask
-        log_decision("ask", "output redirect", command=command)
-        return ask("output redirect")
+            else:
+                all_allowed = False  # No rule matched this target
+        if not all_allowed:
+            log_decision("ask", "output redirect", command=command)
+            return ask("output redirect")
+        # All redirects explicitly allowed by config - continue to check command
 
     # Check command substitutions - inner commands must be safe
     cmdsub_result = _check_command_substitutions(command, config, cwd)
