@@ -16,4 +16,4 @@ def classify(tokens: list[str]) -> Classification:
     # Any additional args beyond interface name is a modification
     if len(tokens) <= 2:
         return Classification("approve", description=base)
-    return Classification("ask", description=f"{base} modify")
+    return Classification("ask", description=f"{base} (modify interface)")
