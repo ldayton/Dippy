@@ -7,13 +7,11 @@
 
 ---
 
-> **Stop the permission fatigue.** AI coding assistants ask for approval on every `ls`, `git status`, and `cat` - destroying your flow state. You check Slack, come back, and your assistant's just sitting there waiting.
+> **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` - destroying your flow state. You check Slack, come back, and your assistant's just sitting there waiting.
 
 Dippy is a shell command hook that auto-approves safe commands while still prompting for anything destructive. Get up to **40% faster development** without disabling permissions entirely.
 
 Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bash parser—no external dependencies, just pure Python. A combined 10,000+ tests.
-
-**Supports:** Claude Code, Gemini CLI, and Cursor.
 
 ![Screenshot](images/screenshot.png)
 
@@ -43,7 +41,7 @@ git clone https://github.com/ldayton/Dippy.git
 cd Dippy && uv sync
 ```
 
-Then configure your AI assistant to use the hook. Dippy auto-detects which assistant is calling it.
+Then configure Claude Code to use the hook.
 
 ### Claude Code
 
@@ -65,51 +63,6 @@ Add to `~/.claude/settings.json`:
 Or use `/hooks` in Claude Code to add interactively.
 
 Logs: `~/.claude/hook-approvals.log`
-
-### Gemini CLI
-
-Add to `~/.gemini/settings.json`:
-
-```json
-{
-  "hooks": {
-    "BeforeTool": [
-      {
-        "matcher": "shell",
-        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
-      }
-    ]
-  }
-}
-```
-
-Logs: `~/.gemini/hook-approvals.log`
-
-### Cursor
-
-Add to `.cursor/hooks.json` in your project:
-
-```json
-{
-  "beforeShellExecution": {
-    "command": "/path/to/Dippy/bin/dippy-hook"
-  }
-}
-```
-
-Logs: `~/.cursor/hook-approvals.log`
-
----
-
-## Configuration
-
-Dippy auto-detects your AI assistant, but you can force a mode:
-
-| Flag       | Env Var             | Mode        |
-| ---------- | ------------------- | ----------- |
-| `--claude` | `DIPPY_CLAUDE=true` | Claude Code |
-| `--gemini` | `DIPPY_GEMINI=true` | Gemini CLI  |
-| `--cursor` | `DIPPY_CURSOR=true` | Cursor      |
 
 ### Customization (experimental)
 
@@ -139,7 +92,7 @@ PRs welcome! See [prompts/adding-commands.md](prompts/adding-commands.md) for in
 
 ## Uninstall
 
-Remove the hook entry from your settings file (`~/.claude/settings.json`, `~/.gemini/settings.json`, or `.cursor/hooks.json`).
+Remove the hook entry from `~/.claude/settings.json`.
 
 ---
 
