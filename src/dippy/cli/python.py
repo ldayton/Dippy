@@ -520,12 +520,47 @@ class SafetyAnalyzer(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    # Reflection attributes that are dangerous even on access (not just call)
+    # These provide access to frames, code objects, and other internals
+    REFLECTION_ATTRS = frozenset(
+        {
+            # Dunder reflection
+            "__globals__",
+            "__code__",
+            "__closure__",
+            "__dict__",
+            "__class__",
+            "__bases__",
+            "__mro__",
+            "__subclasses__",
+            "__reduce__",
+            "__reduce_ex__",
+            "__builtins__",
+            # Frame objects (RestrictedPython INSPECT_ATTRIBUTES)
+            "tb_frame",
+            "tb_next",
+            "f_back",
+            "f_builtins",
+            "f_code",
+            "f_globals",
+            "f_locals",
+            "f_trace",
+            # Code objects
+            "co_code",
+            # Generator/coroutine internals
+            "gi_frame",
+            "gi_code",
+            "gi_yieldfrom",
+            "cr_await",
+            "cr_frame",
+            "cr_code",
+        }
+    )
+
     def visit_Attribute(self, node: ast.Attribute) -> None:
         # Flag dangerous attribute access even without call
-        if node.attr in DANGEROUS_ATTRS:
-            # Only flag the really dangerous ones for access
-            if node.attr.startswith("__") and node.attr.endswith("__"):
-                self._add(node, "reflection", f"dangerous attribute: {node.attr}")
+        if node.attr in self.REFLECTION_ATTRS:
+            self._add(node, "reflection", f"dangerous attribute: {node.attr}")
 
         self.generic_visit(node)
 

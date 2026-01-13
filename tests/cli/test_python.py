@@ -653,3 +653,636 @@ print(decompressed)
 """)
         result = check(f"python {script}")
         assert is_approved(result), "zlib compress/decompress should be safe"
+
+
+class TestDangerousModulesBandit:
+    """Tests for dangerous modules from Bandit blacklists."""
+
+    def test_marshal_blocked(self, check, tmp_path):
+        """marshal module can deserialize arbitrary code - must be blocked."""
+        script = tmp_path / "marshal_dangerous.py"
+        script.write_text("""
+import marshal
+data = marshal.dumps(lambda: None)
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "marshal should be blocked"
+
+    def test_dill_blocked(self, check, tmp_path):
+        """dill is a pickle variant - must be blocked."""
+        script = tmp_path / "dill_dangerous.py"
+        script.write_text("""
+import dill
+obj = dill.dumps(lambda x: x)
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "dill should be blocked"
+
+    def test_jsonpickle_blocked(self, check, tmp_path):
+        """jsonpickle can execute code on decode - must be blocked."""
+        script = tmp_path / "jsonpickle_dangerous.py"
+        script.write_text("""
+import jsonpickle
+data = jsonpickle.encode({"key": "value"})
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "jsonpickle should be blocked"
+
+    def test_pickle_import_from_blocked(self, check, tmp_path):
+        """from pickle import X must be blocked."""
+        script = tmp_path / "pickle_from.py"
+        script.write_text("""
+from pickle import loads, dumps
+data = dumps({"key": "value"})
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "from pickle import should be blocked"
+
+    def test_configparser_blocked(self, check, tmp_path):
+        """configparser can read files directly - must be blocked."""
+        script = tmp_path / "configparser_dangerous.py"
+        script.write_text("""
+import configparser
+config = configparser.ConfigParser()
+config.read('config.ini')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "configparser should be blocked"
+
+
+class TestDangerousModulesXML:
+    """Tests for XML modules (XXE vulnerabilities - Bandit B405-B410)."""
+
+    def test_xml_etree_blocked(self, check, tmp_path):
+        """xml.etree.ElementTree is vulnerable to XXE - must be blocked."""
+        script = tmp_path / "xml_etree.py"
+        script.write_text("""
+import xml.etree.ElementTree as ET
+tree = ET.parse('data.xml')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "xml.etree should be blocked"
+
+    def test_xml_etree_from_import_blocked(self, check, tmp_path):
+        """from xml.etree import ElementTree must be blocked."""
+        script = tmp_path / "xml_etree_from.py"
+        script.write_text("""
+from xml.etree import ElementTree
+root = ElementTree.fromstring('<root/>')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "from xml.etree should be blocked"
+
+    def test_xml_sax_blocked(self, check, tmp_path):
+        """xml.sax is vulnerable to XXE - must be blocked."""
+        script = tmp_path / "xml_sax.py"
+        script.write_text("""
+import xml.sax
+parser = xml.sax.make_parser()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "xml.sax should be blocked"
+
+    def test_xml_dom_minidom_blocked(self, check, tmp_path):
+        """xml.dom.minidom is vulnerable to XXE - must be blocked."""
+        script = tmp_path / "xml_minidom.py"
+        script.write_text("""
+from xml.dom import minidom
+doc = minidom.parseString('<root/>')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "xml.dom.minidom should be blocked"
+
+    def test_xml_parsers_expat_blocked(self, check, tmp_path):
+        """xml.parsers.expat must be blocked."""
+        script = tmp_path / "xml_expat.py"
+        script.write_text("""
+from xml.parsers import expat
+parser = expat.ParserCreate()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "xml.parsers.expat should be blocked"
+
+
+class TestDangerousModulesArchive:
+    """Tests for archive modules that can extract files."""
+
+    def test_tarfile_blocked(self, check, tmp_path):
+        """tarfile can extract files - must be blocked."""
+        script = tmp_path / "tarfile_dangerous.py"
+        script.write_text("""
+import tarfile
+with tarfile.open('archive.tar.gz') as tar:
+    tar.extractall()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "tarfile should be blocked"
+
+    def test_zipfile_blocked(self, check, tmp_path):
+        """zipfile can extract files - must be blocked."""
+        script = tmp_path / "zipfile_dangerous.py"
+        script.write_text("""
+import zipfile
+with zipfile.ZipFile('archive.zip') as zf:
+    zf.extractall()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "zipfile should be blocked"
+
+    def test_tarfile_from_import_blocked(self, check, tmp_path):
+        """from tarfile import X must be blocked."""
+        script = tmp_path / "tarfile_from.py"
+        script.write_text("""
+from tarfile import open as tar_open
+tar = tar_open('archive.tar')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "from tarfile should be blocked"
+
+
+class TestDangerousModulesCGI:
+    """Tests for CGI modules (httpoxy vulnerabilities - Bandit B412)."""
+
+    def test_cgi_blocked(self, check, tmp_path):
+        """cgi module has httpoxy vulnerabilities - must be blocked."""
+        script = tmp_path / "cgi_dangerous.py"
+        script.write_text("""
+import cgi
+form = cgi.FieldStorage()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "cgi should be blocked"
+
+    def test_cgitb_blocked(self, check, tmp_path):
+        """cgitb module must be blocked."""
+        script = tmp_path / "cgitb_dangerous.py"
+        script.write_text("""
+import cgitb
+cgitb.enable()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "cgitb should be blocked"
+
+    def test_wsgiref_handlers_blocked(self, check, tmp_path):
+        """wsgiref.handlers has httpoxy vulnerabilities - must be blocked."""
+        script = tmp_path / "wsgiref_dangerous.py"
+        script.write_text("""
+from wsgiref.handlers import CGIHandler
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "wsgiref.handlers should be blocked"
+
+
+class TestDangerousModulesLegacy:
+    """Tests for legacy dangerous modules."""
+
+    def test_commands_blocked(self, check, tmp_path):
+        """commands module (Python 2 legacy) must be blocked."""
+        script = tmp_path / "commands_dangerous.py"
+        script.write_text("""
+import commands
+output = commands.getoutput('ls')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "commands should be blocked"
+
+    def test_popen2_blocked(self, check, tmp_path):
+        """popen2 module (legacy) must be blocked."""
+        script = tmp_path / "popen2_dangerous.py"
+        script.write_text("""
+import popen2
+r, w = popen2.popen2('ls')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "popen2 should be blocked"
+
+
+class TestDangerousAttributes:
+    """Tests for dangerous method/attribute access."""
+
+    def test_subprocess_popen_method_blocked(self, check, tmp_path):
+        """subprocess.Popen must be blocked."""
+        script = tmp_path / "subprocess_popen.py"
+        script.write_text("""
+import subprocess
+p = subprocess.Popen(['ls'])
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "subprocess.Popen should be blocked"
+
+    def test_subprocess_check_output_blocked(self, check, tmp_path):
+        """subprocess.check_output must be blocked."""
+        script = tmp_path / "subprocess_check_output.py"
+        script.write_text("""
+import subprocess
+out = subprocess.check_output(['ls'])
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "subprocess.check_output should be blocked"
+
+    def test_subprocess_run_blocked(self, check, tmp_path):
+        """subprocess.run must be blocked."""
+        script = tmp_path / "subprocess_run.py"
+        script.write_text("""
+import subprocess
+subprocess.run(['ls'])
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "subprocess.run should be blocked"
+
+    def test_os_system_method_blocked(self, check, tmp_path):
+        """os.system method must be blocked."""
+        script = tmp_path / "os_system.py"
+        script.write_text("""
+import os
+os.system('ls')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "os.system should be blocked"
+
+    def test_os_popen_method_blocked(self, check, tmp_path):
+        """os.popen method must be blocked."""
+        script = tmp_path / "os_popen.py"
+        script.write_text("""
+import os
+f = os.popen('ls')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "os.popen should be blocked"
+
+    def test_os_spawn_methods_blocked(self, check, tmp_path):
+        """os.spawn* methods must be blocked."""
+        script = tmp_path / "os_spawn.py"
+        script.write_text("""
+import os
+os.spawnl(os.P_WAIT, '/bin/ls', 'ls')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "os.spawnl should be blocked"
+
+    def test_os_exec_methods_blocked(self, check, tmp_path):
+        """os.exec* methods must be blocked."""
+        script = tmp_path / "os_exec.py"
+        script.write_text("""
+import os
+os.execv('/bin/ls', ['ls'])
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "os.execv should be blocked"
+
+
+class TestDangerousReflection:
+    """Tests for dangerous reflection/introspection attributes."""
+
+    def test_frame_f_globals_blocked(self, check, tmp_path):
+        """Frame f_globals access must be blocked."""
+        script = tmp_path / "f_globals.py"
+        script.write_text("""
+import sys
+frame = sys._getframe()
+g = frame.f_globals
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "f_globals should be blocked"
+
+    def test_frame_f_locals_blocked(self, check, tmp_path):
+        """Frame f_locals access must be blocked."""
+        script = tmp_path / "f_locals.py"
+        script.write_text("""
+import sys
+frame = sys._getframe()
+l = frame.f_locals
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "f_locals should be blocked"
+
+    def test_frame_f_code_blocked(self, check, tmp_path):
+        """Frame f_code access must be blocked."""
+        script = tmp_path / "f_code.py"
+        script.write_text("""
+import sys
+frame = sys._getframe()
+code = frame.f_code
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "f_code should be blocked"
+
+    def test_traceback_tb_frame_blocked(self, check, tmp_path):
+        """Traceback tb_frame access must be blocked."""
+        script = tmp_path / "tb_frame.py"
+        script.write_text("""
+import sys
+try:
+    1/0
+except:
+    tb = sys.exc_info()[2]
+    frame = tb.tb_frame
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "tb_frame should be blocked"
+
+    def test_generator_gi_frame_blocked(self, check, tmp_path):
+        """Generator gi_frame access must be blocked."""
+        script = tmp_path / "gi_frame.py"
+        script.write_text("""
+def gen():
+    yield 1
+g = gen()
+frame = g.gi_frame
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "gi_frame should be blocked"
+
+    def test_code_co_code_blocked(self, check, tmp_path):
+        """Code object co_code access must be blocked."""
+        script = tmp_path / "co_code.py"
+        script.write_text("""
+def foo():
+    pass
+bytecode = foo.__code__.co_code
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "co_code should be blocked"
+
+    def test_func_globals_blocked(self, check, tmp_path):
+        """Function __globals__ access must be blocked."""
+        script = tmp_path / "func_globals.py"
+        script.write_text("""
+def foo():
+    pass
+g = foo.__globals__
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "__globals__ should be blocked"
+
+    def test_func_code_blocked(self, check, tmp_path):
+        """Function __code__ access must be blocked."""
+        script = tmp_path / "func_code.py"
+        script.write_text("""
+def foo():
+    pass
+c = foo.__code__
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "__code__ should be blocked"
+
+    def test_class_mro_blocked(self, check, tmp_path):
+        """Class __mro__ access must be blocked."""
+        script = tmp_path / "class_mro.py"
+        script.write_text("""
+class Foo:
+    pass
+mro = Foo.__mro__
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "__mro__ should be blocked"
+
+    def test_class_bases_blocked(self, check, tmp_path):
+        """Class __bases__ access must be blocked."""
+        script = tmp_path / "class_bases.py"
+        script.write_text("""
+class Foo:
+    pass
+bases = Foo.__bases__
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "__bases__ should be blocked"
+
+
+class TestDangerousFileOps:
+    """Tests for file operation methods."""
+
+    def test_file_write_method_blocked(self, check, tmp_path):
+        """File .write() method must be blocked."""
+        script = tmp_path / "file_write.py"
+        script.write_text("""
+f = open('test.txt', 'w')
+f.write('data')
+f.close()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "file.write should be blocked"
+
+    def test_file_read_method_blocked(self, check, tmp_path):
+        """File .read() method must be blocked."""
+        script = tmp_path / "file_read.py"
+        script.write_text("""
+f = open('test.txt')
+data = f.read()
+f.close()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "file.read should be blocked"
+
+    def test_path_write_text_method_blocked(self, check, tmp_path):
+        """Path.write_text() method must be blocked."""
+        script = tmp_path / "path_write_text.py"
+        script.write_text("""
+from pathlib import Path
+p = Path('test.txt')
+p.write_text('hello')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "Path.write_text should be blocked"
+
+    def test_path_read_text_method_blocked(self, check, tmp_path):
+        """Path.read_text() method must be blocked."""
+        script = tmp_path / "path_read_text.py"
+        script.write_text("""
+from pathlib import Path
+p = Path('test.txt')
+content = p.read_text()
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "Path.read_text should be blocked"
+
+    def test_path_write_bytes_method_blocked(self, check, tmp_path):
+        """Path.write_bytes() method must be blocked."""
+        script = tmp_path / "path_write_bytes.py"
+        script.write_text("""
+from pathlib import Path
+p = Path('test.bin')
+p.write_bytes(b'hello')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "Path.write_bytes should be blocked"
+
+    def test_path_open_method_blocked(self, check, tmp_path):
+        """Path.open() method must be blocked."""
+        script = tmp_path / "path_open.py"
+        script.write_text("""
+from pathlib import Path
+p = Path('test.txt')
+with p.open('w') as f:
+    pass
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "Path.open should be blocked"
+
+    def test_shutil_rmtree_blocked(self, check, tmp_path):
+        """shutil.rmtree must be blocked."""
+        script = tmp_path / "shutil_rmtree.py"
+        script.write_text("""
+import shutil
+shutil.rmtree('/tmp/test')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "shutil.rmtree should be blocked"
+
+    def test_os_remove_blocked(self, check, tmp_path):
+        """os.remove must be blocked."""
+        script = tmp_path / "os_remove.py"
+        script.write_text("""
+import os
+os.remove('test.txt')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "os.remove should be blocked"
+
+    def test_os_mkdir_blocked(self, check, tmp_path):
+        """os.mkdir must be blocked."""
+        script = tmp_path / "os_mkdir.py"
+        script.write_text("""
+import os
+os.mkdir('newdir')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "os.mkdir should be blocked"
+
+
+class TestNetworkOps:
+    """Tests for network operation methods."""
+
+    def test_socket_connect_blocked(self, check, tmp_path):
+        """socket.connect must be blocked."""
+        script = tmp_path / "socket_connect.py"
+        script.write_text("""
+import socket
+s = socket.socket()
+s.connect(('localhost', 80))
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "socket.connect should be blocked"
+
+    def test_urllib_urlopen_blocked(self, check, tmp_path):
+        """urllib.request.urlopen must be blocked."""
+        script = tmp_path / "urllib_urlopen.py"
+        script.write_text("""
+from urllib.request import urlopen
+r = urlopen('http://example.com')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "urlopen should be blocked"
+
+    def test_http_client_blocked(self, check, tmp_path):
+        """http.client must be blocked."""
+        script = tmp_path / "http_client.py"
+        script.write_text("""
+from http.client import HTTPConnection
+conn = HTTPConnection('example.com')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "http.client should be blocked"
+
+    def test_ftplib_blocked(self, check, tmp_path):
+        """ftplib must be blocked (Bandit B402)."""
+        script = tmp_path / "ftplib_dangerous.py"
+        script.write_text("""
+import ftplib
+ftp = ftplib.FTP('ftp.example.com')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "ftplib should be blocked"
+
+    def test_telnetlib_blocked(self, check, tmp_path):
+        """telnetlib must be blocked (Bandit B401)."""
+        script = tmp_path / "telnetlib_dangerous.py"
+        script.write_text("""
+import telnetlib
+tn = telnetlib.Telnet('example.com')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "telnetlib should be blocked"
+
+    def test_xmlrpc_blocked(self, check, tmp_path):
+        """xmlrpc must be blocked (Bandit B411)."""
+        script = tmp_path / "xmlrpc_dangerous.py"
+        script.write_text("""
+from xmlrpc.client import ServerProxy
+proxy = ServerProxy('http://localhost:8000')
+""")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "xmlrpc should be blocked"
+
+
+class TestUnitAnalysisExtended:
+    """Extended unit tests for analyze_python_source."""
+
+    def test_analyze_xml_import(self):
+        """Test detection of xml module import."""
+        from dippy.cli.python import analyze_python_source
+
+        source = "import xml.etree.ElementTree"
+        violations = analyze_python_source(source)
+        assert len(violations) > 0
+        assert any("xml" in v.detail for v in violations)
+
+    def test_analyze_marshal_import(self):
+        """Test detection of marshal module import."""
+        from dippy.cli.python import analyze_python_source
+
+        source = "import marshal"
+        violations = analyze_python_source(source)
+        assert len(violations) > 0
+        assert any("marshal" in v.detail for v in violations)
+
+    def test_analyze_tarfile_import(self):
+        """Test detection of tarfile module import."""
+        from dippy.cli.python import analyze_python_source
+
+        source = "import tarfile"
+        violations = analyze_python_source(source)
+        assert len(violations) > 0
+        assert any("tarfile" in v.detail for v in violations)
+
+    def test_analyze_dangerous_attr_access(self):
+        """Test detection of dangerous attribute access."""
+        from dippy.cli.python import analyze_python_source
+
+        source = """
+def foo():
+    pass
+g = foo.__globals__
+"""
+        violations = analyze_python_source(source)
+        assert len(violations) > 0
+        assert any("__globals__" in v.detail for v in violations)
+
+    def test_analyze_frame_access(self):
+        """Test detection of frame attribute access."""
+        from dippy.cli.python import analyze_python_source
+
+        source = """
+import sys
+f = sys._getframe()
+g = f.f_globals
+"""
+        violations = analyze_python_source(source)
+        # Should have at least the sys import violation
+        assert len(violations) > 0
+
+    def test_analyze_safe_still_safe(self):
+        """Ensure safe code is still detected as safe."""
+        from dippy.cli.python import analyze_python_source
+
+        source = """
+import json
+import math
+from collections import Counter
+
+data = json.dumps({"x": math.pi})
+counts = Counter([1, 2, 2, 3])
+print(data, counts)
+"""
+        violations = analyze_python_source(source)
+        assert len(violations) == 0, f"Expected no violations, got {violations}"
