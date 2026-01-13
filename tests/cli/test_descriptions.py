@@ -37,22 +37,32 @@ class TestCurlDescriptions:
             ("curl -X DELETE https://example.com", "DELETE"),
             ("curl --request PUT https://example.com", "PUT"),
             # Mail
-            ("curl --mail-from sender@example.com smtp://mail.example.com", "--mail-from"),
-            ("curl --mail-rcpt rcpt@example.com smtp://mail.example.com", "--mail-rcpt"),
+            (
+                "curl --mail-from sender@example.com smtp://mail.example.com",
+                "--mail-from",
+            ),
+            (
+                "curl --mail-rcpt rcpt@example.com smtp://mail.example.com",
+                "--mail-rcpt",
+            ),
             # Config file
             ("curl -K config.txt", "-K"),
             ("curl --config config.txt", "--config"),
             # FTP write commands
-            ("curl --ftp-create-dirs ftp://example.com/dir/file.txt", "--ftp-create-dirs"),
+            (
+                "curl --ftp-create-dirs ftp://example.com/dir/file.txt",
+                "--ftp-create-dirs",
+            ),
         ],
     )
-    def test_curl_description_contains_trigger(self, check, command: str, should_contain: str):
+    def test_curl_description_contains_trigger(
+        self, check, command: str, should_contain: str
+    ):
         """Curl's reason should mention the flag/method that triggered the block."""
         result = check(command)
         reason = get_reason(result)
         assert should_contain in reason, (
-            f"Expected '{should_contain}' in reason for: {command}\n"
-            f"Got: '{reason}'"
+            f"Expected '{should_contain}' in reason for: {command}\nGot: '{reason}'"
         )
 
 
@@ -80,13 +90,14 @@ class TestTarDescriptions:
             ("tar --delete -f archive.tar file.txt", "delete"),
         ],
     )
-    def test_tar_description_contains_operation(self, check, command: str, should_contain: str):
+    def test_tar_description_contains_operation(
+        self, check, command: str, should_contain: str
+    ):
         """Tar's reason should mention the operation (create/extract/etc)."""
         result = check(command)
         reason = get_reason(result)
         assert should_contain in reason.lower(), (
-            f"Expected '{should_contain}' in reason for: {command}\n"
-            f"Got: '{reason}'"
+            f"Expected '{should_contain}' in reason for: {command}\nGot: '{reason}'"
         )
 
 
@@ -107,13 +118,14 @@ class TestAwkDescriptions:
             ("awk '{print | \"mail user@example.com\"}' file.txt", "pipe"),
         ],
     )
-    def test_awk_description_contains_trigger(self, check, command: str, should_contain: str):
+    def test_awk_description_contains_trigger(
+        self, check, command: str, should_contain: str
+    ):
         """Awk's reason should mention system()/redirect/pipe when relevant."""
         result = check(command)
         reason = get_reason(result)
         assert should_contain in reason.lower(), (
-            f"Expected '{should_contain}' in reason for: {command}\n"
-            f"Got: '{reason}'"
+            f"Expected '{should_contain}' in reason for: {command}\nGot: '{reason}'"
         )
 
 
@@ -128,11 +140,12 @@ class TestWgetDescriptions:
             ("wget -r https://example.com", "download"),
         ],
     )
-    def test_wget_description_contains_download(self, check, command: str, should_contain: str):
+    def test_wget_description_contains_download(
+        self, check, command: str, should_contain: str
+    ):
         """Wget's reason should mention 'download'."""
         result = check(command)
         reason = get_reason(result)
         assert should_contain in reason.lower(), (
-            f"Expected '{should_contain}' in reason for: {command}\n"
-            f"Got: '{reason}'"
+            f"Expected '{should_contain}' in reason for: {command}\nGot: '{reason}'"
         )
