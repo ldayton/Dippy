@@ -138,19 +138,12 @@ deny-redirect /etc/** "System config is off-limits"
 # -----------------------------------------------------------------------------
 
 # Boolean flags (no value)
-set sticky-session
-set verbose
 set log-full
-set warn-banner
 
 # Snake_case also works
-set sticky_session
 set log_full
-set warn_banner
 
 # Value settings
-set suggest-after 3
-set suggest-after 0
 set default allow
 set default ask
 

@@ -47,13 +47,9 @@ class Config:
     redirect_rules: list[Rule] = field(default_factory=list)
     """Redirect rules in load order."""
 
-    sticky_session: bool = False
-    suggest_after: int | None = None
     default: str = "ask"  # 'allow' | 'ask'
-    verbose: bool = False
     log: Path | None = None  # None = no logging
     log_full: bool = False  # log full command (requires log path)
-    warn_banner: bool = False
 
 
 @dataclass
@@ -107,17 +103,9 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
         rules=base.rules + overlay.rules,
         redirect_rules=base.redirect_rules + overlay.redirect_rules,
         # Settings: overlay wins if set
-        sticky_session=overlay.sticky_session
-        if overlay.sticky_session
-        else base.sticky_session,
-        suggest_after=overlay.suggest_after
-        if overlay.suggest_after is not None
-        else base.suggest_after,
         default=overlay.default if overlay.default != "ask" else base.default,
-        verbose=overlay.verbose if overlay.verbose else base.verbose,
         log=overlay.log if overlay.log is not None else base.log,
         log_full=overlay.log_full if overlay.log_full else base.log_full,
-        warn_banner=overlay.warn_banner if overlay.warn_banner else base.warn_banner,
     )
 
 
@@ -249,13 +237,9 @@ def parse_config(text: str, source: str | None = None) -> Config:
     return Config(
         rules=rules,
         redirect_rules=redirect_rules,
-        sticky_session=settings.get("sticky_session", False),
-        suggest_after=settings.get("suggest_after"),
         default=settings.get("default", "ask"),
-        verbose=settings.get("verbose", False),
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
-        warn_banner=settings.get("warn_banner", False),
     )
 
 
@@ -322,26 +306,10 @@ def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> N
     key_normalized = key.replace("-", "_")
 
     # Boolean settings (no value required)
-    if key_normalized in (
-        "sticky_session",
-        "verbose",
-        "log_full",
-        "warn_banner",
-    ):
+    if key_normalized in ("log_full",):
         if value is not None:
             raise ValueError(f"'{key}' takes no value")
         settings[key_normalized] = True
-
-    # Integer settings
-    elif key_normalized == "suggest_after":
-        if value is None:
-            raise ValueError("'suggest-after' requires a number")
-        try:
-            settings[key_normalized] = int(value)
-        except ValueError:
-            raise ValueError(
-                f"'suggest-after' requires a number, got '{value}'"
-            ) from None
 
     # Choice settings
     elif key_normalized == "default":

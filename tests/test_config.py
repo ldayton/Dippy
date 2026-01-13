@@ -90,15 +90,6 @@ class TestMergeConfigs:
         merged = _merge_configs(base, overlay)
         assert len(merged.redirect_rules) == 2
 
-    def test_settings_override(self):
-        base = Config(sticky_session=True, suggest_after=5, verbose=True)
-        overlay = Config(suggest_after=10, warn_banner=True)
-        merged = _merge_configs(base, overlay)
-        assert merged.sticky_session is True
-        assert merged.suggest_after == 10
-        assert merged.verbose is True
-        assert merged.warn_banner is True
-
     def test_default_only_overrides_if_changed(self):
         base = Config(default="allow")
         overlay = Config(default="ask")  # ask is the default, shouldn't override
@@ -117,8 +108,8 @@ class TestMergeConfigs:
 
     def test_triple_merge_preserves_order(self):
         user = Config(rules=[Rule("allow", "git *")], default="allow")
-        project = Config(rules=[Rule("ask", "git push *")], verbose=True)
-        env = Config(rules=[Rule("allow", "git push --dry-run *")], warn_banner=True)
+        project = Config(rules=[Rule("ask", "git push *")])
+        env = Config(rules=[Rule("allow", "git push --dry-run *")])
 
         merged = _merge_configs(_merge_configs(user, project), env)
         assert len(merged.rules) == 3
@@ -126,8 +117,6 @@ class TestMergeConfigs:
         assert merged.rules[1].pattern == "git push *"
         assert merged.rules[2].pattern == "git push --dry-run *"
         assert merged.default == "allow"
-        assert merged.verbose is True
-        assert merged.warn_banner is True
 
 
 class TestTagRules:
@@ -334,16 +323,15 @@ class TestScopeIsolation:
 
         def mock_parse(text, source=None):
             if "project" in text:
-                return Config(verbose=True, warn_banner=False)
+                return Config(log=Path("/project/log"))
             else:
-                return Config(warn_banner=True)
+                return Config(log=Path("/env/log"))
 
         monkeypatch.setattr("dippy.core.config.parse_config", mock_parse)
 
         config = load_config(proj)
 
-        assert config.verbose is True
-        assert config.warn_banner is True
+        assert config.log == Path("/env/log")
 
 
 class TestLogging:
@@ -435,7 +423,7 @@ class TestParseConfig:
 
     def test_unknown_setting_skipped(self):
         cfg = parse_config("set yolo")
-        assert cfg.sticky_session is False  # no settings applied
+        assert cfg.default == "ask"  # no settings applied
 
     def test_message_extraction_space_before_quote(self):
         # Space before quote = message
@@ -510,16 +498,8 @@ class TestParseConfig:
 
     def test_settings_invalid_skipped(self):
         # Boolean with value = skipped
-        cfg = parse_config("set verbose true")
-        assert cfg.verbose is False
-
-        # Integer without value = skipped
-        cfg = parse_config("set suggest-after")
-        assert cfg.suggest_after is None
-
-        # Integer with non-number = skipped
-        cfg = parse_config("set suggest-after foo")
-        assert cfg.suggest_after is None
+        cfg = parse_config("set log-full true")
+        assert cfg.log_full is False
 
         # default with bad value = skipped
         cfg = parse_config("set default yolo")
@@ -537,8 +517,6 @@ ask rm -rf /* "are you sure?"
 allow-redirect /tmp/**
 ask-redirect .env* "don't write secrets"
 
-set sticky-session
-set suggest-after 5
 set default allow
 set log ~/.dippy/audit.log
 """)
@@ -553,8 +531,6 @@ set log ~/.dippy/audit.log
         assert cfg.redirect_rules[0].pattern == "/tmp/**"
         assert cfg.redirect_rules[1].message == "don't write secrets"
 
-        assert cfg.sticky_session is True
-        assert cfg.suggest_after == 5
         assert cfg.default == "allow"
         assert cfg.log == Path.home() / ".dippy" / "audit.log"
 

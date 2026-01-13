@@ -17,6 +17,7 @@ Dippy's config system extends the built-in approval rules. Line-based, glob patt
 | ----------------- | ---------------- |
 | `~/.dippy/config` | User global      |
 | `.dippy`          | Project-specific |
+| `$DIPPY_CONFIG`   | Env override     |
 
 **Load order** (last match wins):
 1. `~/.dippy/config` - user defaults
@@ -28,8 +29,6 @@ Project config is found by walking up from cwd to filesystem root, stopping at t
 ## Syntax
 
 ```
-# dippy: v1                    # version pragma (must be first line if present)
-
 allow <glob>                   # auto-approve matching commands
 ask <glob>                     # always prompt user for matching commands
 ask <glob> "message"           # prompt with message shown to AI
@@ -44,8 +43,6 @@ deny-redirect <glob> "message" # reject with message shown to AI
 
 set <key> [value]              # settings
 ```
-
-**Version pragma:** `# dippy: v1` as the first line declares the config version. If missing, defaults to latest. If present but unsupported, Dippy errors.
 
 **Escaping in patterns:** Use `[*]`, `[?]`, `[[]` to match literal glob characters.
 
@@ -207,20 +204,16 @@ Note: `**` is only supported in redirect rules. Command rules use standard fnmat
 
 **Boolean flags** (no value):
 ```
-set sticky-session       # remember approvals for session
-set verbose              # show reason on auto-approve
 set log-full             # log full commands (requires log path set)
-set warn-banner          # visual warning for prompts
 ```
 
 **Value settings:**
 ```
-set suggest-after 3      # suggest config after N approvals (integer)
 set default allow        # YOLO mode: 'allow' or 'ask' (default: ask)
 set log ~/.dippy/audit.log  # enable logging to path
 ```
 
-Settings use kebab-case (`sticky-session`) or snake_case (`sticky_session`) interchangeably.
+Settings use kebab-case or snake_case interchangeably.
 
 ## Logging
 
@@ -253,8 +246,6 @@ allow-redirect /tmp/*
 allow-redirect .cache/*
 deny-redirect .env* "Never write secrets"
 
-set sticky-session
-set suggest-after 3
 ```
 
 ```
@@ -315,7 +306,7 @@ To enable file operation rules, update your hook matcher in `settings.json`:
 "matcher": "Bash|Write|Edit|MultiEdit"
 ```
 
-**Trade-off:** This replaces Claude's "Allow editing this session" UI with Dippy's `sticky-session`. There's no way for hooks to defer to Claude's native session memory.
+**Trade-off:** This replaces Claude's "Allow editing this session" UI. There's no way for hooks to defer to Claude's native session memory.
 
 ## Proposal: MCP Tool Rules
 

@@ -57,7 +57,36 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively):
 
 ---
 
+## Configuration
+
+⚠️ Configuration is still evolving; syntax and behaviors may change.
+
+Dippy reads config from (lowest to highest priority):
+
+- `~/.dippy/config` (user global)
+- `.dippy` in the project tree (walks up from cwd)
+- `$DIPPY_CONFIG` (env override)
+
+Sample config:
+
+```
+set log ~/.dippy/audit.log             # write audit log to this path
+set log-full                           # include full command in audit log
+
+deny docker *                          # block all docker by default
+allow docker run nginx:*               # allow nginx runs
+deny docker run *--privileged*         # still ban privileged mode, last matching rule wins
+
+deny python "Use uv run python, which runs in project environment"  # remind Claude to use uv
+
+allow-redirect /tmp/**                 # allow temp file writes
+deny-redirect **/.env* "Never write secrets, as me to do it"        # block env writes
+```
+
+Configuration reference: `docs/config-v1.md`
+
+---
+
 ## Uninstall
 
 Remove the hook entry from `~/.claude/settings.json`.
-
