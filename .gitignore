@@ -36,7 +36,6 @@ tests/local/
 # OS files
 .DS_Store
 Thumbs.db
-.dippy
 
 # VS Code extension build artifacts
 *.vsix

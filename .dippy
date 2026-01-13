@@ -1,0 +1,8 @@
+# Dippy config for Dippy
+
+#---- Python ----#
+allow rm -rf /**/__pycache__
+deny python3 * "Use `uv run python`"
+deny python * "Use `uv run python`"
+deny uv run ruff * "Use `just fmt --fix and just lint --fix`"
+allow uv run pytest *
