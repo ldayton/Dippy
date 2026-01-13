@@ -100,9 +100,10 @@ SAFE_MODULES = frozenset(
 )
 
 # Modules that are NEVER safe
+# Sources: Bandit blacklists, RestrictedPython, CVE research
 DANGEROUS_MODULES = frozenset(
     {
-        # Code execution
+        # === Code execution ===
         "subprocess",
         "os",
         "sys",  # sys.exit, sys.modules manipulation
@@ -112,7 +113,10 @@ DANGEROUS_MODULES = frozenset(
         "py_compile",
         "importlib",
         "pkgutil",
-        # File I/O
+        # Legacy process modules (Bandit)
+        "popen2",
+        "commands",
+        # === File I/O ===
         "pathlib",  # Can read/write files
         "io",
         "fileinput",
@@ -122,11 +126,14 @@ DANGEROUS_MODULES = frozenset(
         "codecs",  # codecs.open() can read/write files
         "linecache",  # Reads source files
         "inspect",  # getsource/getsourcefile read files
+        "configparser",  # Can read files directly
         # Compression with file I/O
         "gzip",  # gzip.open() reads/writes files
         "bz2",  # bz2.open() reads/writes files
         "lzma",  # lzma.open() reads/writes files
-        # Network
+        "tarfile",  # Can extract files
+        "zipfile",  # Can extract files
+        # === Network ===
         "socket",
         "ssl",
         "http",
@@ -135,16 +142,28 @@ DANGEROUS_MODULES = frozenset(
         "urllib",
         "urllib.request",
         "urllib.parse",
-        "ftplib",
+        "ftplib",  # Bandit B402: insecure cleartext
         "smtplib",
         "poplib",
         "imaplib",
         "nntplib",
-        "telnetlib",
+        "telnetlib",  # Bandit B401: insecure cleartext
         "socketserver",
-        "xmlrpc",
+        "xmlrpc",  # Bandit B411: XML vulnerabilities
         "ipaddress",
-        # Process/threading (can affect system state)
+        # === XML parsing (XXE vulnerabilities - Bandit B405-B410) ===
+        "xml",
+        "xml.etree",
+        "xml.etree.ElementTree",
+        "xml.etree.cElementTree",
+        "xml.sax",
+        "xml.dom",
+        "xml.dom.minidom",
+        "xml.dom.pulldom",
+        "xml.dom.expatbuilder",
+        "xml.parsers",
+        "xml.parsers.expat",
+        # === Process/threading ===
         "multiprocessing",
         "threading",
         "concurrent",
@@ -152,7 +171,7 @@ DANGEROUS_MODULES = frozenset(
         "asyncio",
         "signal",
         "mmap",
-        # System interaction
+        # === System interaction ===
         "ctypes",
         "platform",
         "sysconfig",
@@ -165,16 +184,21 @@ DANGEROUS_MODULES = frozenset(
         "pwd",
         "spwd",
         "crypt",
-        # Persistence
+        # === Deserialization (Bandit B301-B302, B403) ===
         "pickle",
+        "cPickle",
+        "dill",  # Bandit: pickle variant
         "shelve",
+        "marshal",  # Bandit B302
+        "jsonpickle",  # Bandit: pickle via JSON
+        # === Databases ===
         "dbm",
         "sqlite3",
-        # Code manipulation
+        # === Code manipulation ===
         "code",
         "codeop",
         "gc",  # Can resurrect objects
-        # Other dangerous
+        # === Other dangerous ===
         "webbrowser",
         "cmd",
         "shlex",
@@ -183,6 +207,10 @@ DANGEROUS_MODULES = frozenset(
         "argparse",  # Can sys.exit
         "logging",  # Can write to files
         "atexit",
+        # CGI (Bandit B412: httpoxy vulnerabilities)
+        "cgi",
+        "cgitb",
+        "wsgiref.handlers",
     }
 )
 
@@ -279,10 +307,11 @@ SAFE_BUILTINS = frozenset(
     }
 )
 
-# Attributes that indicate dangerous operations
+# Attributes/methods that indicate dangerous operations
+# Sources: Bandit, RestrictedPython INSPECT_ATTRIBUTES
 DANGEROUS_ATTRS = frozenset(
     {
-        # File operations
+        # === File operations ===
         "write",
         "writelines",
         "truncate",
@@ -290,8 +319,13 @@ DANGEROUS_ATTRS = frozenset(
         "close",
         "read",
         "readline",
-        "readlines",  # Could be on file objects
-        # OS operations
+        "readlines",
+        "read_text",
+        "read_bytes",
+        "write_text",
+        "write_bytes",
+        "open",  # pathlib.Path.open, gzip.open, etc.
+        # === OS/Process operations ===
         "remove",
         "unlink",
         "rmdir",
@@ -302,20 +336,51 @@ DANGEROUS_ATTRS = frozenset(
         "replace",
         "chmod",
         "chown",
+        "chroot",
         "link",
         "symlink",
         "system",
         "popen",
+        "popen2",
+        "popen3",
+        "popen4",
         "spawn",
+        "spawnl",
+        "spawnle",
+        "spawnlp",
+        "spawnlpe",
+        "spawnv",
+        "spawnve",
+        "spawnvp",
+        "spawnvpe",
+        "startfile",
         "fork",
+        "forkpty",
         "exec",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
         "execv",
         "execve",
+        "execvp",
+        "execvpe",
         "kill",
+        "killpg",
         "terminate",
         "wait",
         "waitpid",
-        # Network
+        "wait3",
+        "wait4",
+        # Subprocess (Bandit B602-B607)
+        "call",
+        "check_call",
+        "check_output",
+        "run",
+        "Popen",
+        "getoutput",
+        "getstatusoutput",
+        # === Network ===
         "connect",
         "bind",
         "listen",
@@ -323,12 +388,19 @@ DANGEROUS_ATTRS = frozenset(
         "send",
         "sendall",
         "sendto",
+        "sendmsg",
         "recv",
         "recvfrom",
+        "recvmsg",
         "request",
         "urlopen",
         "urlretrieve",
-        # Reflection escape hatches
+        # === Deserialization ===
+        # Note: load/loads/decode are too generic (json.loads is safe)
+        # Dangerous deserializers (pickle, marshal) are caught by import checks
+        "Unpickler",
+        # === Reflection escape hatches (RestrictedPython) ===
+        # These allow sandbox escapes via introspection chains
         "__dict__",
         "__class__",
         "__bases__",
@@ -341,10 +413,29 @@ DANGEROUS_ATTRS = frozenset(
         "__reduce_ex__",
         "__getstate__",
         "__setstate__",
-        # Module manipulation
+        # Frame/traceback objects (RestrictedPython INSPECT_ATTRIBUTES)
+        "tb_frame",
+        "tb_next",
+        "f_back",
+        "f_builtins",
+        "f_code",
+        "f_globals",
+        "f_locals",
+        "f_trace",
+        # Code objects
+        "co_code",
+        # Generator/coroutine internals
+        "gi_frame",
+        "gi_code",
+        "gi_yieldfrom",
+        "cr_await",
+        "cr_frame",
+        "cr_code",
+        # === Module manipulation ===
         "__import__",
         "__loader__",
         "__spec__",
+        "__builtins__",
     }
 )
 
