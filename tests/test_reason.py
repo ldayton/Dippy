@@ -137,3 +137,14 @@ class TestAskReasons:
     def test_mixed_pipeline(self, check):
         # cat is safe, tee writes
         assert get_reason(check("cat file | tee output")) == "tee"
+
+
+class TestCompoundCommands:
+    """Verify compound commands (while, for, if) have non-empty reasons."""
+
+    def test_while_in_pipeline(self, check):
+        """Pipeline with while loop should have non-empty reason."""
+        result = check("head -5 file.txt | while read f; do echo $f; done")
+        reason = get_reason(result)
+        assert reason, "reason should not be empty"
+        assert reason != ", head"  # not malformed
