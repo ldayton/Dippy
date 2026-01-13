@@ -37,15 +37,22 @@ def check():
 
 @pytest.fixture
 def check_single():
-    """Return a _check_single_command wrapper with default config and cwd."""
-    from dippy.dippy import _check_single_command
+    """Return an analyze wrapper that returns (decision, reason) tuple."""
+    from dippy.core.analyzer import analyze
 
     def _check(command: str, config: Config | None = None, cwd: Path | None = None):
         if config is None:
             config = Config()
         if cwd is None:
             cwd = Path.cwd()
-        return _check_single_command(command, config, cwd)
+        result = analyze(command, config, cwd)
+        # Map action to old decision format
+        decision = (
+            "approve"
+            if result.action == "allow"
+            else ("deny" if result.action == "deny" else None)
+        )
+        return (decision, result.reason)
 
     return _check
 
