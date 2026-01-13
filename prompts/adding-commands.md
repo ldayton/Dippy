@@ -28,7 +28,7 @@ git checkout -b add-<command>-support
 
 ### 2. Write Tests First
 
-Create `tests/cli/test_<command>.py`:
+For handlers, create `tests/cli/test_<command>.py`. For SIMPLE_SAFE commands, add to `tests/test_simple.py`.
 
 ```python
 """Test cases for <command>."""
@@ -45,10 +45,6 @@ TESTS = [
     ("command --delete", False),
 ]
 
-@pytest.fixture
-def check():
-    from dippy.dippy import check_command
-    return check_command
 
 @pytest.mark.parametrize("command,expected", TESTS)
 def test_command(check, command: str, expected: bool):
@@ -56,8 +52,10 @@ def test_command(check, command: str, expected: bool):
     if expected:
         assert is_approved(result), f"Expected approve: {command}"
     else:
-        assert needs_confirmation(result), f"Expected confirmation: {command}"
+        assert needs_confirmation(result), f"Expected confirm: {command}"
 ```
+
+Note: The `check` fixture is provided by `conftest.py` - don't redefine it.
 
 Categories to cover:
 - **Safe operations**: Listing, describing, querying, local inspection
@@ -84,33 +82,35 @@ SIMPLE_SAFE = frozenset({
 })
 ```
 
+**SIMPLE_SAFE commands do NOT get handler files.** Add tests to `tests/test_simple.py` in the appropriate category (e.g., `TestFileViewing`, `TestShellUtilities`).
+
 **Option B: Create a Handler** (for commands with complex safety logic)
 
 Create `src/dippy/cli/<command>.py`:
 
 ```python
-"""
-<Command> handler for Dippy.
+"""<Command> handler for Dippy.
 
 <Brief description of what makes commands safe/unsafe>
 """
 
-# Actions that only read data
-SAFE_ACTIONS = frozenset({
-    "list", "show", "get", "describe",
-})
+from dippy.cli import Classification
+
+COMMANDS = ["<command>"]
+
+SAFE_ACTIONS = frozenset({"list", "show", "get", "describe"})
 
 
-def check(tokens: list[str]) -> bool:
-    """Check if <command> is safe.
+def classify(tokens: list[str]) -> Classification:
+    """Classify <command> for approval."""
+    if not tokens:
+        return Classification("ask", description="<command>")
 
-    Returns True to approve, False to ask user.
-    """
-    if len(tokens) < 2:
-        return False
+    action = tokens[1] if len(tokens) > 1 else None
+    if action in SAFE_ACTIONS:
+        return Classification("approve", description=f"<command> {action}")
 
-    action = tokens[1]
-    return action in SAFE_ACTIONS
+    return Classification("ask", description="<command>")
 ```
 
 ### 5. Run Tests Until All Pass
@@ -138,6 +138,8 @@ This runs all tests on all Python versions plus lint and format checks. Do not p
 
 ## Handler Patterns
 
+All patterns below assume `from dippy.cli import Classification` is imported.
+
 ### Simple Action-Based
 
 For CLIs with flat subcommand structure (e.g., `git`, `docker`):
@@ -146,9 +148,11 @@ For CLIs with flat subcommand structure (e.g., `git`, `docker`):
 SAFE_ACTIONS = frozenset({"status", "list", "show"})
 
 
-def check(tokens: list[str]) -> bool:
+def classify(tokens: list[str]) -> Classification:
     action = tokens[1] if len(tokens) > 1 else None
-    return action in SAFE_ACTIONS
+    if action in SAFE_ACTIONS:
+        return Classification("approve", description=f"cmd {action}")
+    return Classification("ask", description="cmd")
 ```
 
 ### Nested Subcommands
@@ -156,12 +160,14 @@ def check(tokens: list[str]) -> bool:
 For CLIs with nested structure (e.g., `aws s3 ls`, `kubectl get pods`):
 
 ```python
-def check(tokens: list[str]) -> bool:
+def classify(tokens: list[str]) -> Classification:
     if len(tokens) < 3:
-        return False
+        return Classification("ask", description="cmd")
 
     action = tokens[2]
-    return action in {"list", "describe", "get"}
+    if action in {"list", "describe", "get"}:
+        return Classification("approve", description=f"cmd {tokens[1]} {action}")
+    return Classification("ask", description=f"cmd {tokens[1]}")
 ```
 
 ### Flag-Dependent Safety
@@ -169,25 +175,24 @@ def check(tokens: list[str]) -> bool:
 When flags determine safety (e.g., `git apply --check`):
 
 ```python
-def check(tokens: list[str]) -> bool:
-    return "--check" in tokens or "--dry-run" in tokens
+def classify(tokens: list[str]) -> Classification:
+    if "--check" in tokens or "--dry-run" in tokens:
+        return Classification("approve", description="cmd --dry-run")
+    return Classification("ask", description="cmd")
 ```
 
 ### Commands That Wrap Other Commands
 
-For wrappers like `xargs`, `env`, `time`:
+For wrappers like `xargs`, `env`, use delegation:
 
 ```python
-def check(tokens: list[str]) -> bool:
-    # Skip wrapper flags to find inner command
+def classify(tokens: list[str]) -> Classification:
     inner_cmd = extract_inner_command(tokens)
     if not inner_cmd:
-        return False
+        return Classification("ask", description="wrapper")
 
-    # Check the inner command
-    from dippy.dippy import _check_single_command
-    decision, _ = _check_single_command(inner_cmd)
-    return decision == "approve"
+    # Delegate to inner command classification
+    return Classification("delegate", inner_command=inner_cmd)
 ```
 
 ## Safety Principles

@@ -18,6 +18,7 @@ SIMPLE_SAFE = frozenset(
         "more",
         "bat",
         "tac",
+        "od",
         # Directory listing
         "ls",
         "ll",
@@ -126,6 +127,10 @@ SIMPLE_SAFE = frozenset(
         "isort",
         "flake8",
         "pre-commit",
+        # Shell utilities (no-ops / safe)
+        "true",
+        "false",
+        "sleep",
     }
 )
 

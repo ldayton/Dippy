@@ -14,8 +14,8 @@ First, find documentation for the tool. You need at least one source to proceed:
 
 **Check tldr:**
 ```bash
-ls ~/source/tldr/pages/*/<tool>*.md
-cat ~/source/tldr/pages/*/<tool>.md
+ls ~/tldr/pages/*/<tool>*.md
+cat ~/tldr/pages/*/<tool>.md
 ```
 
 **Check local CLI docs:**
@@ -93,9 +93,9 @@ Repeat until all tests pass.
 
 ### 6. Verify Full Suite
 
-Run all Python versions before committing:
+Run all checks before committing:
 ```bash
-just test-all
+just check
 ```
 
 ## Output
@@ -108,7 +108,7 @@ just test-all
 
 For `brew`:
 
-1. Check `~/source/tldr/pages/common/brew.md` and `brew --help`
+1. Check `~/tldr/pages/common/brew.md` and `brew --help`
 2. Discover subcommands: `install`, `uninstall`, `upgrade`, `list`, `search`, `info`, `update`, `cleanup`, `doctor`, `tap`, `untap`, `services`, `bundle`, etc.
 3. For each, check `brew <cmd> --help` to find actions
 4. Review `tests/cli/test_brew.py` for gaps

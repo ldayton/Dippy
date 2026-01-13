@@ -32,6 +32,9 @@ class TestFileViewing:
             "less file.txt",
             "more file.txt",
             "bat file.txt",
+            "od file.bin",
+            "od -x file.bin",
+            "od -A x -t x1z file.bin",
         ],
     )
     def test_file_viewing(self, check, cmd):
@@ -195,6 +198,25 @@ class TestDevelopmentTools:
     )
     def test_development_tools(self, check, cmd):
         """Development tool commands should be approved."""
+        result = check(cmd)
+        assert is_approved(result)
+
+
+class TestShellUtilities:
+    """Tests for shell utility commands."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "true",
+            "false",
+            "sleep 1",
+            "sleep 0.5",
+            "sleep 1m",
+        ],
+    )
+    def test_shell_utilities(self, check, cmd):
+        """Shell utility commands should be approved."""
         result = check(cmd)
         assert is_approved(result)
 
