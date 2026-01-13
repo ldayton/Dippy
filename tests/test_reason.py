@@ -146,5 +146,4 @@ class TestCompoundCommands:
         """Pipeline with while loop should have non-empty reason."""
         result = check("head -5 file.txt | while read f; do echo $f; done")
         reason = get_reason(result)
-        assert reason, "reason should not be empty"
-        assert reason != ", head"  # not malformed
+        assert reason == "while"
