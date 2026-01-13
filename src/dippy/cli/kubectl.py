@@ -62,13 +62,6 @@ UNSAFE_ACTIONS = frozenset(
     }
 )
 
-# Actions where extra context helps (name isn't self-explanatory)
-UNCLEAR_ACTION_CONTEXT = {
-    "cordon": "disable scheduling",
-    "uncordon": "enable scheduling",
-    "drain": "evict pods",
-    "taint": "modify node taints",
-}
 
 
 # Safe subcommands for multi-level commands
@@ -161,10 +154,5 @@ def classify(tokens: list[str]) -> Classification:
     # Simple safe actions
     if action in SAFE_ACTIONS:
         return Classification("approve", description=desc)
-
-    # Add context only for unclear actions
-    context = UNCLEAR_ACTION_CONTEXT.get(action)
-    if context:
-        return Classification("ask", description=f"{desc} ({context})")
 
     return Classification("ask", description=desc)
