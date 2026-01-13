@@ -176,7 +176,8 @@ def _reconstruct_command(node) -> str:
             target = redirect.target.value if redirect.target else ""
             parts.append(f"{redirect.op}{target}")
         return " ".join(parts)
-    return ""
+    # For compound commands (while, for, if, case, etc.), return the kind
+    return node.kind
 
 
 def split_pipeline(command: str) -> list[str]:
@@ -190,7 +191,7 @@ def split_pipeline(command: str) -> list[str]:
                 for cmd in node.commands:
                     commands.append(_reconstruct_command(cmd))
             elif node.kind == "command":
-                commands.append(_reconstruct_command(cmd))
+                commands.append(_reconstruct_command(node))
 
         return commands if commands else [command]
     except Exception:
