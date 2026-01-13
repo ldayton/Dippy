@@ -147,3 +147,9 @@ class TestCompoundCommands:
         result = check("head -5 file.txt | while read f; do echo $f; done")
         reason = get_reason(result)
         assert reason == "while"
+
+    def test_multistatement_after_pipeline(self, check):
+        """Standalone commands after pipeline should not repeat pipeline command."""
+        cmd = "cat file | tee out\nrm foo"
+        reason = get_reason(check(cmd))
+        assert reason == "tee, rm"
