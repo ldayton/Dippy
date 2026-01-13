@@ -10,7 +10,7 @@ import re
 
 SIMPLE_SAFE = frozenset(
     {
-        # File viewing
+        # === File Content Viewing ===
         "cat",
         "head",
         "tail",
@@ -19,7 +19,7 @@ SIMPLE_SAFE = frozenset(
         "bat",
         "tac",
         "od",
-        # Directory listing
+        # === Directory Listing ===
         "ls",
         "ll",
         "la",
@@ -28,36 +28,29 @@ SIMPLE_SAFE = frozenset(
         "eza",
         "dir",
         "vdir",
-        "lsof",
-        # File info
+        # === File & Disk Information ===
         "stat",
         "file",
         "wc",
         "du",
         "df",
-        # Path utilities
+        # === Path Utilities ===
         "basename",
         "dirname",
         "pwd",
         "cd",
         "readlink",
         "realpath",
-        # Search/filter (read-only)
-        # Note: find and fd have their own handlers due to -exec flags
+        # === Search & Find ===
         "grep",
         "rg",
         "ripgrep",
         "ag",
         "ack",
         "locate",
-        # Text processing (read-only)
-        # Note: sed and sort have their own handlers due to -i/-o flags
-        # Note: awk has its own handler due to -f and output redirects
+        # === Text Processing ===
         "uniq",
         "cut",
-        "jq",
-        "yq",
-        "xq",
         "col",
         "comm",
         "diff",
@@ -70,9 +63,13 @@ SIMPLE_SAFE = frozenset(
         "tr",
         "tsort",
         "unexpand",
-        # Encoding/decoding
+        # === Structured Data (JSON/YAML/XML) ===
+        "jq",
+        "yq",
+        "xq",
+        # === Encoding & Decoding ===
         "base64",
-        # Checksums & hashing
+        # === Checksums & Hashing ===
         "md5sum",
         "sha1sum",
         "sha256sum",
@@ -81,25 +78,27 @@ SIMPLE_SAFE = frozenset(
         "cksum",
         "md5",
         "shasum",
-        # System info
+        # === User & System Identity ===
         "whoami",
         "hostname",
         "uname",
+        "id",
+        # === Date & Time ===
         "date",
         "cal",
         "uptime",
-        "free",
-        "top",
-        "htop",
+        # === Process & Resource Monitoring ===
         "ps",
         "pgrep",
-        "id",
+        "top",
+        "htop",
+        "free",
+        "lsof",
+        # === Environment & Output ===
         "printenv",
         "echo",
         "printf",
-        # Note: journalctl and dmesg have handlers due to modification flags
-        # Network info (read-only)
-        # Note: ip and ifconfig have handlers for modification commands
+        # === Network Diagnostics ===
         "ping",
         "host",
         "dig",
@@ -109,7 +108,7 @@ SIMPLE_SAFE = frozenset(
         "ss",
         "arp",
         "route",
-        # Development tools (read-only)
+        # === Command Lookup & Help ===
         "which",
         "whereis",
         "type",
@@ -118,15 +117,13 @@ SIMPLE_SAFE = frozenset(
         "man",
         "help",
         "info",
-        # Testing and linting (safe operations)
-        # Note: ruff has a handler due to "ruff clean"
-        # Note: pytest has a handler (executes arbitrary code)
+        # === Code Quality & Linting ===
         "mypy",
         "black",
         "isort",
         "flake8",
         "pre-commit",
-        # Shell utilities (no-ops / safe)
+        # === Shell Builtins & Utilities ===
         "true",
         "false",
         "sleep",
