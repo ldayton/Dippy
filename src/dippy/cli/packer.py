@@ -32,12 +32,6 @@ UNSAFE_ACTIONS = frozenset(
     }
 )
 
-# Actions where extra context helps (name isn't self-explanatory)
-UNCLEAR_ACTION_CONTEXT = {
-    "hcl2_upgrade": "convert JSON to HCL2",
-    "init": "download plugins",
-}
-
 # Safe subcommands for plugins
 SAFE_PLUGINS_SUBCOMMANDS = frozenset(
     {
@@ -109,11 +103,6 @@ def classify(tokens: list[str]) -> Classification:
     # Simple safe actions
     if action in SAFE_ACTIONS:
         return Classification("approve", description=desc)
-
-    # Unsafe actions - add context only if unclear
-    context = UNCLEAR_ACTION_CONTEXT.get(action)
-    if context:
-        return Classification("ask", description=f"{desc} ({context})")
 
     return Classification("ask", description=desc)
 
