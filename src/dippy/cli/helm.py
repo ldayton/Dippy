@@ -145,7 +145,9 @@ def classify(tokens: list[str]) -> Classification:
         display_desc = f"{base} {display_action}"
         for t in rest:
             if t == "--dry-run" or t.startswith("--dry-run="):
-                return Classification("approve", description=f"{display_desc} --dry-run")
+                return Classification(
+                    "approve", description=f"{display_desc} --dry-run"
+                )
         return Classification("ask", description=display_desc)
 
     # Nested commands - check subcommand
