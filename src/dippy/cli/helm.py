@@ -50,6 +50,13 @@ UNSAFE_COMMANDS = frozenset(
     }
 )
 
+# Short aliases that need expansion for clarity
+ACTION_ALIASES = {
+    "del": "delete",
+    "un": "uninstall",
+    "fetch": "pull",
+}
+
 # Commands with subcommands that need further inspection
 NESTED_COMMANDS = frozenset({"dependency", "dep", "plugin", "registry", "repo"})
 
@@ -134,10 +141,12 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check for dry-run flag (makes install/upgrade/uninstall/rollback safe)
     if action in {"install", "upgrade", "uninstall", "delete", "del", "un", "rollback"}:
+        display_action = ACTION_ALIASES.get(action, action)
+        display_desc = f"{base} {display_action}"
         for t in rest:
             if t == "--dry-run" or t.startswith("--dry-run="):
-                return Classification("approve", description=f"{desc} --dry-run")
-        return Classification("ask", description=desc)
+                return Classification("approve", description=f"{display_desc} --dry-run")
+        return Classification("ask", description=display_desc)
 
     # Nested commands - check subcommand
     if action in NESTED_COMMANDS:
@@ -158,7 +167,8 @@ def classify(tokens: list[str]) -> Classification:
 
     # Known unsafe commands
     if action in UNSAFE_COMMANDS:
-        return Classification("ask", description=desc)
+        display_action = ACTION_ALIASES.get(action, action)
+        return Classification("ask", description=f"{base} {display_action}")
 
     # Unknown command - require confirmation
     return Classification("ask", description=desc)

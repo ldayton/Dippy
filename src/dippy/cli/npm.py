@@ -143,6 +143,21 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
+# Short aliases that need expansion for clarity
+ACTION_ALIASES = {
+    "i": "install",
+    "rm": "remove",
+    "un": "uninstall",
+    "r": "remove",
+    "x": "exec",
+    "t": "test",
+    "s": "search",
+    "ddp": "dedupe",
+    "rb": "rebuild",
+    "c": "config",
+}
+
+
 def classify(tokens: list[str]) -> Classification:
     """Classify npm/yarn/pnpm command."""
     base = tokens[0] if tokens else "npm"
@@ -151,7 +166,9 @@ def classify(tokens: list[str]) -> Classification:
 
     action = tokens[1]
     rest = tokens[2:] if len(tokens) > 2 else []
-    desc = f"{base} {action}"
+    # Expand short aliases for clarity in description
+    display_action = ACTION_ALIASES.get(action, action)
+    desc = f"{base} {display_action}"
 
     # Handle "npm run" without arguments (just lists scripts)
     if action == "run" and not rest:

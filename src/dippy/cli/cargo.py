@@ -37,6 +37,13 @@ SAFE_ACTIONS = frozenset(
     }
 )
 
+# Short aliases that need expansion for clarity
+ACTION_ALIASES = {
+    "r": "run",
+    "b": "build",
+    "t": "test",
+}
+
 
 def classify(tokens: list[str]) -> Classification:
     """Classify cargo command."""
@@ -45,7 +52,10 @@ def classify(tokens: list[str]) -> Classification:
         return Classification("ask", description=base)
 
     action = tokens[1]
-    desc = f"{base} {action}"
+
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
-    return Classification("ask", description=desc)
+        return Classification("approve", description=f"{base} {action}")
+
+    # Expand short aliases for clarity
+    display_action = ACTION_ALIASES.get(action, action)
+    return Classification("ask", description=f"{base} {display_action}")

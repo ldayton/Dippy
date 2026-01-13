@@ -46,6 +46,13 @@ UNSAFE_ACTIONS = frozenset(
     }
 )
 
+# Actions where extra context helps (name isn't self-explanatory)
+UNCLEAR_ACTION_CONTEXT = {
+    "init": "download providers/modules",
+    "taint": "mark for recreation",
+    "untaint": "unmark for recreation",
+}
+
 
 # Safe subcommands
 SAFE_SUBCOMMANDS = {
@@ -113,7 +120,11 @@ def classify(tokens: list[str]) -> Classification:
     if action in SAFE_ACTIONS:
         return Classification("approve", description=desc)
 
-    # Unsafe actions or unknown
+    # Unsafe actions - add context only if unclear
+    context = UNCLEAR_ACTION_CONTEXT.get(action)
+    if context:
+        return Classification("ask", description=f"{desc} ({context})")
+
     return Classification("ask", description=desc)
 
 
