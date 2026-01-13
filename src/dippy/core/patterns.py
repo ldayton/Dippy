@@ -43,13 +43,12 @@ SIMPLE_SAFE = frozenset(
         "readlink",
         "realpath",
         # Search/filter (read-only)
-        # Note: find has its own handler due to -exec/-delete flags
+        # Note: find and fd have their own handlers due to -exec flags
         "grep",
         "rg",
         "ripgrep",
         "ag",
         "ack",
-        "fd",
         "locate",
         # Text processing (read-only)
         # Note: sed and sort have their own handlers due to -i/-o flags
