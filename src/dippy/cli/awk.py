@@ -12,9 +12,8 @@ from dippy.cli import Classification
 COMMANDS = ["awk", "gawk", "mawk", "nawk"]
 
 
-# Patterns that indicate file output or command execution
-# These match awk's print/printf redirection syntax: print > "file" or print | "cmd"
-OUTPUT_REDIRECT_PATTERN = re.compile(
+# Patterns that indicate file output
+FILE_REDIRECT_PATTERN = re.compile(
     r"""
     (?:print|printf)\s*[^}]*\s*      # print/printf followed by content
     (?:
@@ -27,9 +26,16 @@ OUTPUT_REDIRECT_PATTERN = re.compile(
         >>\s*\(                       # >> followed by ( (dynamic append)
         |
         >\s*\$                        # > followed by $ (variable filename)
-        |
-        \|\s*["']                     # | followed by quote (pipe to command)
     )
+    """,
+    re.VERBOSE,
+)
+
+# Pattern for pipe to command
+PIPE_PATTERN = re.compile(
+    r"""
+    (?:print|printf)\s*[^}]*\s*      # print/printf followed by content
+    \|\s*["']                         # | followed by quote (pipe to command)
     """,
     re.VERBOSE,
 )
@@ -72,10 +78,14 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check for system() calls
     if "system(" in program:
-        return Classification("ask", description=base)
+        return Classification("ask", description=f"{base} system()")
 
-    # Check for output redirects using pattern matching
-    if OUTPUT_REDIRECT_PATTERN.search(program):
-        return Classification("ask", description=base)
+    # Check for pipe to command
+    if PIPE_PATTERN.search(program):
+        return Classification("ask", description=f"{base} pipe")
+
+    # Check for file redirects
+    if FILE_REDIRECT_PATTERN.search(program):
+        return Classification("ask", description=f"{base} redirect")
 
     return Classification("approve", description=base)

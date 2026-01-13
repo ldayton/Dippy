@@ -15,4 +15,4 @@ def classify(tokens: list[str]) -> Classification:
     base = tokens[0] if tokens else "wget"
     if "--spider" in tokens:
         return Classification("approve", description=f"{base} --spider")
-    return Classification("ask", description=base)
+    return Classification("ask", description=f"{base} download")
