@@ -104,11 +104,6 @@ def classify(tokens: list[str]) -> Classification:
     if action in SAFE_ACTIONS:
         return Classification("approve", description=desc)
 
-    # Unsafe actions
-    if action in UNSAFE_ACTIONS:
-        return Classification("ask", description=desc)
-
-    # Unknown actions require confirmation
     return Classification("ask", description=desc)
 
 

@@ -46,7 +46,6 @@ UNSAFE_ACTIONS = frozenset(
     }
 )
 
-
 # Safe subcommands
 SAFE_SUBCOMMANDS = {
     "state": {"list", "show", "pull"},
@@ -113,7 +112,6 @@ def classify(tokens: list[str]) -> Classification:
     if action in SAFE_ACTIONS:
         return Classification("approve", description=desc)
 
-    # Unsafe actions or unknown
     return Classification("ask", description=desc)
 
 

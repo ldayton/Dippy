@@ -25,17 +25,16 @@ def classify(tokens: list[str]) -> Classification:
         return Classification("ask", description=base)
 
     subcommand = tokens[1]
-    desc = f"{base} {subcommand}"
 
     if subcommand in SAFE_COMMANDS:
-        return Classification("approve", description=desc)
+        return Classification("approve", description=f"{base} {subcommand}")
 
     # x509 with -noout is just viewing
     if subcommand == "x509" and "-noout" in tokens:
-        return Classification("approve", description=desc)
+        return Classification("approve", description=f"{base} x509")
 
     # s_client for connection testing
     if subcommand == "s_client":
-        return Classification("approve", description=desc)
+        return Classification("approve", description=f"{base} s_client")
 
-    return Classification("ask", description=desc)
+    return Classification("ask", description=f"{base} {subcommand}")

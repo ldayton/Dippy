@@ -63,6 +63,7 @@ UNSAFE_ACTIONS = frozenset(
 )
 
 
+
 # Safe subcommands for multi-level commands
 SAFE_SUBCOMMANDS = {
     "config": {
@@ -154,5 +155,4 @@ def classify(tokens: list[str]) -> Classification:
     if action in SAFE_ACTIONS:
         return Classification("approve", description=desc)
 
-    # Unsafe actions or unknown
     return Classification("ask", description=desc)

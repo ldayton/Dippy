@@ -94,6 +94,14 @@ UNSAFE_ACTIONS = frozenset(
     }
 )
 
+# Actions where extra context helps (name isn't self-explanatory)
+UNCLEAR_ACTION_CONTEXT = {
+    "gc": "garbage collect",
+    "prune": "remove unreachable objects",
+    "filter-branch": "rewrite history",
+    "filter-repo": "rewrite history",
+}
+
 
 # Git global flags that take an argument (need to skip the argument)
 GLOBAL_FLAGS_WITH_ARG = frozenset(
@@ -164,25 +172,25 @@ def _find_action(tokens: list[str]) -> tuple[int, str | None]:
     return -1, None
 
 
-def get_description(tokens: list[str]) -> str:
+def get_description(tokens: list[str], include_context: bool = False) -> str:
     """Compute description for git command, skipping global flags."""
     _, action = _find_action(tokens)
     if action:
+        if include_context and action in UNCLEAR_ACTION_CONTEXT:
+            return f"git {action} ({UNCLEAR_ACTION_CONTEXT[action]})"
         return f"git {action}"
     return "git"
 
 
 def classify(tokens: list[str]) -> Classification:
     """Classify git command."""
-    desc = get_description(tokens)
-
     if len(tokens) < 2:
-        return Classification("ask", description=desc)
+        return Classification("ask", description="git")
 
     # Find the actual action, skipping global flags
     action_idx, action = _find_action(tokens)
     if action is None:
-        return Classification("ask", description=desc)
+        return Classification("ask", description="git")
 
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
 
@@ -226,6 +234,7 @@ def classify(tokens: list[str]) -> Classification:
     else:
         safe = False
 
+    desc = get_description(tokens, include_context=not safe)
     return Classification("approve" if safe else "ask", description=desc)
 
 
