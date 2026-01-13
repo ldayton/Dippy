@@ -137,3 +137,19 @@ class TestAskReasons:
     def test_mixed_pipeline(self, check):
         # cat is safe, tee writes
         assert get_reason(check("cat file | tee output")) == "tee"
+
+
+class TestCompoundCommands:
+    """Verify compound commands (while, for, if) have non-empty reasons."""
+
+    def test_while_in_pipeline(self, check):
+        """Pipeline with while loop should have non-empty reason."""
+        result = check("head -5 file.txt | while read f; do echo $f; done")
+        reason = get_reason(result)
+        assert reason == "while"
+
+    def test_multistatement_after_pipeline(self, check):
+        """Standalone commands after pipeline should not repeat pipeline command."""
+        cmd = "cat file | tee out\nrm foo"
+        reason = get_reason(check(cmd))
+        assert reason == "tee, rm"
