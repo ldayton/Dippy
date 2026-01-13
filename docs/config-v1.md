@@ -355,6 +355,63 @@ Or for both file and MCP control:
 "matcher": "Bash|Write|Edit|MultiEdit|mcp__.*"
 ```
 
+## Proposal: Post-Action Feedback
+
+Claude Code's PostToolUse hook fires after a command completes successfully and can provide feedback to Claude. Dippy could use its existing pattern matching to let users define post-action messages.
+
+### Proposed Syntax
+
+```
+after <glob>           # silent - matches, no message
+after <glob> ""        # silent - matches, no message
+after <glob> "message" # matches, sends message to Claude
+```
+
+Like other rules, last match wins. A silent `after` (with no message or empty string) overrides earlier matches—useful for excluding specific commands from a broad rule.
+
+### Example
+
+```
+# Remind Claude after git operations
+after git push * "Re-read the prompt file for next steps"
+after git commit * "Update your todo list"
+
+# Broad rule with specific override
+after npm * "Check for any errors in the output"
+after npm install * ""   # no message needed for install
+
+# Project-specific workflows
+after ./deploy.sh * "Verify deployment in staging before continuing"
+after make test * "Review test output and fix any failures"
+```
+
+### How It Works
+
+PostToolUse hooks receive the completed command and can output feedback that Claude sees as context. Unlike PreToolUse (which controls permission), PostToolUse is purely informational—it cannot block or modify.
+
+When an `after` rule matches:
+1. Dippy outputs the message to stdout
+2. Claude receives it as post-action feedback
+3. Claude can adjust its behavior based on the message
+
+### Opting In
+
+Dippy must register for PostToolUse events in addition to PreToolUse. Update `settings.json`:
+
+```json
+"hooks": {
+  "PreToolUse": [...],
+  "PostToolUse": [
+    {
+      "matcher": "Bash",
+      "hooks": [{ "type": "command", "command": "dippy" }]
+    }
+  ]
+}
+```
+
+Or Dippy's install script could set this up automatically.
+
 ## Implementation Notes
 
 **Hook caching:** Claude Code caches hooks at session start. Changes to dippy code or config require restarting the session to take effect.
