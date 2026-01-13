@@ -17,6 +17,6 @@ def classify(tokens: list[str]) -> Classification:
 
     for token in tokens[1:]:
         if token in UNSAFE_FLAGS:
-            return Classification("ask", description="xxd -r")
+            return Classification("ask", description="xxd -r (write binary)")
 
     return Classification("approve", description="xxd")

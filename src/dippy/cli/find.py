@@ -21,11 +21,20 @@ UNSAFE_FLAGS = frozenset(
     }
 )
 
+# Context for flags that aren't self-explanatory
+FLAG_CONTEXT = {
+    "-ok": "execute with prompt",
+    "-okdir": "execute with prompt",
+}
+
 
 def classify(tokens: list[str]) -> Classification:
     """Classify find command (no exec or delete is safe)."""
     base = tokens[0] if tokens else "find"
     for token in tokens:
         if token in UNSAFE_FLAGS:
+            context = FLAG_CONTEXT.get(token)
+            if context:
+                return Classification("ask", description=f"{base} {token} ({context})")
             return Classification("ask", description=f"{base} {token}")
     return Classification("approve", description=base)

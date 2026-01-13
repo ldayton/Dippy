@@ -42,6 +42,12 @@ FLAGS_WITH_ARG = frozenset(
 # Flags that make xargs interactive/unsafe regardless of command
 UNSAFE_FLAGS = frozenset({"-p", "--interactive", "-o", "--open-tty"})
 
+# Context for unclear flags
+FLAG_CONTEXT = {
+    "-p": "prompt before execute",
+    "-o": "open tty",
+}
+
 
 def _skip_flags(
     tokens: list[str], flags_with_arg: frozenset, stop_at_double_dash: bool = False
@@ -86,6 +92,9 @@ def classify(tokens: list[str]) -> Classification:
         if token == "--":
             break
         if token in UNSAFE_FLAGS:
+            context = FLAG_CONTEXT.get(token)
+            if context:
+                return Classification("ask", description=f"xargs {token} ({context})")
             return Classification("ask", description=f"xargs {token}")
         if token.startswith("--interactive"):
             return Classification("ask", description="xargs --interactive")

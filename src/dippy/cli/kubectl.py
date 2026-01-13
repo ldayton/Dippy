@@ -63,7 +63,6 @@ UNSAFE_ACTIONS = frozenset(
 )
 
 
-
 # Safe subcommands for multi-level commands
 SAFE_SUBCOMMANDS = {
     "config": {
