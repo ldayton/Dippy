@@ -79,26 +79,28 @@ def _skip_flags(
 def classify(tokens: list[str]) -> Classification:
     """Classify xargs command by extracting the inner command."""
     if len(tokens) < 2:
-        return Classification("ask")
+        return Classification("ask", description="xargs (no command)")
 
     # Check for unsafe flags (interactive mode)
     for token in tokens[1:]:
         if token == "--":
             break
         if token in UNSAFE_FLAGS:
-            return Classification("ask")
-        if token.startswith(("--interactive", "--open-tty")):
-            return Classification("ask")
+            return Classification("ask", description=f"xargs {token}")
+        if token.startswith("--interactive"):
+            return Classification("ask", description="xargs --interactive")
+        if token.startswith("--open-tty"):
+            return Classification("ask", description="xargs --open-tty")
 
     # Find the inner command (skip xargs and its flags)
     inner_start = 1 + _skip_flags(tokens[1:], FLAGS_WITH_ARG, stop_at_double_dash=True)
 
     if inner_start >= len(tokens):
-        return Classification("ask")
+        return Classification("ask", description="xargs (no command)")
 
     inner_tokens = tokens[inner_start:]
     if not inner_tokens:
-        return Classification("ask")
+        return Classification("ask", description="xargs (no command)")
 
     # Delegate to inner command check
     inner_cmd = " ".join(

@@ -70,15 +70,15 @@ def classify(tokens: list[str]) -> Classification:
     cmd = tokens[0]
     if cmd == "unzip":
         safe = _check_unzip(tokens)
-        desc = f"{cmd} list" if safe else cmd
+        desc = f"{cmd} list" if safe else f"{cmd} extract"
     elif cmd in ("7z", "7za", "7zr", "7zz"):
         safe = _check_7z(tokens)
-        if len(tokens) > 1 and tokens[1] in SAFE_7Z_COMMANDS:
+        if len(tokens) > 1:
             desc = f"{cmd} {tokens[1]}"
         else:
             desc = cmd
     else:
         safe = False
-        desc = cmd
+        desc = f"{cmd} extract"
 
     return Classification("approve" if safe else "ask", description=desc)

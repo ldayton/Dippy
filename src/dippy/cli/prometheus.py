@@ -31,7 +31,7 @@ def classify(tokens: list[str]) -> Classification:
     base = tokens[0] if tokens else "prometheus"
     if len(tokens) < 2:
         # Just "prometheus" with no args starts the server
-        return Classification("ask", description=base)
+        return Classification("ask", description=f"{base} server")
 
     # Check if the only argument is a safe flag
     # Prometheus doesn't have subcommands - it's all flags
@@ -40,4 +40,4 @@ def classify(tokens: list[str]) -> Classification:
             return Classification("approve", description=f"{base} {token}")
 
     # Any other flags or arguments start the server
-    return Classification("ask", description=base)
+    return Classification("ask", description=f"{base} server")

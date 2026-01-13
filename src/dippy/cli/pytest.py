@@ -24,11 +24,11 @@ SAFE_FLAGS = frozenset(
 def classify(tokens: list[str]) -> Classification:
     """Classify pytest command."""
     if len(tokens) < 2:
-        return Classification("ask", description="pytest")
+        return Classification("ask", description="pytest run")
 
     # Check if any safe flag is present
     for token in tokens[1:]:
         if token in SAFE_FLAGS:
             return Classification("approve", description=f"pytest {token}")
 
-    return Classification("ask", description="pytest")
+    return Classification("ask", description="pytest run")

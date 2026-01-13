@@ -46,29 +46,31 @@ def classify(tokens: list[str]) -> Classification:
     if cmd in SAFE_COMMANDS:
         return Classification("approve", description=cmd)
 
-    # Route to specific handlers
+    # Route to specific handlers - returns (safe, action) tuple
     if cmd == "ansible":
-        safe = _check_ansible(tokens)
+        safe, action = _check_ansible(tokens), "run"
     elif cmd == "ansible-playbook":
-        safe = _check_ansible_playbook(tokens)
+        safe, action = _check_ansible_playbook(tokens), "run"
     elif cmd == "ansible-vault":
-        safe = _check_ansible_vault(tokens)
+        safe, action = _check_ansible_vault(tokens), _get_vault_action(tokens)
     elif cmd == "ansible-galaxy":
-        safe = _check_ansible_galaxy(tokens)
+        safe, action = _check_ansible_galaxy(tokens), _get_galaxy_action(tokens)
     elif cmd == "ansible-inventory":
-        safe = _check_ansible_inventory(tokens)
+        safe, action = _check_ansible_inventory(tokens), "write"
     elif cmd == "ansible-pull":
-        safe = _check_ansible_pull(tokens)
+        safe, action = _check_ansible_pull(tokens), "run"
     elif cmd == "ansible-config":
-        safe = _check_ansible_config(tokens)
+        safe, action = _check_ansible_config(tokens), _get_config_action(tokens)
     elif cmd == "ansible-console":
-        safe = _check_ansible_console(tokens)
+        safe, action = _check_ansible_console(tokens), "interactive"
     elif cmd == "ansible-test":
-        safe = _check_ansible_test(tokens)
+        safe, action = _check_ansible_test(tokens), _get_test_action(tokens)
     else:
-        safe = False
+        safe, action = False, "run"
 
-    return Classification("approve" if safe else "ask", description=cmd)
+    if safe:
+        return Classification("approve", description=cmd)
+    return Classification("ask", description=f"{cmd} {action}")
 
 
 def _check_ansible(tokens: list[str]) -> bool:
@@ -224,3 +226,35 @@ def _check_ansible_test(tokens: list[str]) -> bool:
         return token in safe_actions
 
     return False
+
+
+def _get_subcommand(tokens: list[str]) -> str:
+    """Extract first non-flag token as subcommand."""
+    for token in tokens[1:]:
+        if not token.startswith("-"):
+            return token
+    return ""
+
+
+def _get_vault_action(tokens: list[str]) -> str:
+    """Get ansible-vault action (encrypt, decrypt, view, etc.)."""
+    return _get_subcommand(tokens) or "run"
+
+
+def _get_galaxy_action(tokens: list[str]) -> str:
+    """Get ansible-galaxy action (install, list, etc.)."""
+    # Format: ansible-galaxy role/collection action
+    parts = [t for t in tokens[1:] if not t.startswith("-")]
+    if len(parts) >= 2:
+        return parts[1]  # action is second non-flag
+    return "run"
+
+
+def _get_config_action(tokens: list[str]) -> str:
+    """Get ansible-config action."""
+    return _get_subcommand(tokens) or "run"
+
+
+def _get_test_action(tokens: list[str]) -> str:
+    """Get ansible-test action."""
+    return _get_subcommand(tokens) or "run"

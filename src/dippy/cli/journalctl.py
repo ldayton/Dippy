@@ -26,8 +26,8 @@ def classify(tokens: list[str]) -> Classification:
     base = tokens[0] if tokens else "journalctl"
     for token in tokens[1:]:
         if token in UNSAFE_FLAGS:
-            return Classification("ask", description=base)
+            return Classification("ask", description=f"{base} {token}")
         for flag in UNSAFE_FLAGS:
             if token.startswith(flag + "="):
-                return Classification("ask", description=base)
+                return Classification("ask", description=f"{base} {flag}")
     return Classification("approve", description=base)
