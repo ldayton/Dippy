@@ -1245,22 +1245,20 @@ class TestPathExpansionBugs:
         # So a command with literal $HOME/.bashrc should match
         assert match_command(cmd("cat $HOME/.bashrc"), cfg, tmp_path) is not None
         # And a command under cwd should NOT match (proving it wasn't mangled)
-        assert match_command(cmd(f"cat {tmp_path}/$HOME/.bashrc"), cfg, tmp_path) is None
+        assert (
+            match_command(cmd(f"cat {tmp_path}/$HOME/.bashrc"), cfg, tmp_path) is None
+        )
 
-    def test_tilde_expansion_inconsistency(self, tmp_path):
-        """Tilde expands in settings but not in rule patterns - inconsistent."""
+    def test_tilde_expansion_consistency(self, tmp_path):
+        """Tilde expands consistently in both settings and rule patterns."""
         cfg = parse_config("""
 set log ~/audit.log
 allow cd ~
 """)
         home = Path.home()
-        # Settings use expanduser() - tilde expands correctly
+        # Settings expand tilde correctly
         assert cfg.log == home / "audit.log"
-        # But rule patterns don't - tilde stays literal
-        # This is inconsistent: same syntax, different behavior
-        assert cfg.rules[0].pattern == "cd ~"
-        # For consistency, the pattern should also expand (or both should not)
-        # If we had consistent behavior, this would pass:
+        # Rule patterns also expand tilde consistently
         assert cfg.rules[0].pattern == f"cd {home}"
 
     def test_url_not_mangled(self, tmp_path):
@@ -1268,9 +1266,15 @@ allow cd ~
         cfg = Config(rules=[Rule("allow", "curl https://example.com/foo")])
         # The pattern should stay as-is, not become curl /cwd/https:/example.com/foo
         # So a command with the literal URL should match
-        assert match_command(cmd("curl https://example.com/foo"), cfg, tmp_path) is not None
+        assert (
+            match_command(cmd("curl https://example.com/foo"), cfg, tmp_path)
+            is not None
+        )
         # And a mangled path should NOT match
-        assert match_command(cmd(f"curl {tmp_path}/https:/example.com/foo"), cfg, tmp_path) is None
+        assert (
+            match_command(cmd(f"curl {tmp_path}/https:/example.com/foo"), cfg, tmp_path)
+            is None
+        )
 
     def test_single_dot_resolved_to_cwd(self, tmp_path):
         """Single . should resolve to cwd, like .. resolves to parent."""
