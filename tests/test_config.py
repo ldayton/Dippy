@@ -1262,3 +1262,24 @@ allow cd ~
         # For consistency, the pattern should also expand (or both should not)
         # If we had consistent behavior, this would pass:
         assert cfg.rules[0].pattern == f"cd {home}"
+
+    def test_url_not_mangled(self, tmp_path):
+        """URLs should not be turned into paths under cwd."""
+        cfg = Config(rules=[Rule("allow", "curl https://example.com/foo")])
+        # The pattern should stay as-is, not become curl /cwd/https:/example.com/foo
+        # So a command with the literal URL should match
+        assert match_command(cmd("curl https://example.com/foo"), cfg, tmp_path) is not None
+        # And a mangled path should NOT match
+        assert match_command(cmd(f"curl {tmp_path}/https:/example.com/foo"), cfg, tmp_path) is None
+
+    def test_single_dot_resolved_to_cwd(self, tmp_path):
+        """Single . should resolve to cwd, like .. resolves to parent."""
+        cfg = Config(rules=[Rule("allow", f"ls {tmp_path}")])
+        # . means current directory, should resolve to cwd and match
+        assert match_command(cmd("ls ."), cfg, tmp_path) is not None
+
+    def test_single_dot_in_pattern(self, tmp_path):
+        """Pattern with . should resolve to cwd."""
+        cfg = Config(rules=[Rule("allow", "ls .")])
+        # Command with absolute cwd path should match pattern with .
+        assert match_command(cmd(f"ls {tmp_path}"), cfg, tmp_path) is not None
