@@ -821,8 +821,11 @@ def classify(tokens: list[str], cwd: Path | None = None) -> Classification:
         idx = tokens.index("-m")
         if idx + 1 < len(tokens):
             module = tokens[idx + 1]
-            # Some modules are safe
-            if module in ("json.tool", "calendar", "timeit", "pydoc"):
+            # Only calendar is truly inert (just prints output, no I/O or code exec)
+            # - timeit: executes its argument as code
+            # - json.tool: reads files
+            # - pydoc: imports modules (executes top-level code)
+            if module == "calendar":
                 return Classification("approve", description=desc)
         return Classification("ask", description=desc)
 

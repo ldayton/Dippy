@@ -47,6 +47,11 @@ class TestPythonCodeExecution:
             "python -m venv .venv",
             "python",  # Interactive mode
             "python -i script.py",  # Interactive after script
+            # Modules that can execute code or read files
+            "python -m timeit 'import os'",  # timeit executes its argument
+            "python -m timeit -s 'import os' 'os.getcwd()'",  # setup + stmt
+            "python -m json.tool foo.json",  # reads files
+            "python -m pydoc os",  # imports modules (executes top-level code)
         ],
     )
     def test_code_execution_needs_confirmation(self, check, cmd):
@@ -54,18 +59,10 @@ class TestPythonCodeExecution:
         result = check(cmd)
         assert needs_confirmation(result), f"Expected confirm: {cmd}"
 
-    @pytest.mark.parametrize(
-        "cmd",
-        [
-            "python -m json.tool",
-            "python -m calendar",
-            "python -m pydoc",
-        ],
-    )
-    def test_safe_modules_approved(self, check, cmd):
-        """Safe stdlib modules should be approved."""
-        result = check(cmd)
-        assert is_approved(result), f"Expected approve: {cmd}"
+    def test_calendar_module_approved(self, check):
+        """calendar module is truly inert - just prints a calendar."""
+        result = check("python -m calendar")
+        assert is_approved(result), "calendar module should be approved"
 
 
 class TestPythonScriptAnalysis:
