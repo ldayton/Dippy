@@ -1213,6 +1213,83 @@ class TestPatternNormalization:
         )
 
 
+class TestPathExpansionBugs:
+    """Tests for path expansion edge cases (bugs)."""
+
+    def test_bare_tilde_expanded_in_command(self, tmp_path):
+        """Bare ~ should expand to home directory."""
+        home = str(Path.home())
+        cfg = Config(rules=[Rule("allow", f"cd {home}")])
+        # Bare ~ should expand to home and match
+        assert match_command(cmd("cd ~"), cfg, tmp_path) is not None
+
+    def test_bare_tilde_expanded_in_pattern(self, tmp_path):
+        """Pattern with bare ~ should expand to home directory."""
+        cfg = Config(rules=[Rule("allow", "cd ~")])
+        home = str(Path.home())
+        # Command with absolute home path should match pattern with ~
+        assert match_command(cmd(f"cd {home}"), cfg, tmp_path) is not None
+
+    def test_tilde_user_not_mangled(self, tmp_path):
+        """~user/path should not be turned into a relative path under cwd."""
+        cfg = Config(rules=[Rule("allow", "cat ~bob/file")])
+        # The pattern should stay as ~bob/file, not become /cwd/~bob/file
+        # So a command with literal ~bob/file should match
+        assert match_command(cmd("cat ~bob/file"), cfg, tmp_path) is not None
+        # And a command under cwd should NOT match (proving it wasn't mangled)
+        assert match_command(cmd(f"cat {tmp_path}/~bob/file"), cfg, tmp_path) is None
+
+    def test_shell_variable_not_mangled(self, tmp_path):
+        """$VAR/path should not be turned into a relative path under cwd."""
+        cfg = Config(rules=[Rule("allow", "cat $HOME/.bashrc")])
+        # The pattern should stay as $HOME/.bashrc, not become /cwd/$HOME/.bashrc
+        # So a command with literal $HOME/.bashrc should match
+        assert match_command(cmd("cat $HOME/.bashrc"), cfg, tmp_path) is not None
+        # And a command under cwd should NOT match (proving it wasn't mangled)
+        assert (
+            match_command(cmd(f"cat {tmp_path}/$HOME/.bashrc"), cfg, tmp_path) is None
+        )
+
+    def test_tilde_expansion_consistency(self, tmp_path):
+        """Tilde expands consistently in both settings and rule patterns."""
+        cfg = parse_config("""
+set log ~/audit.log
+allow cd ~
+""")
+        home = Path.home()
+        # Settings expand tilde correctly
+        assert cfg.log == home / "audit.log"
+        # Rule patterns also expand tilde consistently
+        assert cfg.rules[0].pattern == f"cd {home}"
+
+    def test_url_not_mangled(self, tmp_path):
+        """URLs should not be turned into paths under cwd."""
+        cfg = Config(rules=[Rule("allow", "curl https://example.com/foo")])
+        # The pattern should stay as-is, not become curl /cwd/https:/example.com/foo
+        # So a command with the literal URL should match
+        assert (
+            match_command(cmd("curl https://example.com/foo"), cfg, tmp_path)
+            is not None
+        )
+        # And a mangled path should NOT match
+        assert (
+            match_command(cmd(f"curl {tmp_path}/https:/example.com/foo"), cfg, tmp_path)
+            is None
+        )
+
+    def test_single_dot_resolved_to_cwd(self, tmp_path):
+        """Single . should resolve to cwd, like .. resolves to parent."""
+        cfg = Config(rules=[Rule("allow", f"ls {tmp_path}")])
+        # . means current directory, should resolve to cwd and match
+        assert match_command(cmd("ls ."), cfg, tmp_path) is not None
+
+    def test_single_dot_in_pattern(self, tmp_path):
+        """Pattern with . should resolve to cwd."""
+        cfg = Config(rules=[Rule("allow", "ls .")])
+        # Command with absolute cwd path should match pattern with .
+        assert match_command(cmd(f"ls {tmp_path}"), cfg, tmp_path) is not None
+
+
 class TestParseConfigAfterRules:
     """Test parsing of after rules for PostToolUse."""
 

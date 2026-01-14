@@ -202,36 +202,44 @@ def parse_config(text: str, source: str | None = None) -> Config:
             if directive == "allow":
                 if not rest:
                     raise ValueError("requires a pattern")
-                rules.append(Rule("allow", rest))
+                rules.append(Rule("allow", _expand_pattern_tildes(rest)))
 
             elif directive == "ask":
                 if not rest:
                     raise ValueError("requires a pattern")
                 pattern, message = _extract_message(rest)
-                rules.append(Rule("ask", pattern, message=message))
+                rules.append(
+                    Rule("ask", _expand_pattern_tildes(pattern), message=message)
+                )
 
             elif directive == "deny":
                 if not rest:
                     raise ValueError("requires a pattern")
                 pattern, message = _extract_message(rest)
-                rules.append(Rule("deny", pattern, message=message))
+                rules.append(
+                    Rule("deny", _expand_pattern_tildes(pattern), message=message)
+                )
 
             elif directive == "allow-redirect":
                 if not rest:
                     raise ValueError("requires a pattern")
-                redirect_rules.append(Rule("allow", rest))
+                redirect_rules.append(Rule("allow", _expand_pattern_tildes(rest)))
 
             elif directive == "ask-redirect":
                 if not rest:
                     raise ValueError("requires a pattern")
                 pattern, message = _extract_message(rest)
-                redirect_rules.append(Rule("ask", pattern, message=message))
+                redirect_rules.append(
+                    Rule("ask", _expand_pattern_tildes(pattern), message=message)
+                )
 
             elif directive == "deny-redirect":
                 if not rest:
                     raise ValueError("requires a pattern")
                 pattern, message = _extract_message(rest)
-                redirect_rules.append(Rule("deny", pattern, message=message))
+                redirect_rules.append(
+                    Rule("deny", _expand_pattern_tildes(pattern), message=message)
+                )
 
             elif directive == "after":
                 if not rest:
@@ -342,24 +350,96 @@ def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> N
         raise ValueError(f"unknown setting '{key}'")
 
 
-# === Matching ===
+# === Path Classification & Expansion ===
+
+# Token kinds (order matters for classification precedence)
+_URL = "url"  # https://example.com, ftp://...
+_VARIABLE = "variable"  # $HOME, ${VAR}, $0
+_ABSOLUTE = "absolute"  # /foo/bar
+_HOME = "home"  # ~ or ~/foo
+_USER_HOME = "user_home"  # ~bob or ~bob/foo
+_RELATIVE = "relative"  # ./foo, ../foo, ., .., or contains /
+_BARE = "bare"  # everything else (command names, flags, args)
+
+
+def _classify_token(token: str) -> str:
+    """Classify a token into one of the path kinds.
+
+    Classification is pure - no side effects, no cwd needed.
+    Order matters: earlier checks take precedence.
+    """
+    if "://" in token:
+        return _URL
+    if token.startswith("$"):
+        return _VARIABLE
+    if token.startswith("/"):
+        return _ABSOLUTE
+    if token == "~" or token.startswith("~/"):
+        return _HOME
+    if token.startswith("~"):
+        return _USER_HOME
+    if (
+        token in (".", "..")
+        or token.startswith("./")
+        or token.startswith("../")
+        or "/" in token
+    ):
+        return _RELATIVE
+    return _BARE
+
+
+def _expand_token(token: str, cwd: Path, *, force_path: bool = False) -> str:
+    """Expand a token based on its classification.
+
+    Args:
+        token: The token to expand
+        cwd: Working directory for resolving relative paths
+        force_path: If True, treat BARE tokens as paths (for redirects)
+
+    Returns:
+        Expanded token string
+    """
+    kind = _classify_token(token)
+    home = Path.home()
+    if kind == _URL:
+        return token
+    if kind == _VARIABLE:
+        return token
+    if kind == _ABSOLUTE:
+        return token
+    if kind == _HOME:
+        # ~ → /home/user, ~/foo → /home/user/foo
+        return str(home) + token[1:] if len(token) > 1 else str(home)
+    if kind == _USER_HOME:
+        return token
+    if kind == _RELATIVE:
+        return str((cwd / token).resolve())
+    # BARE
+    if force_path:
+        return str((cwd / token).resolve())
+    return token
+
+
+def _expand_home_only(token: str) -> str:
+    """Expand only HOME kind tokens (~ and ~/...) at parse time.
+
+    Used for pattern tilde expansion to match settings behavior.
+    Other token kinds pass through unchanged.
+    """
+    if _classify_token(token) == _HOME:
+        home = Path.home()
+        return str(home) + token[1:] if len(token) > 1 else str(home)
+    return token
+
+
+def _expand_pattern_tildes(pattern: str) -> str:
+    """Expand tildes in pattern tokens at parse time."""
+    return " ".join(_expand_home_only(t) for t in pattern.split())
 
 
 def _normalize_token(token: str, cwd: Path) -> str:
-    """Normalize a single path token against cwd.
-
-    - Expands ~ to home directory
-    - Resolves relative paths (./foo, ../bar, foo/bar) against cwd
-    - Absolute paths and non-path tokens left unchanged
-    """
-    if token.startswith("~/"):
-        return str(_HOME) + token[1:]
-    if token.startswith("/"):
-        return token
-    # Relative path (with or without ./) - resolve against cwd
-    if "/" in token or token.startswith("./") or token.startswith(".."):
-        return str((cwd / token).resolve())
-    return token
+    """Normalize a single token in a command."""
+    return _expand_token(token, cwd, force_path=False)
 
 
 def _normalize_words(words: list[str], cwd: Path) -> str:
@@ -379,18 +459,8 @@ def _normalize_pattern(pattern: str, cwd: Path) -> str:
 
 
 def _normalize_path(path: str, cwd: Path) -> str:
-    """Normalize a redirect target path.
-
-    - Expands ~ to home directory
-    - Resolves relative paths against cwd
-    - Strips trailing /
-    """
-    path = path.rstrip("/")
-    if path.startswith("~/"):
-        return str(_HOME) + path[1:]
-    if not path.startswith("/"):
-        return str((cwd / path).resolve())
-    return path
+    """Normalize a redirect target path (strip trailing /, force as path)."""
+    return _expand_token(path.rstrip("/"), cwd, force_path=True)
 
 
 def _glob_to_regex(pattern: str) -> re.Pattern:
