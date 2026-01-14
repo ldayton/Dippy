@@ -40,12 +40,18 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 git clone https://github.com/ldayton/Dippy.git
 ```
 
-Add to `~/.claude/settings.json` (or use `/hooks` interactively):
+Add to `~/.claude/settings.json` (or use `/hooks` interactively); you only need `PostToolUse` if you want `after` rules in your config:
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
+      }
+    ],
+    "PostToolUse": [
       {
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
@@ -81,6 +87,8 @@ deny python "Use uv run python, which runs in project environment"  # remind Cla
 
 allow-redirect /tmp/**                 # allow temp file writes
 deny-redirect **/.env* "Never write secrets, as me to do it"        # block env writes
+
+after git commit * "Reread prompts/next-iteration.md"  # after hook keeps Claude on task, following instructions
 ```
 
 Configuration reference: `docs/config-v1.md`
