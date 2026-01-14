@@ -532,10 +532,10 @@ def _check_single_command(
     # Check unsafe patterns (fallback for unknown commands)
     # This comes after handlers so they can approve things like "aws s3 rm --help"
     if check_unsafe_patterns(command):
-        return (None, base)  # Ask user
+        return (None, base)
 
-    # Unknown command - ask user
-    return (None, base)
+    # Unknown command - ask user (show more context than just base command)
+    return (None, get_description(tokens, base))
 
 
 # === Hook Entry Point ===

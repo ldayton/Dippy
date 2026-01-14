@@ -135,8 +135,28 @@ class TestAskReasons:
         assert get_reason(check("ls && rm foo")) == "rm"
 
     def test_mixed_pipeline(self, check):
-        # cat is safe, tee writes
-        assert get_reason(check("cat file | tee output")) == "tee"
+        # cat is safe, tee writes (unknown commands show subcommand)
+        assert get_reason(check("cat file | tee output")) == "tee output"
+
+
+class TestUnknownCommands:
+    """Verify unknown commands show full description, not just base command."""
+
+    def test_just_recipe(self, check):
+        """just <recipe> should show 'just <recipe>', not just 'just'."""
+        assert get_reason(check("just check")) == "just check"
+
+    def test_just_recipe_with_args(self, check):
+        """just <recipe> <args> should show 'just <recipe>'."""
+        assert get_reason(check("just test --verbose")) == "just test"
+
+    def test_make_target(self, check):
+        """make <target> should show 'make <target>'."""
+        assert get_reason(check("make build")) == "make build"
+
+    def test_cargo_subcommand(self, check):
+        """cargo <cmd> should show 'cargo <cmd>'."""
+        assert get_reason(check("cargo build")) == "cargo build"
 
 
 class TestCompoundCommands:
@@ -152,4 +172,4 @@ class TestCompoundCommands:
         """Standalone commands after pipeline should not repeat pipeline command."""
         cmd = "cat file | tee out\nrm foo"
         reason = get_reason(check(cmd))
-        assert reason == "tee, rm"
+        assert reason == "tee out, rm"
