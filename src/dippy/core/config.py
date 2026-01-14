@@ -47,6 +47,9 @@ class Config:
     redirect_rules: list[Rule] = field(default_factory=list)
     """Redirect rules in load order."""
 
+    after_rules: list[Rule] = field(default_factory=list)
+    """After rules for PostToolUse feedback."""
+
     default: str = "ask"  # 'allow' | 'ask'
     log: Path | None = None  # None = no logging
     log_full: bool = False  # log full command (requires log path)
@@ -102,6 +105,7 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
         # Rules accumulate in load order (like git)
         rules=base.rules + overlay.rules,
         redirect_rules=base.redirect_rules + overlay.redirect_rules,
+        after_rules=base.after_rules + overlay.after_rules,
         # Settings: overlay wins if set
         default=overlay.default if overlay.default != "ask" else base.default,
         log=overlay.log if overlay.log is not None else base.log,
@@ -116,6 +120,9 @@ def _tag_rules(config: Config, source: str, scope: str) -> Config:
         rules=[replace(r, source=source, scope=scope) for r in config.rules],
         redirect_rules=[
             replace(r, source=source, scope=scope) for r in config.redirect_rules
+        ],
+        after_rules=[
+            replace(r, source=source, scope=scope) for r in config.after_rules
         ],
     )
 
@@ -178,6 +185,7 @@ def parse_config(text: str, source: str | None = None) -> Config:
 
     rules: list[Rule] = []
     redirect_rules: list[Rule] = []
+    after_rules: list[Rule] = []
     settings: dict[str, bool | int | str | Path] = {}
     prefix = f"{source}: " if source else ""
 
@@ -233,6 +241,12 @@ def parse_config(text: str, source: str | None = None) -> Config:
                     Rule("deny", _expand_pattern_tildes(pattern), message=message)
                 )
 
+            elif directive == "after":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                after_rules.append(Rule("after", pattern, message=message))
+
             elif directive == "set":
                 _apply_setting(settings, rest)
 
@@ -245,6 +259,7 @@ def parse_config(text: str, source: str | None = None) -> Config:
     return Config(
         rules=rules,
         redirect_rules=redirect_rules,
+        after_rules=after_rules,
         default=settings.get("default", "ask"),
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
@@ -634,6 +649,34 @@ def match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
         Match object for the last matching rule, or None if no match.
     """
     return _match_redirect(target, config, cwd)
+
+
+def match_after(words: list[str], config: Config, cwd: Path) -> str | None:
+    """Match command against after rules for PostToolUse feedback.
+
+    Last matching rule wins. Empty string message means silent (no output).
+
+    Args:
+        words: Command words (e.g., ["git", "push", "origin", "main"]).
+        config: Loaded configuration.
+        cwd: Current working directory for path resolution.
+
+    Returns:
+        Message string if a rule with message matches, empty string if silent
+        rule matches, None if no rule matches.
+    """
+    normalized_cmd = _normalize_words(words, cwd)
+    result: str | None = None
+    for rule in config.after_rules:
+        normalized_pattern = _normalize_pattern(rule.pattern, cwd)
+        matched = fnmatch.fnmatch(normalized_cmd, normalized_pattern)
+        # Trailing ' *' also matches bare command (no args)
+        if not matched and normalized_pattern.endswith(" *"):
+            matched = normalized_cmd == normalized_pattern[:-2]
+        if matched:
+            # message is None for pattern-only rules, "" for explicit empty
+            result = rule.message if rule.message is not None else ""
+    return result
 
 
 # === Logging ===
