@@ -342,8 +342,8 @@ def _analyze_simple_command(words: list[str], config: Config, cwd: Path) -> Deci
         if pattern.search(command_str):
             return Decision("ask", base)
 
-    # 7. Unknown command - default ask
-    return Decision("ask", base)
+    # 7. Unknown command - default ask (show more context than just base)
+    return Decision("ask", get_description(tokens, base))
 
 
 def _is_version_or_help(tokens: list[str]) -> bool:
