@@ -148,9 +148,33 @@ def _analyze_command(node, config: Config, cwd: Path) -> Decision:
     """Analyze a simple command node."""
     decisions = []
 
+    # Get base command for injection check
+    words = [_get_word_value(w) for w in node.words]
+    # Skip env var assignments to find base command
+    base_idx = 0
+    while (
+        base_idx < len(words)
+        and "=" in words[base_idx]
+        and not words[base_idx].startswith("-")
+    ):
+        base_idx += 1
+    base = words[base_idx] if base_idx < len(words) else ""
+    has_handler = get_handler(base) is not None
+    is_simple_safe = base in SIMPLE_SAFE
+
     # 1. Check for process substitutions and command substitutions in words
-    for word in node.words:
-        for part in getattr(word, "parts", []):
+    for position, word in enumerate(node.words):
+        parts = getattr(word, "parts", [])
+        word_value = getattr(word, "value", "")
+        # Check if this is a pure cmdsub (entire word is just a cmdsub)
+        is_pure_cmdsub = (
+            len(parts) == 1
+            and getattr(parts[0], "kind", None) == "cmdsub"
+            and word_value.startswith("$(")
+            and word_value.endswith(")")
+        )
+
+        for part in parts:
             part_kind = getattr(part, "kind", None)
             if part_kind == "procsub":
                 # Process substitution: <(...) or >(...)
@@ -173,6 +197,15 @@ def _analyze_command(node, config: Config, cwd: Path) -> Decision:
                         children=[inner_decision],
                     )
                 decisions.append(inner_decision)
+                # Check for injection risk: pure cmdsub in arg position of handler CLI
+                if (
+                    is_pure_cmdsub
+                    and has_handler
+                    and not is_simple_safe
+                    and position > base_idx
+                ):
+                    inner_cmd = _get_word_value(word).strip("$()")
+                    return Decision("ask", f"cmdsub injection risk: {inner_cmd}")
 
     # 2. Check redirects
     redirect_decisions = _analyze_redirects(node, config, cwd)
@@ -182,7 +215,6 @@ def _analyze_command(node, config: Config, cwd: Path) -> Decision:
     decisions.extend(redirect_decisions)
 
     # 3. Check the command itself
-    words = [_get_word_value(w) for w in node.words]
     if not words:
         return Decision("allow", "empty command")
 
@@ -293,8 +325,8 @@ def _analyze_simple_command(words: list[str], config: Config, cwd: Path) -> Deci
     # 5. CLI-specific handlers
     handler = get_handler(base)
     if handler:
-        result = handler.classify(words)
-        desc = result.description or get_description(words, base)
+        result = handler.classify(tokens)
+        desc = result.description or get_description(tokens, base)
         if result.action == "approve":
             return Decision("allow", desc)
         elif result.action == "delegate" and result.inner_command:
