@@ -31,8 +31,12 @@ class Classification:
 class CLIHandler(Protocol):
     """Protocol for CLI handler modules."""
 
-    def classify(self, tokens: list[str]) -> Classification:
+    def classify(self, tokens: list[str], cwd: Path | None = None) -> Classification:
         """Classify command for approval.
+
+        Args:
+            tokens: Command tokens (e.g., ["python", "script.py"])
+            cwd: Current working directory for path resolution (optional)
 
         Returns Classification with action and optional description.
         """

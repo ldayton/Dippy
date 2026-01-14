@@ -501,7 +501,14 @@ def _check_single_command(
     # Try CLI-specific handler
     handler = get_handler(base)
     if handler:
-        result = handler.classify(tokens)
+        # Pass cwd to handlers that support it (e.g., python handler for file analysis)
+        import inspect
+
+        sig = inspect.signature(handler.classify)
+        if "cwd" in sig.parameters:
+            result = handler.classify(tokens, cwd=cwd)
+        else:
+            result = handler.classify(tokens)
         desc = result.description or get_description(tokens, base)
         if result.action == "approve":
             return ("approve", desc)
