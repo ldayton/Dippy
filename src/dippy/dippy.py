@@ -203,8 +203,9 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
 def handle_post_tool_use(command: str, config: Config, cwd: Path) -> None:
     """Handle PostToolUse hook - output feedback message if rule matches."""
     from dippy.core.config import match_after
+    from dippy.core.parser import tokenize
 
-    words = command.split()
+    words = tokenize(command)
     message = match_after(words, config, cwd)
     if message:  # non-empty string
         print(f"🐤 {message}")

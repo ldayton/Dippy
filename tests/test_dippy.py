@@ -4019,3 +4019,21 @@ class TestPostToolUse:
         handle_post_tool_use("npm install lodash", cfg, tmp_path)
         captured = capsys.readouterr()
         assert captured.out == "🐤 Installing deps\n"
+
+    def test_post_tool_use_quoted_args(self, tmp_path, capsys):
+        """Quoted arguments should be parsed properly, not split on spaces.
+
+        With naive split: ["git", "commit", "-m", '"fix:', "spaces"] → "git commit -m \"fix: spaces"
+        With Parable:     ["git", "commit", "-m", "fix: spaces"]     → "git commit -m fix: spaces"
+
+        Pattern 'git commit -m fix:*' matches proper parsing but not naive split.
+        """
+        from dippy.core.config import Config, Rule
+        from dippy.dippy import handle_post_tool_use
+
+        cfg = Config(
+            after_rules=[Rule("after", "git commit -m fix:*", message="Check CI")]
+        )
+        handle_post_tool_use('git commit -m "fix: spaces in message"', cfg, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.out == "🐤 Check CI\n"
