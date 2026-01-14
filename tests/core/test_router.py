@@ -143,7 +143,7 @@ class TestCLIRouting:
         result = check("kubectl get pods")
         assert is_approved(result)
 
-    def test_routes_kubectl_directly(self, check_single):
+    def test_routes_kubectl_directly(self):
         """Test kubectl handler directly."""
         from dippy.cli import kubectl
 

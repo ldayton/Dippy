@@ -113,10 +113,10 @@ class TestAskReasons:
         assert get_reason(check("terraform apply")) == "terraform apply"
 
     def test_redirect(self, check):
-        assert get_reason(check("echo foo > file.txt")) == "output redirect"
+        assert get_reason(check("echo foo > file.txt")) == "redirect to file.txt"
 
     def test_append_redirect(self, check):
-        assert get_reason(check("echo foo >> file.txt")) == "output redirect"
+        assert get_reason(check("echo foo >> file.txt")) == "redirect to file.txt"
 
     def test_rm_mv(self, check):
         assert get_reason(check("rm foo && mv bar baz")) == "rm, mv"
@@ -160,13 +160,21 @@ class TestUnknownCommands:
 
 
 class TestCompoundCommands:
-    """Verify compound commands (while, for, if) have non-empty reasons."""
+    """Verify compound commands are recursively analyzed."""
 
-    def test_while_in_pipeline(self, check):
-        """Pipeline with while loop should have non-empty reason."""
+    def test_while_in_pipeline_safe(self, check):
+        """Pipeline with while loop containing safe commands is approved."""
         result = check("head -5 file.txt | while read f; do echo $f; done")
+        assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
         reason = get_reason(result)
-        assert reason == "while"
+        assert reason == "head, read, echo"
+
+    def test_while_in_pipeline_unsafe(self, check):
+        """Pipeline with while loop containing unsafe commands triggers ask."""
+        result = check("cat file | while read f; do rm $f; done")
+        assert result["hookSpecificOutput"]["permissionDecision"] == "ask"
+        reason = get_reason(result)
+        assert reason == "rm"
 
     def test_multistatement_after_pipeline(self, check):
         """Standalone commands after pipeline should not repeat pipeline command."""

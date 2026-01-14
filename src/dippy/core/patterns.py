@@ -127,6 +127,7 @@ SIMPLE_SAFE = frozenset(
         "true",
         "false",
         "sleep",
+        "read",  # shell builtin, reads from stdin
     }
 )
 
