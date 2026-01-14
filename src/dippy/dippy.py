@@ -200,6 +200,17 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
         return ask(result.reason)
 
 
+def handle_post_tool_use(command: str, config: Config, cwd: Path) -> None:
+    """Handle PostToolUse hook - output feedback message if rule matches."""
+    from dippy.core.config import match_after
+
+    words = command.split()
+    message = match_after(words, config, cwd)
+    if message:  # non-empty string
+        print(f"🐤 {message}")
+    # empty string or None = silent (no output)
+
+
 # === Hook Entry Point ===
 
 # Tool names that indicate shell/bash commands
@@ -252,6 +263,9 @@ def main():
             print(json.dumps(ask(f"config error: {e}")))
             return
 
+        # Detect hook event type (Claude Code only)
+        hook_event = input_data.get("hook_event_name", "PreToolUse")
+
         # Extract command based on mode
         # Cursor: {"command": "...", "cwd": "..."}
         # Claude/Gemini: {"tool_name": "...", "tool_input": {"command": "..."}}
@@ -270,9 +284,14 @@ def main():
 
             command = tool_input.get("command", "")
 
-        logging.info(f"Checking: {command}")
-        result = check_command(command, config, cwd)
-        print(json.dumps(result))
+        # Route based on hook event type
+        if hook_event == "PostToolUse":
+            logging.info(f"PostToolUse: {command}")
+            handle_post_tool_use(command, config, cwd)
+        else:
+            logging.info(f"Checking: {command}")
+            result = check_command(command, config, cwd)
+            print(json.dumps(result))
 
     except json.JSONDecodeError:
         logging.error("Invalid JSON input")

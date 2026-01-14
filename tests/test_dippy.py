@@ -3974,3 +3974,48 @@ def test_command(check, cmd, expected_safe):
         assert is_approved(result), f"Expected approved for: {cmd}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {cmd}"
+
+
+class TestPostToolUse:
+    """Test PostToolUse hook handling."""
+
+    def test_post_tool_use_with_message(self, tmp_path, capsys):
+        from dippy.core.config import Config, Rule
+        from dippy.dippy import handle_post_tool_use
+
+        cfg = Config(after_rules=[Rule("after", "git push *", message="Check CI")])
+        handle_post_tool_use("git push origin main", cfg, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.out == "🐤 Check CI\n"
+
+    def test_post_tool_use_no_match(self, tmp_path, capsys):
+        from dippy.core.config import Config, Rule
+        from dippy.dippy import handle_post_tool_use
+
+        cfg = Config(after_rules=[Rule("after", "git push *", message="Check CI")])
+        handle_post_tool_use("git status", cfg, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_post_tool_use_silent(self, tmp_path, capsys):
+        from dippy.core.config import Config, Rule
+        from dippy.dippy import handle_post_tool_use
+
+        cfg = Config(after_rules=[Rule("after", "npm install *", message="")])
+        handle_post_tool_use("npm install lodash", cfg, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_post_tool_use_last_match_wins(self, tmp_path, capsys):
+        from dippy.core.config import Config, Rule
+        from dippy.dippy import handle_post_tool_use
+
+        cfg = Config(
+            after_rules=[
+                Rule("after", "npm *", message="General npm"),
+                Rule("after", "npm install *", message="Installing deps"),
+            ]
+        )
+        handle_post_tool_use("npm install lodash", cfg, tmp_path)
+        captured = capsys.readouterr()
+        assert captured.out == "🐤 Installing deps\n"

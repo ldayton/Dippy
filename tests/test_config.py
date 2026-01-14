@@ -21,6 +21,7 @@ from dippy.core.config import (
     configure_logging,
     load_config,
     log_decision,
+    match_after,
     match_command,
     match_redirect,
     parse_config,
@@ -1210,3 +1211,106 @@ class TestPatternNormalization:
             match_command(cmd(f"cp {tmp_path}/src/a.txt dest/b.txt"), cfg, tmp_path)
             is not None
         )
+
+
+class TestParseConfigAfterRules:
+    """Test parsing of after rules for PostToolUse."""
+
+    def test_after_with_message(self):
+        cfg = parse_config('after git push * "Check deployment status"')
+        assert len(cfg.after_rules) == 1
+        assert cfg.after_rules[0].decision == "after"
+        assert cfg.after_rules[0].pattern == "git push *"
+        assert cfg.after_rules[0].message == "Check deployment status"
+
+    def test_after_pattern_only(self):
+        cfg = parse_config("after npm *")
+        assert len(cfg.after_rules) == 1
+        assert cfg.after_rules[0].pattern == "npm *"
+        assert cfg.after_rules[0].message is None
+
+    def test_after_empty_message(self):
+        cfg = parse_config('after npm install * ""')
+        assert len(cfg.after_rules) == 1
+        assert cfg.after_rules[0].pattern == "npm install *"
+        assert cfg.after_rules[0].message == ""
+
+    def test_after_requires_pattern(self):
+        cfg = parse_config("after")
+        assert cfg.after_rules == []
+
+    def test_after_mixed_with_other_rules(self):
+        cfg = parse_config("""
+allow git *
+after git push * "Check CI"
+deny rm -rf /*
+after make test * "Review failures"
+""")
+        assert len(cfg.rules) == 2
+        assert len(cfg.after_rules) == 2
+        assert cfg.after_rules[0].pattern == "git push *"
+        assert cfg.after_rules[1].pattern == "make test *"
+
+
+class TestMergeConfigsAfterRules:
+    """Test after rules merging."""
+
+    def test_after_rules_concatenate(self):
+        base = Config(after_rules=[Rule("after", "git *", message="msg1")])
+        overlay = Config(after_rules=[Rule("after", "npm *", message="msg2")])
+        merged = _merge_configs(base, overlay)
+        assert len(merged.after_rules) == 2
+        assert merged.after_rules[0].pattern == "git *"
+        assert merged.after_rules[1].pattern == "npm *"
+
+
+class TestMatchAfter:
+    """Test after rule matching for PostToolUse feedback."""
+
+    def test_basic_match(self, tmp_path):
+        cfg = Config(after_rules=[Rule("after", "git push *", message="Done pushing")])
+        result = match_after(["git", "push", "origin", "main"], cfg, tmp_path)
+        assert result == "Done pushing"
+
+    def test_no_match(self, tmp_path):
+        cfg = Config(after_rules=[Rule("after", "git push *", message="Done pushing")])
+        result = match_after(["git", "status"], cfg, tmp_path)
+        assert result is None
+
+    def test_last_match_wins(self, tmp_path):
+        cfg = Config(
+            after_rules=[
+                Rule("after", "npm *", message="Check npm output"),
+                Rule("after", "npm install *", message="Dependencies installed"),
+            ]
+        )
+        result = match_after(["npm", "install", "lodash"], cfg, tmp_path)
+        assert result == "Dependencies installed"
+
+    def test_silent_override(self, tmp_path):
+        """Empty message should override earlier match (silent)."""
+        cfg = Config(
+            after_rules=[
+                Rule("after", "npm *", message="Check npm output"),
+                Rule("after", "npm install *", message=""),
+            ]
+        )
+        result = match_after(["npm", "install", "lodash"], cfg, tmp_path)
+        assert result == ""
+
+    def test_pattern_only_is_silent(self, tmp_path):
+        """Pattern without message (message=None) should return empty string."""
+        cfg = Config(after_rules=[Rule("after", "make *")])
+        result = match_after(["make", "build"], cfg, tmp_path)
+        assert result == ""
+
+    def test_trailing_star_matches_bare_command(self, tmp_path):
+        cfg = Config(after_rules=[Rule("after", "python *", message="Python ran")])
+        result = match_after(["python"], cfg, tmp_path)
+        assert result == "Python ran"
+
+    def test_path_normalization(self, tmp_path):
+        home = str(Path.home())
+        cfg = Config(after_rules=[Rule("after", f"{home}/bin/*", message="custom bin")])
+        result = match_after(["~/bin/script"], cfg, tmp_path)
+        assert result == "custom bin"
