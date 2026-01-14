@@ -1,9 +1,9 @@
 # Dippy Syntax Highlighting for VS Code
 
+Highlights `.dippy` files and `~/.dippy/config`.
+
 ## Install
 
 ```bash
-cd editors/vscode
-npx @vscode/vsce package
-code --install-extension dippy-syntax-*.vsix
+just vscode
 ```

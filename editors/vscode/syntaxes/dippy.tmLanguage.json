@@ -11,7 +11,7 @@
       "name": "comment.line.number-sign.dippy"
     },
     "rule": {
-      "begin": "^\\s*(allow-redirect|ask-redirect|deny-redirect|allow|ask|deny)\\b",
+      "begin": "^\\s*(allow-redirect|ask-redirect|deny-redirect|allow|ask|deny|after)\\b",
       "beginCaptures": {
         "1": { "name": "keyword.control.dippy" }
       },
