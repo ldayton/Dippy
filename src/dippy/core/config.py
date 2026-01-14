@@ -335,11 +335,10 @@ def _expand_path(
 ) -> str:
     """Expand a path-like string to an absolute path.
 
-    - Bare ~ or ~/... expands to home directory
-    - ~user/... left unchanged (no user lookup)
-    - Relative paths (., .., ./foo, foo/bar) resolve against cwd
+    - ~/... expands to home directory
+    - Relative paths (./foo, ../bar, foo/bar) resolve against cwd
     - Absolute paths returned as-is
-    - Non-path tokens (no / or ~) returned unchanged unless is_path=True
+    - Non-path tokens returned unchanged unless is_path=True
 
     Args:
         path: The path string to expand
@@ -349,19 +348,14 @@ def _expand_path(
     """
     if strip_trailing_slash:
         path = path.rstrip("/")
-    # Bare ~ or ~/...
-    if path == "~":
-        return str(_HOME)
+    # ~/... expands to home
     if path.startswith("~/"):
         return str(_HOME) + path[1:]
-    # ~user/... - leave unchanged (don't treat as relative path)
-    if path.startswith("~"):
-        return path
     # Already absolute
     if path.startswith("/"):
         return path
     # Relative path - resolve against cwd
-    if is_path or path in (".", "..") or "/" in path or path.startswith("."):
+    if is_path or "/" in path or path.startswith("./") or path.startswith(".."):
         return str((cwd / path).resolve())
     # Non-path token (e.g., "git", "node")
     return path
