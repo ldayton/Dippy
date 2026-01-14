@@ -1210,3 +1210,55 @@ class TestPatternNormalization:
             match_command(cmd(f"cp {tmp_path}/src/a.txt dest/b.txt"), cfg, tmp_path)
             is not None
         )
+
+
+class TestPathExpansionBugs:
+    """Tests for path expansion edge cases (bugs)."""
+
+    def test_bare_tilde_expanded_in_command(self, tmp_path):
+        """Bare ~ should expand to home directory."""
+        home = str(Path.home())
+        cfg = Config(rules=[Rule("allow", f"cd {home}")])
+        # Bare ~ should expand to home and match
+        assert match_command(cmd("cd ~"), cfg, tmp_path) is not None
+
+    def test_bare_tilde_expanded_in_pattern(self, tmp_path):
+        """Pattern with bare ~ should expand to home directory."""
+        cfg = Config(rules=[Rule("allow", "cd ~")])
+        home = str(Path.home())
+        # Command with absolute home path should match pattern with ~
+        assert match_command(cmd(f"cd {home}"), cfg, tmp_path) is not None
+
+    def test_tilde_user_not_mangled(self, tmp_path):
+        """~user/path should not be turned into a relative path under cwd."""
+        cfg = Config(rules=[Rule("allow", "cat ~bob/file")])
+        # The pattern should stay as ~bob/file, not become /cwd/~bob/file
+        # So a command with literal ~bob/file should match
+        assert match_command(cmd("cat ~bob/file"), cfg, tmp_path) is not None
+        # And a command under cwd should NOT match (proving it wasn't mangled)
+        assert match_command(cmd(f"cat {tmp_path}/~bob/file"), cfg, tmp_path) is None
+
+    def test_shell_variable_not_mangled(self, tmp_path):
+        """$VAR/path should not be turned into a relative path under cwd."""
+        cfg = Config(rules=[Rule("allow", "cat $HOME/.bashrc")])
+        # The pattern should stay as $HOME/.bashrc, not become /cwd/$HOME/.bashrc
+        # So a command with literal $HOME/.bashrc should match
+        assert match_command(cmd("cat $HOME/.bashrc"), cfg, tmp_path) is not None
+        # And a command under cwd should NOT match (proving it wasn't mangled)
+        assert match_command(cmd(f"cat {tmp_path}/$HOME/.bashrc"), cfg, tmp_path) is None
+
+    def test_tilde_expansion_inconsistency(self, tmp_path):
+        """Tilde expands in settings but not in rule patterns - inconsistent."""
+        cfg = parse_config("""
+set log ~/audit.log
+allow cd ~
+""")
+        home = Path.home()
+        # Settings use expanduser() - tilde expands correctly
+        assert cfg.log == home / "audit.log"
+        # But rule patterns don't - tilde stays literal
+        # This is inconsistent: same syntax, different behavior
+        assert cfg.rules[0].pattern == "cd ~"
+        # For consistency, the pattern should also expand (or both should not)
+        # If we had consistent behavior, this would pass:
+        assert cfg.rules[0].pattern == f"cd {home}"
