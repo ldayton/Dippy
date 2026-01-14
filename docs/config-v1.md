@@ -41,6 +41,9 @@ ask-redirect <glob> "message"  # prompt with message shown to AI
 deny-redirect <glob>           # reject output redirects to matching paths
 deny-redirect <glob> "message" # reject with message shown to AI
 
+after <glob>                   # post-action feedback (silent)
+after <glob> "message"         # post-action feedback with message to AI
+
 set <key> [value]              # settings
 ```
 
@@ -355,11 +358,9 @@ Or for both file and MCP control:
 "matcher": "Bash|Write|Edit|MultiEdit|mcp__.*"
 ```
 
-## Proposal: Post-Action Feedback
+## After Rules
 
-Claude Code's PostToolUse hook fires after a command completes successfully and can provide feedback to Claude. Dippy could use its existing pattern matching to let users define post-action messages.
-
-### Proposed Syntax
+After rules provide feedback to the AI after a command completes. They use Claude Code's PostToolUse hook.
 
 ```
 after <glob>           # silent - matches, no message
@@ -368,8 +369,6 @@ after <glob> "message" # matches, sends message to Claude
 ```
 
 Like other rules, last match wins. A silent `after` (with no message or empty string) overrides earlier matches—useful for excluding specific commands from a broad rule.
-
-### Example
 
 ```
 # Remind Claude after git operations
@@ -385,32 +384,14 @@ after ./deploy.sh * "Verify deployment in staging before continuing"
 after make test * "Review test output and fix any failures"
 ```
 
-### How It Works
-
-PostToolUse hooks receive the completed command and can output feedback that Claude sees as context. Unlike PreToolUse (which controls permission), PostToolUse is purely informational—it cannot block or modify.
-
 When an `after` rule matches:
 1. Dippy outputs the message to stdout
 2. Claude receives it as post-action feedback
 3. Claude can adjust its behavior based on the message
 
-### Opting In
+Unlike PreToolUse rules (which control permission), after rules are purely informational—they cannot block or modify.
 
-Dippy must register for PostToolUse events in addition to PreToolUse. Update `settings.json`:
-
-```json
-"hooks": {
-  "PreToolUse": [...],
-  "PostToolUse": [
-    {
-      "matcher": "Bash",
-      "hooks": [{ "type": "command", "command": "dippy" }]
-    }
-  ]
-}
-```
-
-Or Dippy's install script could set this up automatically.
+To enable after rules, register Dippy for PostToolUse in `settings.json` (see Installation in README).
 
 ## Implementation Notes
 

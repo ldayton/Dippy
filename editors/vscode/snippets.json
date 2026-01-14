@@ -1,0 +1,60 @@
+{
+  "allow": {
+    "prefix": "allow",
+    "body": "allow ${1:pattern}",
+    "description": "Auto-approve matching commands"
+  },
+  "ask": {
+    "prefix": "ask",
+    "body": "ask ${1:pattern} \"${2:message}\"",
+    "description": "Prompt user for matching commands"
+  },
+  "deny": {
+    "prefix": "deny",
+    "body": "deny ${1:pattern} \"${2:message}\"",
+    "description": "Reject matching commands"
+  },
+  "allow-redirect": {
+    "prefix": ["allow-redirect", "allowr"],
+    "body": "allow-redirect ${1:/tmp/**}",
+    "description": "Allow output redirects to matching paths"
+  },
+  "ask-redirect": {
+    "prefix": ["ask-redirect", "askr"],
+    "body": "ask-redirect ${1:pattern} \"${2:message}\"",
+    "description": "Prompt for output redirects to matching paths"
+  },
+  "deny-redirect": {
+    "prefix": ["deny-redirect", "denyr"],
+    "body": "deny-redirect ${1:**/.env*} \"${2:message}\"",
+    "description": "Reject output redirects to matching paths"
+  },
+  "after": {
+    "prefix": "after",
+    "body": "after ${1:git commit *} \"${2:message}\"",
+    "description": "Post-action feedback to AI"
+  },
+  "set log": {
+    "prefix": ["set log", "log"],
+    "body": "set log ${1:~/.dippy/audit.log}",
+    "description": "Enable audit logging to path"
+  },
+  "set log-full": {
+    "prefix": ["set log-full", "logfull"],
+    "body": "set log-full",
+    "description": "Include full command in audit log"
+  },
+  "set default": {
+    "prefix": ["set default", "default"],
+    "body": "set default ${1|allow,ask|}",
+    "description": "Set default decision for unmatched commands"
+  },
+  "section": {
+    "prefix": ["section", "#"],
+    "body": [
+      "# ${1:Section}",
+      "$0"
+    ],
+    "description": "Comment section header"
+  }
+}

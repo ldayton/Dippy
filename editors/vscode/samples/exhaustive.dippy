@@ -134,6 +134,26 @@ deny-redirect ~/.ssh/id_* "Never overwrite SSH keys"
 deny-redirect /etc/** "System config is off-limits"
 
 # -----------------------------------------------------------------------------
+# AFTER RULES: PostToolUse feedback
+# -----------------------------------------------------------------------------
+
+# After rules send messages to the AI after command completes
+after git push * "Re-read the prompt file for next steps"
+after git commit * "Update your todo list"
+
+# Silent after (no message, just matches)
+after npm *
+after npm install *
+
+# After with workflow reminders
+after ./deploy.sh * "Verify deployment in staging before continuing"
+after make test * "Review test output and fix any failures"
+
+# Broad rule with specific override (last match wins)
+after npm * "Check for any errors in the output"
+after npm install * ""
+
+# -----------------------------------------------------------------------------
 # SETTINGS
 # -----------------------------------------------------------------------------
 

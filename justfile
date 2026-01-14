@@ -35,3 +35,11 @@ lint *ARGS:
 # Format (--fix to apply changes)
 fmt *ARGS:
     uv run ruff format {{ if ARGS == "--fix" { "" } else { "--check" } }} 2>&1 | sed -u "s/^/[fmt] /" | tee /tmp/{{project}}-fmt.log
+
+# Install VS Code syntax highlighting extension
+vscode:
+    #!/usr/bin/env bash
+    cd editors/vscode
+    rm -f dippy-syntax-*.vsix
+    npx @vscode/vsce package
+    code --install-extension dippy-syntax-*.vsix
