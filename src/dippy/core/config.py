@@ -330,21 +330,46 @@ def _apply_setting(settings: dict[str, bool | int | str | Path], rest: str) -> N
 # === Matching ===
 
 
-def _normalize_token(token: str, cwd: Path) -> str:
-    """Normalize a single path token against cwd.
+def _expand_path(
+    path: str, cwd: Path, *, strip_trailing_slash: bool = False, is_path: bool = False
+) -> str:
+    """Expand a path-like string to an absolute path.
 
-    - Expands ~ to home directory
-    - Resolves relative paths (./foo, ../bar, foo/bar) against cwd
-    - Absolute paths and non-path tokens left unchanged
+    - Bare ~ or ~/... expands to home directory
+    - ~user/... left unchanged (no user lookup)
+    - Relative paths (., .., ./foo, foo/bar) resolve against cwd
+    - Absolute paths returned as-is
+    - Non-path tokens (no / or ~) returned unchanged unless is_path=True
+
+    Args:
+        path: The path string to expand
+        cwd: Working directory for resolving relative paths
+        strip_trailing_slash: If True, strip trailing slashes from result
+        is_path: If True, treat as a path even without path indicators (for redirects)
     """
-    if token.startswith("~/"):
-        return str(_HOME) + token[1:]
-    if token.startswith("/"):
-        return token
-    # Relative path (with or without ./) - resolve against cwd
-    if "/" in token or token.startswith("./") or token.startswith(".."):
-        return str((cwd / token).resolve())
-    return token
+    if strip_trailing_slash:
+        path = path.rstrip("/")
+    # Bare ~ or ~/...
+    if path == "~":
+        return str(_HOME)
+    if path.startswith("~/"):
+        return str(_HOME) + path[1:]
+    # ~user/... - leave unchanged (don't treat as relative path)
+    if path.startswith("~"):
+        return path
+    # Already absolute
+    if path.startswith("/"):
+        return path
+    # Relative path - resolve against cwd
+    if is_path or path in (".", "..") or "/" in path or path.startswith("."):
+        return str((cwd / path).resolve())
+    # Non-path token (e.g., "git", "node")
+    return path
+
+
+def _normalize_token(token: str, cwd: Path) -> str:
+    """Normalize a single token in a command. Delegates to _expand_path."""
+    return _expand_path(token, cwd, strip_trailing_slash=False)
 
 
 def _normalize_words(words: list[str], cwd: Path) -> str:
@@ -364,18 +389,8 @@ def _normalize_pattern(pattern: str, cwd: Path) -> str:
 
 
 def _normalize_path(path: str, cwd: Path) -> str:
-    """Normalize a redirect target path.
-
-    - Expands ~ to home directory
-    - Resolves relative paths against cwd
-    - Strips trailing /
-    """
-    path = path.rstrip("/")
-    if path.startswith("~/"):
-        return str(_HOME) + path[1:]
-    if not path.startswith("/"):
-        return str((cwd / path).resolve())
-    return path
+    """Normalize a redirect target path. Delegates to _expand_path."""
+    return _expand_path(path, cwd, strip_trailing_slash=True, is_path=True)
 
 
 def _glob_to_regex(pattern: str) -> re.Pattern:

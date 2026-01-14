@@ -15,6 +15,7 @@ from dippy.core.config import (
     SCOPE_PROJECT,
     SCOPE_USER,
     SimpleCommand,
+    _expand_path,
     _find_project_config,
     _merge_configs,
     _tag_rules,
@@ -1210,3 +1211,56 @@ class TestPatternNormalization:
             match_command(cmd(f"cp {tmp_path}/src/a.txt dest/b.txt"), cfg, tmp_path)
             is not None
         )
+
+
+class TestExpandPath:
+    """Tests for _expand_path edge cases."""
+
+    def test_bare_tilde(self, tmp_path):
+        """Bare ~ expands to home directory."""
+        home = Path.home()
+        assert _expand_path("~", tmp_path) == str(home)
+
+    def test_tilde_slash(self, tmp_path):
+        """~/foo expands to home directory."""
+        home = Path.home()
+        assert _expand_path("~/foo", tmp_path) == f"{home}/foo"
+        assert _expand_path("~/foo/bar", tmp_path) == f"{home}/foo/bar"
+
+    def test_tilde_user_unchanged(self, tmp_path):
+        """~user/foo is left unchanged (no user lookup)."""
+        assert _expand_path("~bob/file", tmp_path) == "~bob/file"
+        assert _expand_path("~root", tmp_path) == "~root"
+
+    def test_bare_dot(self, tmp_path):
+        """Bare . resolves to cwd."""
+        assert _expand_path(".", tmp_path) == str(tmp_path)
+
+    def test_bare_dotdot(self, tmp_path):
+        """Bare .. resolves to parent."""
+        assert _expand_path("..", tmp_path) == str(tmp_path.parent)
+
+    def test_bare_filename_without_is_path(self, tmp_path):
+        """Bare filename without is_path stays unchanged."""
+        assert _expand_path("file.txt", tmp_path) == "file.txt"
+        assert _expand_path("git", tmp_path) == "git"
+
+    def test_bare_filename_with_is_path(self, tmp_path):
+        """Bare filename with is_path=True resolves against cwd."""
+        assert _expand_path("file.txt", tmp_path, is_path=True) == str(tmp_path / "file.txt")
+
+    def test_strip_trailing_slash(self, tmp_path):
+        """strip_trailing_slash removes trailing slashes."""
+        assert _expand_path("/tmp/foo/", tmp_path, strip_trailing_slash=True) == "/tmp/foo"
+        assert _expand_path("/tmp/foo//", tmp_path, strip_trailing_slash=True) == "/tmp/foo"
+        assert _expand_path("/tmp/foo/", tmp_path, strip_trailing_slash=False) == "/tmp/foo/"
+
+    def test_absolute_path_unchanged(self, tmp_path):
+        """Absolute paths are returned as-is."""
+        assert _expand_path("/abs/path", tmp_path) == "/abs/path"
+
+    def test_relative_with_slash(self, tmp_path):
+        """Relative paths with / resolve against cwd."""
+        assert _expand_path("foo/bar", tmp_path) == str(tmp_path / "foo" / "bar")
+        assert _expand_path("./foo", tmp_path) == str(tmp_path / "foo")
+        assert _expand_path("../foo", tmp_path) == str(tmp_path.parent / "foo")
