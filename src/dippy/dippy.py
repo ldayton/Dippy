@@ -285,6 +285,16 @@ def main():
 
             command = tool_input.get("command", "")
 
+        # Check for bypass permissions mode (Claude Code PreToolUse only)
+        # When --dangerously-skip-permissions is used, permission_mode is "bypassPermissions"
+        if hook_event != "PostToolUse":
+            permission_mode = input_data.get("permission_mode", "default")
+            if permission_mode in ("bypassPermissions", "dontAsk"):
+                logging.info(f"Bypass mode ({permission_mode}): {command}")
+                log_decision("allow", permission_mode, command=command)
+                print(json.dumps(approve(permission_mode)))
+                return
+
         # Route based on hook event type
         if hook_event == "PostToolUse":
             logging.info(f"PostToolUse: {command}")
