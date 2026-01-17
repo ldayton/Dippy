@@ -34,6 +34,26 @@
     "body": "after ${1:git commit *} \"${2:message}\"",
     "description": "Post-action feedback to AI"
   },
+  "allow-mcp": {
+    "prefix": ["allow-mcp", "allowm"],
+    "body": "allow-mcp ${1:mcp__github__get_*}",
+    "description": "Auto-approve matching MCP tools"
+  },
+  "ask-mcp": {
+    "prefix": ["ask-mcp", "askm"],
+    "body": "ask-mcp ${1:mcp__github__create_*} \"${2:message}\"",
+    "description": "Prompt user for matching MCP tools"
+  },
+  "deny-mcp": {
+    "prefix": ["deny-mcp", "denym"],
+    "body": "deny-mcp ${1:mcp__*__delete_*} \"${2:message}\"",
+    "description": "Reject matching MCP tools"
+  },
+  "after-mcp": {
+    "prefix": ["after-mcp", "afterm"],
+    "body": "after-mcp ${1:mcp__github__create_*} \"${2:message}\"",
+    "description": "Post-action feedback for MCP tools"
+  },
   "set log": {
     "prefix": ["set log", "log"],
     "body": "set log ${1:~/.dippy/audit.log}",

@@ -134,6 +134,28 @@ deny-redirect ~/.ssh/id_* "Never overwrite SSH keys"
 deny-redirect /etc/** "System config is off-limits"
 
 # -----------------------------------------------------------------------------
+# MCP TOOL RULES: allow-mcp, ask-mcp, deny-mcp, after-mcp
+# -----------------------------------------------------------------------------
+
+# Allow read-only GitHub operations
+allow-mcp mcp__github__get_*
+allow-mcp mcp__github__list_*
+allow-mcp mcp__github__search_*
+
+# Ask for write operations
+ask-mcp mcp__github__create_* "Creating GitHub resources"
+ask-mcp mcp__github__update_* "Modifying GitHub resources"
+
+# Deny destructive operations
+deny-mcp mcp__github__delete_* "No deletions without manual review"
+deny-mcp mcp__github__merge_* "Merges need manual approval"
+deny-mcp mcp__*__delete_* "Block all MCP delete operations"
+
+# After rules for MCP
+after-mcp mcp__github__create_* "Check the GitHub UI to verify"
+after-mcp mcp__github__create_pull_request * "Share the PR URL with the team"
+
+# -----------------------------------------------------------------------------
 # AFTER RULES: PostToolUse feedback
 # -----------------------------------------------------------------------------
 
