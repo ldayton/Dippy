@@ -460,7 +460,6 @@ class SafetyAnalyzer(ast.NodeVisitor):
     def __init__(self, allow_print: bool = True):
         self.violations: list[Violation] = []
         self.allow_print = allow_print
-        self._in_safe_context = False
 
     def _add(self, node: ast.AST, kind: str, detail: str) -> None:
         self.violations.append(
@@ -691,30 +690,6 @@ SAFE_FLAGS = frozenset(
         "-h",
         "--help",
         "-VV",  # Verbose version
-    }
-)
-
-# Flags that don't take arguments
-FLAGS_NO_ARG = frozenset(
-    {
-        "-b",
-        "-bb",  # bytes warnings
-        "-B",  # don't write bytecode
-        "-d",  # debug
-        "-E",  # ignore environment
-        "-i",  # interactive (after script)
-        "-I",  # isolated mode
-        "-O",
-        "-OO",  # optimize
-        "-q",  # quiet
-        "-s",  # no user site
-        "-S",  # no site module
-        "-u",  # unbuffered
-        "-v",
-        "-vv",
-        "-vvv",  # verbose
-        "-x",  # skip first line
-        "-P",  # no PYTHONPATH
     }
 )
 

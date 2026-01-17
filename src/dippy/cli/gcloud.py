@@ -69,7 +69,6 @@ UNSAFE_ACTION_PATTERNS = (
 
 # Safe commands in specific groups
 CONFIG_SAFE_COMMANDS = frozenset({"list", "get", "configurations"})
-CONFIG_UNSAFE_COMMANDS = frozenset({"set", "unset", "create", "activate", "delete"})
 
 AUTH_SAFE_COMMANDS = frozenset({"list"})
 # Most auth commands modify state
