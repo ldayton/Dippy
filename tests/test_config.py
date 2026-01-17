@@ -1674,6 +1674,13 @@ class TestMcpEndToEnd:
         import json
         import sys
 
+        import dippy.core.config
+
+        # Isolate from user's ~/.dippy/config
+        monkeypatch.setattr(
+            dippy.core.config, "USER_CONFIG", tmp_path / "no-such-config"
+        )
+
         # Config with rule that won't match
         config_file = tmp_path / ".dippy"
         config_file.write_text("allow-mcp mcp__filesystem__*\n")

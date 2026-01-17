@@ -73,3 +73,27 @@ class TestCmdsubInjectionWarning:
         result = analyze("kubectl $(echo delete) pod foo", config, cwd)
         assert result.action == "ask"
         assert "injection" in result.reason.lower()
+
+
+class TestNegationAndArith:
+    """Test negation (!) and arithmetic (( )) constructs."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("! grep foo", "allow"),
+            ("! rm file", "ask"),
+            ("(( i++ ))", "allow"),
+            ("(( x = 5 ))", "allow"),
+        ],
+    )
+    def test_negation_and_arith(self, cmd, expected, config, cwd):
+        assert analyze(cmd, config, cwd).action == expected
