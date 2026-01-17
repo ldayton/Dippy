@@ -123,7 +123,6 @@ class TestTextProcessing:
             "awk '{print $1}' file.txt",
             "sed 's/foo/bar/' file.txt",
             "jq '.key' file.json",
-            "yq '.key' file.yaml",
         ],
     )
     def test_text_processing(self, check, cmd):

@@ -70,8 +70,6 @@ SIMPLE_SAFE = frozenset(
         "ripgrep",  # fast search tool
         "ag",  # the silver searcher
         "ack",  # grep-like search tool
-        "fd",  # fast find alternative
-        "fzf",  # fuzzy finder
         "locate",  # find files by name
         "look",  # find lines starting with prefix
         "mdfind",  # Spotlight search
@@ -152,7 +150,6 @@ SIMPLE_SAFE = frozenset(
         # === Process & Resource Monitoring ===
         "atos",  # convert addresses to symbols
         "btop",  # resource monitor
-        "dmesg",  # print kernel messages
         "footprint",  # display memory footprint
         "free",  # display memory usage
         "fs_usage",  # report filesystem activity
