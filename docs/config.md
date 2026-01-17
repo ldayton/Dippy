@@ -1,4 +1,4 @@
-# Dippy Configuration v1
+# Dippy Configuration
 
 ## Design Principles
 

@@ -114,7 +114,6 @@ The parser breaks down bash syntax BEFORE rule matching:
 - **Variable expansion:** `$HOME` stays as `$HOME` (shell expands it later)
 - **Glob expansion:** `*.txt` stays as `*.txt` (shell expands it later)
 - **Alias resolution:** We don't know what aliases exist
-- **Arithmetic:** `$((1+1))` is opaque to us
 
 These are expanded by the shell AFTER approval. We match the literal string.
 
@@ -190,7 +189,15 @@ root:x:0:0::/root:/bin/bash
 EOF
 ```
 
-Redirect `/etc/passwd` is extracted and matched. The here-doc content is not analyzed (it's data, not commands).
+Redirect `/etc/passwd` is extracted and matched. Unquoted heredocs are also scanned for command substitutions:
+
+```bash
+cat <<EOF
+$(rm -rf /)
+EOF
+```
+
+This would trigger approval because the cmdsub contains `rm -rf /`. Quoted heredocs (`<<'EOF'`) are not expanded by bash, so they're treated as data.
 
 ### Process Substitution
 
@@ -199,6 +206,30 @@ diff <(cat a) <(cat b)
 ```
 
 Commands extracted: `cat a`, `cat b`, `diff <(...) <(...)`.
+
+### Arithmetic Expressions
+
+```bash
+(( x = $(dangerous_cmd) ))
+```
+
+Command substitutions inside `(( ))` arithmetic are analyzed. The inner command is extracted and checked.
+
+### Parameter Expansions
+
+```bash
+echo ${x:-$(rm -rf /)}
+```
+
+Command substitutions nested in parameter expansions (`${x:-...}`, `${x:=...}`, etc.) are analyzed. This catches cmdsubs in default values.
+
+### C-style For Loops
+
+```bash
+for (( i=$(rm foo); i<10; i++ )); do echo $i; done
+```
+
+Command substitutions in the init, condition, and increment expressions of `for (( ))` loops are analyzed.
 
 ## Trust Assumptions
 
