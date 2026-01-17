@@ -31,6 +31,11 @@ FILE_REDIRECT_PATTERN = re.compile(
     re.VERBOSE,
 )
 
+# Extract literal redirect targets: > "/path" or >> '/path'
+LITERAL_REDIRECT_PATTERN = re.compile(
+    r"""(?:print|printf)\s*[^}]*\s*>>?\s*["']([^"']+)["']""",
+)
+
 # Pattern for pipe to command
 PIPE_PATTERN = re.compile(
     r"""
@@ -86,6 +91,17 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check for file redirects
     if FILE_REDIRECT_PATTERN.search(program):
-        return Classification("ask", description=f"{base} redirect")
+        # Extract literal paths that can be checked against redirect rules
+        literal_targets = tuple(LITERAL_REDIRECT_PATTERN.findall(program))
+        if literal_targets:
+            # All redirects are to literal paths - let analyzer check them
+            return Classification(
+                "approve",
+                description=f"{base} redirect",
+                redirect_targets=literal_targets,
+            )
+        else:
+            # Dynamic redirects (variables, expressions) - must ask
+            return Classification("ask", description=f"{base} redirect")
 
     return Classification("approve", description=base)
