@@ -137,6 +137,18 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
         # ! command - negates exit status, analyze the inner command
         return _analyze_node(node.pipeline, config, cwd)
 
+    elif kind == "coproc":
+        # coproc [NAME] command - analyze the inner command
+        return _analyze_node(node.command, config, cwd)
+
+    elif kind == "cond-expr":
+        # [[ expression ]] - check for command substitutions in operands
+        decisions = []
+        if hasattr(node, "body") and node.body:
+            decisions.extend(_analyze_cond_node(node.body, config, cwd))
+        decisions.extend(_analyze_redirects(node, config, cwd))
+        return _combine(decisions) if decisions else Decision("allow", "conditional")
+
     elif kind == "arith-cmd":
         # (( expr )) - check for command substitutions in the expression
         decisions = []
@@ -432,6 +444,69 @@ def _find_cmdsubs_in_arith(node) -> list:
         if child is not None:
             results.extend(_find_cmdsubs_in_arith(child))
     return results
+
+
+def _analyze_cond_node(node, config: Config, cwd: Path) -> list[Decision]:
+    """Recursively analyze a conditional expression node for cmdsubs."""
+    if node is None:
+        return []
+    kind = getattr(node, "kind", None)
+    if kind == "unary-test":
+        # -f file, -z string - check operand for cmdsubs
+        return _analyze_word_parts(node.operand, config, cwd)
+    elif kind == "binary-test":
+        # $a == $b - check both operands for cmdsubs
+        decisions = []
+        decisions.extend(_analyze_word_parts(node.left, config, cwd))
+        decisions.extend(_analyze_word_parts(node.right, config, cwd))
+        return decisions
+    elif kind in ("cond-and", "cond-or"):
+        # expr1 && expr2, expr1 || expr2 - recurse both sides
+        decisions = []
+        decisions.extend(_analyze_cond_node(node.left, config, cwd))
+        decisions.extend(_analyze_cond_node(node.right, config, cwd))
+        return decisions
+    elif kind == "cond-not":
+        # ! expr - recurse into operand
+        return _analyze_cond_node(node.operand, config, cwd)
+    elif kind == "cond-paren":
+        # ( expr ) - recurse into inner
+        return _analyze_cond_node(node.inner, config, cwd)
+    return []
+
+
+def _analyze_word_parts(word, config: Config, cwd: Path) -> list[Decision]:
+    """Analyze word parts for command/process substitutions."""
+    decisions = []
+    parts = getattr(word, "parts", [])
+    for part in parts:
+        part_kind = getattr(part, "kind", None)
+        if part_kind == "cmdsub":
+            inner_decision = _analyze_node(part.command, config, cwd)
+            if inner_decision.action != "allow":
+                decisions.append(
+                    Decision(
+                        inner_decision.action,
+                        f"conditional cmdsub: {inner_decision.reason}",
+                        children=[inner_decision],
+                    )
+                )
+            else:
+                decisions.append(inner_decision)
+        elif part_kind == "procsub":
+            inner_decision = _analyze_node(part.command, config, cwd)
+            if inner_decision.action != "allow":
+                direction = getattr(part, "direction", "?")
+                decisions.append(
+                    Decision(
+                        inner_decision.action,
+                        f"conditional procsub {direction}(...): {inner_decision.reason}",
+                        children=[inner_decision],
+                    )
+                )
+            else:
+                decisions.append(inner_decision)
+    return decisions
 
 
 def _combine(decisions: list[Decision]) -> Decision:
