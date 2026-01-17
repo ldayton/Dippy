@@ -369,3 +369,27 @@ class TestHeredocCmdsub:
     def test_heredoc_cmdsub(self, cmd, expected, config, cwd):
         """Cmdsubs in unquoted heredocs should be analyzed."""
         assert analyze(cmd, config, cwd).action == expected
+
+
+class TestCdPathResolution:
+    """Test that `cd <literal> && ...` resolves paths against the cd target."""
+
+    def test_cd_resolves_relative_path_for_config_match(self, tmp_path):
+        """cd /foo && ./bar should resolve ./bar against /foo."""
+        from dippy.core.config import parse_config
+
+        target_dir = tmp_path / "myproject"
+        target_dir.mkdir()
+        config = parse_config(f"allow {target_dir}/tool *")
+        # cwd is tmp_path, but cd changes to target_dir
+        result = analyze(f"cd {target_dir} && ./tool --flag", config, tmp_path)
+        assert result.action == "allow"
+
+    def test_cd_tilde_path(self):
+        """cd ~ && ./script should resolve ./script against home."""
+        from dippy.core.config import parse_config
+
+        home = Path.home()
+        config = parse_config(f"allow {home}/script *")
+        result = analyze("cd ~ && ./script arg", config, Path("/somewhere/else"))
+        assert result.action == "allow"
