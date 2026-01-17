@@ -17,6 +17,8 @@ SIMPLE_SAFE = frozenset(
         "tac",
         "od",
         "hexdump",
+        "dwarfdump",
+        "dyld_info",
         "ldd",
         "nm",
         "objdump",
@@ -52,6 +54,8 @@ SIMPLE_SAFE = frozenset(
         "ripgrep",
         "ag",
         "ack",
+        "fd",
+        "fzf",
         "locate",
         # === Text Processing ===
         "uniq",
@@ -62,6 +66,7 @@ SIMPLE_SAFE = frozenset(
         "comm",
         "cmp",
         "diff",
+        "diff3",
         "expand",
         "bc",
         "dc",
@@ -108,10 +113,17 @@ SIMPLE_SAFE = frozenset(
         "cal",
         "uptime",
         # === Process & Resource Monitoring ===
+        "atos",
+        "btop",
         "dmesg",
+        "footprint",
+        "fs_usage",
+        "heap",
         "iostat",
+        "leaks",
         "ps",
         "pgrep",
+        "sample",
         "top",
         "htop",
         "free",
@@ -122,6 +134,7 @@ SIMPLE_SAFE = frozenset(
         "powermetrics",
         "system_profiler",
         "vm_stat",
+        "vmmap",
         "vmstat",
         # === Environment & Output ===
         "printenv",
@@ -149,11 +162,24 @@ SIMPLE_SAFE = frozenset(
         "help",
         "info",
         # === Code Quality & Linting ===
+        "cloc",
         "mypy",
         "black",
         "isort",
         "flake8",
         "pre-commit",
+        # === Media & Image Info ===
+        "afinfo",
+        "ffprobe",
+        "heif-info",
+        "tiffinfo",
+        "webpinfo",
+        # === Archive Info ===
+        "zipinfo",
+        # === Kerberos ===
+        "klist",
+        # === Printing ===
+        "lpstat",
         # === Shell Builtins & Utilities ===
         "true",
         "false",
