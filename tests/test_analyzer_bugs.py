@@ -319,3 +319,53 @@ class TestParamExpansionCmdsub:
     def test_param_expansion_cmdsub(self, cmd, expected, config, cwd):
         """Cmdsubs nested in parameter expansions should be analyzed."""
         assert analyze(cmd, config, cwd).action == expected
+
+
+class TestBacktickCmdsub:
+    """Tests for backtick command substitutions in raw strings."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Backticks in for-arith expressions
+            ("for (( i=`rm foo`; i<10; i++ )); do echo $i; done", "ask"),
+            # Backticks in param expansion
+            ("echo ${x:-`rm foo`}", "ask"),
+        ],
+    )
+    def test_backtick_cmdsub(self, cmd, expected, config, cwd):
+        """Backtick command substitutions should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestHeredocCmdsub:
+    """Tests for command substitutions in heredocs."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Unquoted heredoc - cmdsubs ARE executed
+            ("cat <<EOF\n$(rm foo)\nEOF", "ask"),
+            # Multiple cmdsubs in heredoc
+            ("cat <<EOF\n$(echo a)\n$(rm foo)\nEOF", "ask"),
+        ],
+    )
+    def test_heredoc_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in unquoted heredocs should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected

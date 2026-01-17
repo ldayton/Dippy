@@ -292,7 +292,12 @@ def _analyze_redirects(node, config: Config, cwd: Path) -> list[Decision]:
     for r in redirects:
         r_kind = getattr(r, "kind", None)
         if r_kind == "heredoc":
-            continue  # Heredocs are data, not commands
+            # Unquoted heredocs expand command substitutions
+            if not getattr(r, "quoted", True):
+                content = getattr(r, "content", "")
+                if content:
+                    decisions.extend(_analyze_string_cmdsubs(content, config, cwd))
+            continue
 
         op = getattr(r, "op", "")
         target = _get_word_value(r.target) if r.target else ""
@@ -582,6 +587,28 @@ def _analyze_string_cmdsubs(s: str, config: Config, cwd: Path) -> list[Decision]
                 else:
                     decisions.append(inner_decision)
                 i = j
+            else:
+                i += 1
+        # Look for backtick pattern
+        elif s[i] == "`":
+            # Find closing backtick (no nesting for backticks)
+            j = i + 1
+            while j < len(s) and s[j] != "`":
+                j += 1
+            if j < len(s):
+                inner_cmd = s[i + 1 : j]
+                inner_decision = analyze(inner_cmd, config, cwd)
+                if inner_decision.action != "allow":
+                    decisions.append(
+                        Decision(
+                            inner_decision.action,
+                            f"cmdsub: {inner_decision.reason}",
+                            children=[inner_decision],
+                        )
+                    )
+                else:
+                    decisions.append(inner_decision)
+                i = j + 1
             else:
                 i += 1
         else:
