@@ -138,7 +138,19 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
         return _analyze_node(node.pipeline, config, cwd)
 
     elif kind == "arith-cmd":
-        # (( expr )) - pure arithmetic, safe
+        # (( expr )) - check for command substitutions in the expression
+        decisions = []
+        for cmdsub in _find_cmdsubs_in_arith(node.expression):
+            inner_decision = _analyze_node(cmdsub.command, config, cwd)
+            if inner_decision.action != "allow":
+                return Decision(
+                    inner_decision.action,
+                    f"arithmetic cmdsub: {inner_decision.reason}",
+                    children=[inner_decision],
+                )
+            decisions.append(inner_decision)
+        if decisions:
+            return _combine(decisions)
         return Decision("allow", "arithmetic")
 
     elif kind == "comment":
@@ -388,6 +400,23 @@ def _strip_quotes(value: str) -> str:
         ):
             return value[1:-1]
     return value
+
+
+def _find_cmdsubs_in_arith(node) -> list:
+    """Recursively find command substitutions in an arithmetic expression AST."""
+    results = []
+    if node is None:
+        return results
+    kind = getattr(node, "kind", None)
+    if kind == "cmdsub":
+        results.append(node)
+        return results
+    # Walk all child attributes that might contain nested expressions
+    for attr in ("value", "target", "left", "right", "operand", "index", "expression"):
+        child = getattr(node, attr, None)
+        if child is not None:
+            results.extend(_find_cmdsubs_in_arith(child))
+    return results
 
 
 def _combine(decisions: list[Decision]) -> Decision:
