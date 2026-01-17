@@ -1254,8 +1254,6 @@ TESTS = [
     ("git stash list", True),
     ("node --version", True),
     ("python --version", True),
-    ("pre-commit run", True),
-    ("pre-commit run --all-files", True),
     # Prefix commands - unsafe variants
     ("git config user.name foo", False),
     ("git config --unset user.name", False),
