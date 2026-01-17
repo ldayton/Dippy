@@ -8,6 +8,7 @@ Awk is safe for text processing but can execute shell commands.
 import pytest
 
 from conftest import is_approved, needs_confirmation
+from dippy.core.config import Config, Rule
 
 
 TESTS = [
@@ -147,3 +148,57 @@ def test_command(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestAwkWithRedirectRules:
+    """awk with redirect rules in config."""
+
+    def test_awk_literal_redirect_allowed(self, check, tmp_path):
+        """awk with literal redirect to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check(
+            "awk '{print > \"/tmp/out.txt\"}' file.txt", config=cfg, cwd=tmp_path
+        )
+        assert is_approved(result)
+
+    def test_awk_literal_redirect_denied(self, check, tmp_path):
+        """awk with literal redirect to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check(
+            "awk '{print > \"/etc/foo\"}' file.txt", config=cfg, cwd=tmp_path
+        )
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
+
+    def test_awk_literal_redirect_no_rule(self, check):
+        """awk with literal redirect and no matching rule should ask."""
+        result = check("awk '{print > \"/some/path\"}' file.txt")
+        assert needs_confirmation(result)
+
+    def test_awk_dynamic_redirect_always_asks(self, check, tmp_path):
+        """awk with dynamic redirect should always ask (can't extract path)."""
+        cfg = Config(redirect_rules=[Rule("allow", "**")])
+        result = check("awk '{print > $1}' file.txt", config=cfg, cwd=tmp_path)
+        assert needs_confirmation(result)
+
+    def test_awk_append_redirect_allowed(self, check, tmp_path):
+        """awk with >> to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check(
+            "awk '{print >> \"/tmp/log.txt\"}' file.txt", config=cfg, cwd=tmp_path
+        )
+        assert is_approved(result)
+
+    def test_awk_multiple_redirects_all_allowed(self, check, tmp_path):
+        """awk with multiple literal redirects all allowed should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        cmd = """awk '{print > "/tmp/a.txt"; print > "/tmp/b.txt"}' file.txt"""
+        result = check(cmd, config=cfg, cwd=tmp_path)
+        assert is_approved(result)
+
+    def test_awk_multiple_redirects_one_not_allowed(self, check, tmp_path):
+        """awk with one disallowed redirect should ask."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        cmd = """awk '{print > "/tmp/a.txt"; print > "/etc/b.txt"}' file.txt"""
+        result = check(cmd, config=cfg, cwd=tmp_path)
+        assert needs_confirmation(result)
