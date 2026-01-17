@@ -70,7 +70,13 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
     elif kind == "list":
         # All parts must be safe (skip operators like && ||)
         parts = [p for p in node.parts if getattr(p, "kind", None) != "operator"]
-        decisions = [_analyze_node(p, config, cwd) for p in parts]
+        # Check if first part is `cd <literal>` - use that path for subsequent parts
+        effective_cwd = cwd
+        if parts:
+            cd_target = _extract_cd_target(parts[0])
+            if cd_target:
+                effective_cwd = _resolve_cd_target(cd_target, cwd)
+        decisions = [_analyze_node(p, config, effective_cwd) for p in parts]
         result = _combine(decisions)
         if result.action == "allow":
             reasons = [d.reason for d in decisions]
@@ -608,6 +614,38 @@ def _analyze_string_cmdsubs(s: str, config: Config, cwd: Path) -> list[Decision]
         else:
             i += 1
     return decisions
+
+
+def _extract_cd_target(node) -> str | None:
+    """Extract target path from a `cd <literal>` command, or None if not applicable."""
+    if getattr(node, "kind", None) != "command":
+        return None
+    words = getattr(node, "words", [])
+    if len(words) != 2:
+        return None
+    base = _get_word_value(words[0])
+    if base != "cd":
+        return None
+    target_word = words[1]
+    # Only literal paths - no variables, command substitutions, etc.
+    if getattr(target_word, "parts", None):
+        for part in target_word.parts:
+            part_kind = getattr(part, "kind", None)
+            if part_kind in ("cmdsub", "param", "procsub"):
+                return None
+    return _get_word_value(target_word)
+
+
+def _resolve_cd_target(target: str, cwd: Path) -> Path:
+    """Resolve a cd target path to an absolute Path."""
+    if target.startswith("~"):
+        home = Path.home()
+        if target == "~":
+            return home
+        return home / target[2:]  # ~/foo -> home / foo
+    if target.startswith("/"):
+        return Path(target)
+    return (cwd / target).resolve()
 
 
 def _combine(decisions: list[Decision]) -> Decision:
