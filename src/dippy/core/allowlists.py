@@ -111,10 +111,9 @@ SIMPLE_SAFE = frozenset(
         "dc",  # reverse polish calculator
         "expr",  # evaluate expression
         "units",  # unit conversion calculator
-        # === Structured Data (JSON/YAML/XML) ===
+        # === Structured Data ===
         "jq",  # JSON processor
-        "yq",  # YAML processor
-        "xq",  # XML processor
+        "xq",  # XML/HTML beautifier and extractor
         # === Encoding & Checksums ===
         "base64",  # base64 encode/decode
         "md5sum",  # compute MD5 checksum
