@@ -146,6 +146,7 @@ SIMPLE_SAFE = frozenset(
         "fs_usage",
         "heap",
         "iostat",
+        "ipcs",
         "leaks",
         "ps",
         "pgrep",
@@ -199,6 +200,7 @@ SIMPLE_SAFE = frozenset(
         "man",
         "help",
         "info",
+        "tldr",
         # === Code Quality & Linting ===
         "cloc",
         "mypy",
@@ -210,7 +212,11 @@ SIMPLE_SAFE = frozenset(
         "afinfo",
         "ffprobe",
         "heif-info",
+        "identify",
+        "opj_dump",
+        "rdjpgcom",
         "sndfile-info",
+        "tiffdump",
         "tiffinfo",
         "webpinfo",
         # === Archive Info ===
