@@ -133,6 +133,14 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
         # time command - analyze the pipeline being timed
         return _analyze_node(node.pipeline, config, cwd)
 
+    elif kind == "negation":
+        # ! command - negates exit status, analyze the inner command
+        return _analyze_node(node.pipeline, config, cwd)
+
+    elif kind == "arith-cmd":
+        # (( expr )) - pure arithmetic, safe
+        return Decision("allow", "arithmetic")
+
     elif kind == "comment":
         return Decision("allow", "comment")
 
