@@ -95,7 +95,7 @@ deny-mcp mcp__*__delete_* "No deletions"  # block destructive MCP operations
 after git commit * "Reread prompts/next-iteration.md"  # after hook keeps Claude on task
 ```
 
-Configuration reference: `docs/config-v1.md`
+Configuration reference: [docs/config.md](docs/config.md)
 
 ---
 

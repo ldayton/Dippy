@@ -6,7 +6,53 @@
 
 **What we don't protect against:** Malicious actors, compromised AI, adversarial prompt injection. If someone is actively trying to bypass Dippy, they can.
 
-This is stated in config-v1.md: "Not adversarial - protecting against AI mistakes, not malicious actors."
+This is stated in [config.md](config.md): "Not adversarial - protecting against AI mistakes, not malicious actors."
+
+## Core Philosophy
+
+**Approve what we know is safe. Ask about everything else.**
+
+Dippy uses a conservative allowlist approach:
+
+1. **Config rules** (highest priority) - User-defined overrides
+2. **Built-in allowlist** - Known safe read-only commands
+3. **CLI handlers** - Tool-specific logic for git, docker, kubectl, etc.
+4. **Default: ask** - Unknown commands always prompt
+
+This means Dippy errs on the side of caution. If we don't recognize a command, we ask. There's no blocklist of "dangerous" patterns - instead, anything not explicitly safe requires approval.
+
+### Built-in Safe Commands
+
+About 90 read-only commands are pre-approved (see `allowlists.py`):
+
+- **File viewing:** cat, head, tail, less, bat
+- **Directory listing:** ls, tree, exa, find
+- **Search:** grep, rg, ag, ack
+- **Info:** stat, file, wc, du, df, pwd
+- **Text processing:** cut, sort, uniq, diff, jq
+- **System info:** ps, whoami, hostname, uname, date
+- **Network diagnostics:** ping, dig, netstat
+
+### CLI Handlers
+
+Complex tools get specialized handlers that understand their subcommands:
+
+| Tool | Safe | Needs Approval |
+|------|------|----------------|
+| git | status, log, diff, branch | push, commit, reset, rebase |
+| docker | ps, images, inspect | run, rm, stop, build |
+| kubectl | get, describe, logs | delete, apply, exec |
+| aws | s3 ls, ec2 describe-* | s3 rm, ec2 terminate-* |
+
+### Decision Priority
+
+When multiple rules could apply, most restrictive wins:
+
+```
+deny > ask > allow
+```
+
+If a pipeline has one unsafe command, the whole thing requires approval.
 
 ## Architecture
 
@@ -31,18 +77,19 @@ This is stated in config-v1.md: "Not adversarial - protecting against AI mistake
 ┌─────────────────────────────┐    ┌─────────────────────────────┐
 │      Simple Commands        │    │      Redirect Targets       │
 │                             │    │                             │
-│  1. "cd /tmp"               │    │  1. "log.txt" (stdout)      │
-│  2. "rm -rf *"              │    │                             │
-│  3. "echo done"             │    │                             │
+│  1. "cd /tmp"     → allow   │    │  1. "log.txt" → ask         │
+│  2. "rm -rf *"    → ask     │    │                             │
+│  3. "echo done"   → allow   │    │                             │
 └─────────────────────────────┘    └─────────────────────────────┘
                     │                              │
-                    ▼                              ▼
-┌─────────────────────────────┐    ┌─────────────────────────────┐
-│   Command Rule Engine       │    │   Redirect Rule Engine      │
-│                             │    │                             │
-│  fnmatch against patterns   │    │  glob (with **) against     │
-│  from config                │    │  patterns from config       │
-└─────────────────────────────┘    └─────────────────────────────┘
+                    └──────────────┬──────────────┘
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │     Combine Decisions       │
+                    │                             │
+                    │  deny > ask > allow         │
+                    │  Result: ASK                │
+                    └─────────────────────────────┘
 ```
 
 ## What the Parser Handles
