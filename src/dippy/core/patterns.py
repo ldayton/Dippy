@@ -2,9 +2,6 @@
 Shared patterns and safe command sets for Dippy.
 """
 
-import re
-
-
 # === Simple Safe Commands ===
 # These are always safe regardless of arguments (except output redirects)
 
@@ -130,22 +127,6 @@ SIMPLE_SAFE = frozenset(
         "read",  # shell builtin, reads from stdin
     }
 )
-
-
-# === Unsafe Patterns ===
-# These patterns indicate destructive operations
-# Note: Output redirects (>, >>) are handled separately by has_output_redirect()
-# which uses bashlex for proper parsing (handles quotes correctly)
-
-UNSAFE_PATTERNS = [
-    re.compile(r"\brm\s+\S"),  # rm anything
-    re.compile(r"\bmv\s+"),  # mv (move/rename)
-    re.compile(r"\bcp\s+"),  # cp (copy, but can overwrite)
-    re.compile(r"\bchmod\s+"),  # chmod
-    re.compile(r"\bchown\s+"),  # chown
-    re.compile(r"\bsudo\s+"),  # sudo anything
-    re.compile(r"\bdd\s+"),  # dd (disk destroyer)
-]
 
 
 # === Prefix Commands ===

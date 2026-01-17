@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from dippy.core.config import Config, match_redirect
-from dippy.core.patterns import PREFIX_COMMANDS, SIMPLE_SAFE, UNSAFE_PATTERNS
+from dippy.core.patterns import PREFIX_COMMANDS, SIMPLE_SAFE
 from dippy.cli import get_handler, get_description
 from dippy.vendor.parable import parse, ParseError
 
@@ -421,13 +421,7 @@ def _analyze_simple_command(words: list[str], config: Config, cwd: Path) -> Deci
         else:
             return Decision("ask", desc)
 
-    # 6. Check unsafe patterns
-    command_str = " ".join(words)
-    for pattern in UNSAFE_PATTERNS:
-        if pattern.search(command_str):
-            return Decision("ask", base)
-
-    # 7. Unknown command - default ask (show more context than just base)
+    # 6. Unknown command - default ask
     return Decision("ask", get_description(tokens, base))
 
 
