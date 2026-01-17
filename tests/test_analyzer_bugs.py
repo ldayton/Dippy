@@ -126,3 +126,41 @@ class TestCoproc:
     )
     def test_coproc(self, cmd, expected, config, cwd):
         assert analyze(cmd, config, cwd).action == expected
+
+
+class TestCondExpr:
+    """Test [[ ]] conditional expression construct."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Simple conditions - allow
+            ("[[ -f foo ]]", "allow"),
+            ('[[ -z "$x" ]]', "allow"),
+            ("[[ $a == $b ]]", "allow"),
+            ("[[ -f x && -d y ]]", "allow"),
+            ("[[ -f x || -d y ]]", "allow"),
+            ("[[ ! -f foo ]]", "allow"),
+            ("[[ ( -f x ) ]]", "allow"),
+            # Safe cmdsubs - allow
+            ("[[ -f $(echo foo) ]]", "allow"),
+            ("[[ $(echo x) == y ]]", "allow"),
+            ("[[ -f x && $(pwd) == y ]]", "allow"),
+            # Dangerous cmdsubs - ask
+            ("[[ -f $(rm -rf /) ]]", "ask"),
+            ("[[ $(rm file) == x ]]", "ask"),
+            ("[[ -f x && $(rm y) == z ]]", "ask"),
+            ("[[ ! -f $(rm foo) ]]", "ask"),
+            ("[[ ( $(rm x) == y ) ]]", "ask"),
+        ],
+    )
+    def test_cond_expr(self, cmd, expected, config, cwd):
+        assert analyze(cmd, config, cwd).action == expected
