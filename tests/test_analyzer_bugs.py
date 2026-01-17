@@ -245,3 +245,77 @@ class TestCmdsubSecurityGaps:
     def test_redirect_target_cmdsub(self, cmd, expected, config, cwd):
         """Cmdsubs in redirect targets should be analyzed."""
         assert analyze(cmd, config, cwd).action == expected
+
+
+class TestArithCmdRedirect:
+    """Tests for arith-cmd redirect checking."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("(( 1 )) > $(rm foo)", "ask"),
+            ("(( x++ )) > /tmp/out", "ask"),
+        ],
+    )
+    def test_arith_cmd_redirect(self, cmd, expected, config, cwd):
+        """Arith-cmd should check its redirects."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestForArithCmdsub:
+    """Tests for cmdsubs in for-arith init/cond/incr expressions."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("for (( i=$(rm foo); i<10; i++ )); do echo $i; done", "ask"),
+            ("for (( i=0; i<$(rm foo); i++ )); do echo $i; done", "ask"),
+            ("for (( i=0; i<10; i+=$(rm foo) )); do echo $i; done", "ask"),
+        ],
+    )
+    def test_for_arith_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in for-arith init/cond/incr should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestParamExpansionCmdsub:
+    """Tests for cmdsubs nested inside parameter expansions."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("echo ${x:-$(rm foo)}", "ask"),
+            ("echo ${x:=$(rm foo)}", "ask"),
+            ("echo ${x:+$(rm foo)}", "ask"),
+            ("echo ${x:?$(rm foo)}", "ask"),
+            ("[[ -f ${x:-$(rm foo)} ]]", "ask"),
+            ("for i in ${x:-$(rm foo)}; do echo $i; done", "ask"),
+        ],
+    )
+    def test_param_expansion_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs nested in parameter expansions should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
