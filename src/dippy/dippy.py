@@ -71,8 +71,6 @@ def _detect_mode_from_input(input_data: dict) -> str:
 # Initial mode from flags/env (may be overridden by auto-detect)
 _EXPLICIT_MODE = _detect_mode_from_flags()
 MODE = _EXPLICIT_MODE or "claude"  # Default for logging setup
-GEMINI_MODE = MODE == "gemini"  # Backwards compat
-CURSOR_MODE = MODE == "cursor"
 
 # === Logging Setup ===
 
@@ -269,7 +267,7 @@ SHELL_TOOL_NAMES = frozenset(
 
 def main():
     """Main entry point for the hook."""
-    global MODE, GEMINI_MODE, CURSOR_MODE
+    global MODE
 
     setup_logging()
 
@@ -280,8 +278,6 @@ def main():
         # Auto-detect mode from input if no explicit flag/env was set
         if _EXPLICIT_MODE is None:
             MODE = _detect_mode_from_input(input_data)
-            GEMINI_MODE = MODE == "gemini"
-            CURSOR_MODE = MODE == "cursor"
             logging.info(f"Auto-detected mode: {MODE}")
 
         # Extract cwd from input

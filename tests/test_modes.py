@@ -187,8 +187,6 @@ def test_cursor_mode_detection(monkeypatch):
     importlib.reload(dippy.dippy)
 
     assert dippy.dippy.MODE == "cursor"
-    assert dippy.dippy.CURSOR_MODE is True
-    assert dippy.dippy.GEMINI_MODE is False
 
 
 # === Claude Flag Tests ===
