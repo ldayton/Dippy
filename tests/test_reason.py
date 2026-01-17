@@ -78,16 +78,16 @@ class TestAskReasons:
     """Verify unsafe commands list matched commands."""
 
     def test_rm(self, check):
-        assert get_reason(check("rm foo")) == "rm"
+        assert get_reason(check("rm foo")) == "rm foo"
 
     def test_rm_rf(self, check):
-        assert get_reason(check("rm -rf /tmp/foo")) == "rm"
+        assert get_reason(check("rm -rf /tmp/foo")) == "rm -rf"
 
     def test_mv(self, check):
-        assert get_reason(check("mv foo bar")) == "mv"
+        assert get_reason(check("mv foo bar")) == "mv foo"
 
     def test_chmod(self, check):
-        assert get_reason(check("chmod 755 file")) == "chmod"
+        assert get_reason(check("chmod 755 file")) == "chmod 755"
 
     def test_git_push(self, check):
         assert get_reason(check("git push")) == "git push"
@@ -119,20 +119,22 @@ class TestAskReasons:
         assert get_reason(check("echo foo >> file.txt")) == "redirect to file.txt"
 
     def test_rm_mv(self, check):
-        assert get_reason(check("rm foo && mv bar baz")) == "rm, mv"
+        assert get_reason(check("rm foo && mv bar baz")) == "rm foo, mv bar"
 
     def test_chmod_chown(self, check):
-        assert get_reason(check("chmod 755 f && chown root f")) == "chmod, chown"
+        assert (
+            get_reason(check("chmod 755 f && chown root f")) == "chmod 755, chown root"
+        )
 
     def test_rm_git_push_docker_rm(self, check):
         assert (
             get_reason(check("rm x && git push && docker rm y"))
-            == "rm, git push, docker rm"
+            == "rm x, git push, docker rm"
         )
 
     def test_mixed_safe_unsafe(self, check):
         # ls is safe, rm is not - only list unsafe
-        assert get_reason(check("ls && rm foo")) == "rm"
+        assert get_reason(check("ls && rm foo")) == "rm foo"
 
     def test_mixed_pipeline(self, check):
         # cat is safe, tee writes (unknown commands show subcommand)
@@ -174,10 +176,10 @@ class TestCompoundCommands:
         result = check("cat file | while read f; do rm $f; done")
         assert result["hookSpecificOutput"]["permissionDecision"] == "ask"
         reason = get_reason(result)
-        assert reason == "rm"
+        assert reason == "rm $f"
 
     def test_multistatement_after_pipeline(self, check):
         """Standalone commands after pipeline should not repeat pipeline command."""
         cmd = "cat file | tee out\nrm foo"
         reason = get_reason(check(cmd))
-        assert reason == "tee out, rm"
+        assert reason == "tee out, rm foo"

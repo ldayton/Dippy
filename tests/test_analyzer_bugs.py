@@ -164,3 +164,208 @@ class TestCondExpr:
     )
     def test_cond_expr(self, cmd, expected, config, cwd):
         assert analyze(cmd, config, cwd).action == expected
+
+
+class TestCmdsubSecurityGaps:
+    """Tests for cmdsub analysis in various constructs.
+
+    These tests verify that dangerous command substitutions are detected
+    in all contexts, not just simple command arguments.
+    """
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # for loop iteration words
+            ("for i in $(rm foo); do echo $i; done", "ask"),
+            ("for i in $(ls); do echo $i; done", "allow"),
+            ("for i in a $(rm foo) b; do echo $i; done", "ask"),
+        ],
+    )
+    def test_for_iteration_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in for loop iteration list should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # select word list
+            ("select x in $(rm foo); do echo $x; done", "ask"),
+            ("select x in $(ls); do echo $x; done", "allow"),
+        ],
+    )
+    def test_select_words_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in select word list should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # case word
+            ("case $(rm foo) in *) echo y;; esac", "ask"),
+            ("case $(echo x) in *) echo y;; esac", "allow"),
+        ],
+    )
+    def test_case_word_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in case word should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # subshell with redirect containing cmdsub
+            ("(ls) > $(rm foo)", "ask"),
+            ("(ls) > $(echo /tmp/out)", "ask"),  # still ask - output redirect
+            # brace-group with redirect containing cmdsub
+            ("{ ls; } > $(rm foo)", "ask"),
+            ("{ ls; } > $(echo /tmp/out)", "ask"),  # still ask - output redirect
+        ],
+    )
+    def test_compound_redirect_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in redirect targets of compound commands should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Redirect target with cmdsub - inner command should be analyzed
+            ("ls > $(rm foo)", "ask"),
+            # Even safe inner cmdsub should ask due to output redirect
+            ("ls > $(echo /tmp/out)", "ask"),
+        ],
+    )
+    def test_redirect_target_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in redirect targets should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestArithCmdRedirect:
+    """Tests for arith-cmd redirect checking."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("(( 1 )) > $(rm foo)", "ask"),
+            ("(( x++ )) > /tmp/out", "ask"),
+        ],
+    )
+    def test_arith_cmd_redirect(self, cmd, expected, config, cwd):
+        """Arith-cmd should check its redirects."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestForArithCmdsub:
+    """Tests for cmdsubs in for-arith init/cond/incr expressions."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("for (( i=$(rm foo); i<10; i++ )); do echo $i; done", "ask"),
+            ("for (( i=0; i<$(rm foo); i++ )); do echo $i; done", "ask"),
+            ("for (( i=0; i<10; i+=$(rm foo) )); do echo $i; done", "ask"),
+        ],
+    )
+    def test_for_arith_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in for-arith init/cond/incr should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestParamExpansionCmdsub:
+    """Tests for cmdsubs nested inside parameter expansions."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            ("echo ${x:-$(rm foo)}", "ask"),
+            ("echo ${x:=$(rm foo)}", "ask"),
+            ("echo ${x:+$(rm foo)}", "ask"),
+            ("echo ${x:?$(rm foo)}", "ask"),
+            ("[[ -f ${x:-$(rm foo)} ]]", "ask"),
+            ("for i in ${x:-$(rm foo)}; do echo $i; done", "ask"),
+        ],
+    )
+    def test_param_expansion_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs nested in parameter expansions should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestBacktickCmdsub:
+    """Tests for backtick command substitutions in raw strings."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Backticks in for-arith expressions
+            ("for (( i=`rm foo`; i<10; i++ )); do echo $i; done", "ask"),
+            # Backticks in param expansion
+            ("echo ${x:-`rm foo`}", "ask"),
+        ],
+    )
+    def test_backtick_cmdsub(self, cmd, expected, config, cwd):
+        """Backtick command substitutions should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+
+class TestHeredocCmdsub:
+    """Tests for command substitutions in heredocs."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Unquoted heredoc - cmdsubs ARE executed
+            ("cat <<EOF\n$(rm foo)\nEOF", "ask"),
+            # Multiple cmdsubs in heredoc
+            ("cat <<EOF\n$(echo a)\n$(rm foo)\nEOF", "ask"),
+        ],
+    )
+    def test_heredoc_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in unquoted heredocs should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
