@@ -164,3 +164,84 @@ class TestCondExpr:
     )
     def test_cond_expr(self, cmd, expected, config, cwd):
         assert analyze(cmd, config, cwd).action == expected
+
+
+class TestCmdsubSecurityGaps:
+    """Tests for cmdsub analysis in various constructs.
+
+    These tests verify that dangerous command substitutions are detected
+    in all contexts, not just simple command arguments.
+    """
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # for loop iteration words
+            ("for i in $(rm foo); do echo $i; done", "ask"),
+            ("for i in $(ls); do echo $i; done", "allow"),
+            ("for i in a $(rm foo) b; do echo $i; done", "ask"),
+        ],
+    )
+    def test_for_iteration_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in for loop iteration list should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # select word list
+            ("select x in $(rm foo); do echo $x; done", "ask"),
+            ("select x in $(ls); do echo $x; done", "allow"),
+        ],
+    )
+    def test_select_words_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in select word list should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # case word
+            ("case $(rm foo) in *) echo y;; esac", "ask"),
+            ("case $(echo x) in *) echo y;; esac", "allow"),
+        ],
+    )
+    def test_case_word_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in case word should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # subshell with redirect containing cmdsub
+            ("(ls) > $(rm foo)", "ask"),
+            ("(ls) > $(echo /tmp/out)", "ask"),  # still ask - output redirect
+            # brace-group with redirect containing cmdsub
+            ("{ ls; } > $(rm foo)", "ask"),
+            ("{ ls; } > $(echo /tmp/out)", "ask"),  # still ask - output redirect
+        ],
+    )
+    def test_compound_redirect_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in redirect targets of compound commands should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected
+
+    @pytest.mark.parametrize(
+        "cmd,expected",
+        [
+            # Redirect target with cmdsub - inner command should be analyzed
+            ("ls > $(rm foo)", "ask"),
+            # Even safe inner cmdsub should ask due to output redirect
+            ("ls > $(echo /tmp/out)", "ask"),
+        ],
+    )
+    def test_redirect_target_cmdsub(self, cmd, expected, config, cwd):
+        """Cmdsubs in redirect targets should be analyzed."""
+        assert analyze(cmd, config, cwd).action == expected

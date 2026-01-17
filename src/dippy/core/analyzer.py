@@ -96,6 +96,9 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
 
     elif kind == "for":
         decisions = [_analyze_node(node.body, config, cwd)]
+        # Check iteration words for cmdsubs
+        for word in getattr(node, "words", []):
+            decisions.extend(_analyze_word_parts(word, config, cwd))
         decisions.extend(_analyze_redirects(node, config, cwd))
         return _combine(decisions)
 
@@ -106,11 +109,17 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
 
     elif kind == "select":
         decisions = [_analyze_node(node.body, config, cwd)]
+        # Check selection words for cmdsubs
+        for word in getattr(node, "words", []):
+            decisions.extend(_analyze_word_parts(word, config, cwd))
         decisions.extend(_analyze_redirects(node, config, cwd))
         return _combine(decisions)
 
     elif kind == "case":
         decisions = []
+        # Check case word for cmdsubs
+        if hasattr(node, "word") and node.word:
+            decisions.extend(_analyze_word_parts(node.word, config, cwd))
         for pattern in node.patterns:
             if hasattr(pattern, "body") and pattern.body:
                 decisions.append(_analyze_node(pattern.body, config, cwd))
@@ -124,10 +133,14 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
         return _analyze_node(node.body, config, cwd)
 
     elif kind == "subshell":
-        return _analyze_node(node.body, config, cwd)
+        decisions = [_analyze_node(node.body, config, cwd)]
+        decisions.extend(_analyze_redirects(node, config, cwd))
+        return _combine(decisions)
 
     elif kind == "brace-group":
-        return _analyze_node(node.body, config, cwd)
+        decisions = [_analyze_node(node.body, config, cwd)]
+        decisions.extend(_analyze_redirects(node, config, cwd))
+        return _combine(decisions)
 
     elif kind == "time":
         # time command - analyze the pipeline being timed
@@ -259,7 +272,7 @@ def _analyze_command(node, config: Config, cwd: Path) -> Decision:
 def _analyze_redirects(node, config: Config, cwd: Path) -> list[Decision]:
     """Analyze redirects on a node."""
     decisions = []
-    redirects = getattr(node, "redirects", [])
+    redirects = getattr(node, "redirects", None) or []
 
     for r in redirects:
         r_kind = getattr(r, "kind", None)
@@ -268,6 +281,11 @@ def _analyze_redirects(node, config: Config, cwd: Path) -> list[Decision]:
 
         op = getattr(r, "op", "")
         target = _get_word_value(r.target) if r.target else ""
+
+        # Check for cmdsubs in redirect target
+        if r.target:
+            target_cmdsub_decisions = _analyze_word_parts(r.target, config, cwd)
+            decisions.extend(target_cmdsub_decisions)
 
         # Skip safe redirects
         if target == "/dev/null" or target.startswith("&"):
