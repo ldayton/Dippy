@@ -93,6 +93,8 @@ class TestNegationAndArith:
             ("! rm file", "ask"),
             ("(( i++ ))", "allow"),
             ("(( x = 5 ))", "allow"),
+            ("(( x = $(echo 1) ))", "allow"),  # safe cmdsub
+            ("(( arr[$(rm -rf /)] ))", "ask"),  # dangerous cmdsub in subscript
         ],
     )
     def test_negation_and_arith(self, cmd, expected, config, cwd):
