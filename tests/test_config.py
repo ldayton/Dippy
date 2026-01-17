@@ -22,7 +22,9 @@ from dippy.core.config import (
     load_config,
     log_decision,
     match_after,
+    match_after_mcp,
     match_command,
+    match_mcp,
     match_redirect,
     parse_config,
 )
@@ -1391,3 +1393,373 @@ class TestMatchAfter:
         cfg = Config(after_rules=[Rule("after", f"{home}/bin/*", message="custom bin")])
         result = match_after(["~/bin/script"], cfg, tmp_path)
         assert result == "custom bin"
+
+
+class TestParseConfigMcpRules:
+    """Test parsing of MCP tool rules."""
+
+    def test_allow_mcp(self):
+        cfg = parse_config("allow-mcp mcp__github__*")
+        assert len(cfg.mcp_rules) == 1
+        assert cfg.mcp_rules[0].decision == "allow"
+        assert cfg.mcp_rules[0].pattern == "mcp__github__*"
+
+    def test_ask_mcp_with_message(self):
+        cfg = parse_config('ask-mcp mcp__filesystem__write_* "File writes need review"')
+        assert len(cfg.mcp_rules) == 1
+        assert cfg.mcp_rules[0].decision == "ask"
+        assert cfg.mcp_rules[0].pattern == "mcp__filesystem__write_*"
+        assert cfg.mcp_rules[0].message == "File writes need review"
+
+    def test_deny_mcp_with_message(self):
+        cfg = parse_config('deny-mcp mcp__*__delete_* "No deletions"')
+        assert len(cfg.mcp_rules) == 1
+        assert cfg.mcp_rules[0].decision == "deny"
+        assert cfg.mcp_rules[0].pattern == "mcp__*__delete_*"
+        assert cfg.mcp_rules[0].message == "No deletions"
+
+    def test_allow_mcp_no_pattern_skipped(self):
+        cfg = parse_config("allow-mcp")
+        assert cfg.mcp_rules == []
+
+    def test_ask_mcp_no_pattern_skipped(self):
+        cfg = parse_config("ask-mcp")
+        assert cfg.mcp_rules == []
+
+    def test_deny_mcp_no_pattern_skipped(self):
+        cfg = parse_config("deny-mcp")
+        assert cfg.mcp_rules == []
+
+    def test_mcp_rules_mixed_with_other_rules(self):
+        cfg = parse_config("""
+allow git *
+allow-mcp mcp__github__get_*
+deny rm -rf /*
+ask-mcp mcp__github__create_* "Creating resources"
+deny-mcp mcp__*__delete_* "No deletions"
+""")
+        assert len(cfg.rules) == 2
+        assert len(cfg.mcp_rules) == 3
+        assert cfg.mcp_rules[0].decision == "allow"
+        assert cfg.mcp_rules[0].pattern == "mcp__github__get_*"
+        assert cfg.mcp_rules[1].decision == "ask"
+        assert cfg.mcp_rules[1].pattern == "mcp__github__create_*"
+        assert cfg.mcp_rules[2].decision == "deny"
+        assert cfg.mcp_rules[2].pattern == "mcp__*__delete_*"
+
+
+class TestParseConfigAfterMcpRules:
+    """Test parsing of after-mcp rules for PostToolUse."""
+
+    def test_after_mcp_with_message(self):
+        cfg = parse_config('after-mcp mcp__github__create_* "PR created"')
+        assert len(cfg.after_mcp_rules) == 1
+        assert cfg.after_mcp_rules[0].decision == "after"
+        assert cfg.after_mcp_rules[0].pattern == "mcp__github__create_*"
+        assert cfg.after_mcp_rules[0].message == "PR created"
+
+    def test_after_mcp_pattern_only(self):
+        cfg = parse_config("after-mcp mcp__github__*")
+        assert len(cfg.after_mcp_rules) == 1
+        assert cfg.after_mcp_rules[0].pattern == "mcp__github__*"
+        assert cfg.after_mcp_rules[0].message is None
+
+    def test_after_mcp_no_pattern_skipped(self):
+        cfg = parse_config("after-mcp")
+        assert cfg.after_mcp_rules == []
+
+
+class TestMergeConfigsMcpRules:
+    """Test MCP rules merging."""
+
+    def test_mcp_rules_concatenate(self):
+        base = Config(mcp_rules=[Rule("allow", "mcp__github__*")])
+        overlay = Config(mcp_rules=[Rule("ask", "mcp__github__create_*")])
+        merged = _merge_configs(base, overlay)
+        assert len(merged.mcp_rules) == 2
+        assert merged.mcp_rules[0].pattern == "mcp__github__*"
+        assert merged.mcp_rules[1].pattern == "mcp__github__create_*"
+
+    def test_after_mcp_rules_concatenate(self):
+        base = Config(after_mcp_rules=[Rule("after", "mcp__github__*", message="msg1")])
+        overlay = Config(after_mcp_rules=[Rule("after", "mcp__fs__*", message="msg2")])
+        merged = _merge_configs(base, overlay)
+        assert len(merged.after_mcp_rules) == 2
+
+
+class TestTagRulesMcp:
+    """Test origin tagging for MCP rules."""
+
+    def test_tags_mcp_rules_with_source_and_scope(self):
+        config = Config(
+            mcp_rules=[Rule("allow", "mcp__github__*")],
+            after_mcp_rules=[Rule("after", "mcp__fs__*")],
+        )
+        tagged = _tag_rules(config, "/path/to/config", SCOPE_USER)
+        assert tagged.mcp_rules[0].source == "/path/to/config"
+        assert tagged.mcp_rules[0].scope == SCOPE_USER
+        assert tagged.after_mcp_rules[0].source == "/path/to/config"
+        assert tagged.after_mcp_rules[0].scope == SCOPE_USER
+
+
+class TestMatchMcp:
+    """Test MCP tool matching against config rules."""
+
+    def test_basic_glob_match(self):
+        cfg = Config(mcp_rules=[Rule("allow", "mcp__github__*")])
+        m = match_mcp("mcp__github__get_issue", cfg)
+        assert m is not None
+        assert m.decision == "allow"
+        assert m.pattern == "mcp__github__*"
+
+    def test_no_match_returns_none(self):
+        cfg = Config(mcp_rules=[Rule("allow", "mcp__github__*")])
+        m = match_mcp("mcp__filesystem__read_file", cfg)
+        assert m is None
+
+    def test_empty_rules_returns_none(self):
+        cfg = Config(mcp_rules=[])
+        m = match_mcp("mcp__github__get_issue", cfg)
+        assert m is None
+
+    def test_last_match_wins(self):
+        cfg = Config(
+            mcp_rules=[
+                Rule("allow", "mcp__github__*"),
+                Rule("ask", "mcp__github__create_*", message="Creating resources"),
+            ]
+        )
+        # First rule matches but second is more specific and wins
+        m = match_mcp("mcp__github__create_issue", cfg)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.message == "Creating resources"
+
+    def test_deny_with_message(self):
+        cfg = Config(mcp_rules=[Rule("deny", "*__delete_*", message="No deletions")])
+        m = match_mcp("mcp__filesystem__delete_file", cfg)
+        assert m is not None
+        assert m.decision == "deny"
+        assert m.message == "No deletions"
+
+    def test_wildcard_in_middle(self):
+        cfg = Config(mcp_rules=[Rule("deny", "mcp__*__delete_*")])
+        m = match_mcp("mcp__filesystem__delete_file", cfg)
+        assert m is not None
+        assert m.decision == "deny"
+
+    def test_match_object_fields(self):
+        cfg = Config(
+            mcp_rules=[
+                Rule(
+                    "ask",
+                    "mcp__github__*",
+                    message="GitHub operation",
+                    source="/path/to/config",
+                    scope="user",
+                )
+            ]
+        )
+        m = match_mcp("mcp__github__get_issue", cfg)
+        assert m.decision == "ask"
+        assert m.pattern == "mcp__github__*"
+        assert m.message == "GitHub operation"
+        assert m.source == "/path/to/config"
+        assert m.scope == "user"
+
+    def test_complex_pattern_priority(self):
+        """Test that the most specific matching rule (last) wins."""
+        cfg = Config(
+            mcp_rules=[
+                Rule("allow", "*"),  # allow everything
+                Rule("ask", "mcp__*"),  # ask for all MCP tools
+                Rule("allow", "mcp__github__get_*"),  # allow GitHub reads
+                Rule("deny", "mcp__github__delete_*"),  # deny GitHub deletes
+            ]
+        )
+        # github get - should be allowed (third rule)
+        m = match_mcp("mcp__github__get_issue", cfg)
+        assert m.decision == "allow"
+
+        # github delete - should be denied (fourth rule)
+        m = match_mcp("mcp__github__delete_repo", cfg)
+        assert m.decision == "deny"
+
+        # github create - should ask (second rule)
+        m = match_mcp("mcp__github__create_issue", cfg)
+        assert m.decision == "ask"
+
+
+class TestMatchAfterMcp:
+    """Test after-mcp rule matching for PostToolUse feedback."""
+
+    def test_basic_match(self):
+        cfg = Config(
+            after_mcp_rules=[
+                Rule("after", "mcp__github__create_*", message="PR created")
+            ]
+        )
+        result = match_after_mcp("mcp__github__create_pr", cfg)
+        assert result == "PR created"
+
+    def test_no_match(self):
+        cfg = Config(
+            after_mcp_rules=[Rule("after", "mcp__github__create_*", message="Created")]
+        )
+        result = match_after_mcp("mcp__github__get_issue", cfg)
+        assert result is None
+
+    def test_last_match_wins(self):
+        cfg = Config(
+            after_mcp_rules=[
+                Rule("after", "mcp__github__*", message="GitHub operation"),
+                Rule("after", "mcp__github__create_*", message="Resource created"),
+            ]
+        )
+        result = match_after_mcp("mcp__github__create_issue", cfg)
+        assert result == "Resource created"
+
+    def test_pattern_only_is_silent(self):
+        cfg = Config(after_mcp_rules=[Rule("after", "mcp__github__*")])
+        result = match_after_mcp("mcp__github__get_issue", cfg)
+        assert result == ""
+
+    def test_empty_message_is_silent(self):
+        cfg = Config(after_mcp_rules=[Rule("after", "mcp__github__*", message="")])
+        result = match_after_mcp("mcp__github__get_issue", cfg)
+        assert result == ""
+
+
+class TestMcpEndToEnd:
+    """End-to-end tests simulating actual hook JSON input/output."""
+
+    def test_mcp_tool_routed_correctly(self, tmp_path, monkeypatch):
+        """Test that main() routes MCP tools through MCP rules, not shell rules."""
+        import io
+        import json
+        import sys
+
+        # Create config with MCP rule
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-mcp mcp__github__get_*\n")
+
+        # Simulate Claude Code hook input for MCP tool
+        hook_input = {
+            "tool_name": "mcp__github__get_issue",
+            "tool_input": {"owner": "foo", "repo": "bar", "issue_number": 1},
+            "hook_event_name": "PreToolUse",
+        }
+
+        # Capture stdout and mock stdin
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        # Reload and run
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        # Verify output
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_mcp_tool_no_match_defers(self, tmp_path, monkeypatch):
+        """Test that MCP tool with no matching rules returns empty (defer)."""
+        import io
+        import json
+        import sys
+
+        # Config with rule that won't match
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-mcp mcp__filesystem__*\n")
+
+        hook_input = {
+            "tool_name": "mcp__github__get_issue",
+            "tool_input": {},
+            "hook_event_name": "PreToolUse",
+        }
+
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        output = json.loads(captured_output.getvalue())
+        assert output == {}  # Empty = defer to Claude's default
+
+    def test_mcp_tool_deny_blocks(self, tmp_path, monkeypatch):
+        """Test that deny-mcp rule actually blocks the tool."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-mcp mcp__*__delete_* "No deletions allowed"\n')
+
+        hook_input = {
+            "tool_name": "mcp__github__delete_repo",
+            "tool_input": {"owner": "foo", "repo": "bar"},
+            "hook_event_name": "PreToolUse",
+        }
+
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+        assert (
+            "No deletions" in output["hookSpecificOutput"]["permissionDecisionReason"]
+        )
+
+    def test_bash_tool_not_affected_by_mcp_rules(self, tmp_path, monkeypatch):
+        """Test that Bash commands still work and aren't affected by MCP rules."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("deny-mcp mcp__*\n")  # Deny all MCP
+
+        # Bash tool, not MCP
+        hook_input = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "hook_event_name": "PreToolUse",
+        }
+
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        output = json.loads(captured_output.getvalue())
+        # ls is safe, should be approved (not affected by MCP deny rule)
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"

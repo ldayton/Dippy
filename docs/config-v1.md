@@ -262,60 +262,11 @@ deny git push --force * "Use --force-with-lease"
 allow-redirect ./build/*
 ```
 
-## Proposal: File Operation Rules
+## MCP Tool Rules
 
-Claude Code hooks can match on `Write`, `Edit`, and `MultiEdit` tools, not just `Bash`. This would let Dippy control file modifications with per-project config.
+MCP tools follow the pattern `mcp__<server>__<tool>`. Dippy controls which MCP operations are allowed per-project.
 
-### Proposed Syntax
-
-```
-allow-edit <glob>
-ask-edit <glob>
-ask-edit <glob> "message"
-deny-edit <glob>
-deny-edit <glob> "message"
-```
-
-Applies to Write, Edit, and MultiEdit operations. Globs match file paths using `**` for recursive directory matching (same as redirect rules).
-
-### Example
-
-```
-# Allow editing source files
-allow-edit src/**
-
-# Prompt for config changes
-ask-edit **/config.* "Config changes need review"
-
-# Block sensitive files
-deny-edit **/.env* "Use environment variables instead"
-deny-edit **/secrets/** "Secrets are managed externally"
-```
-
-### Interaction with Built-in Permissions
-
-Claude Code's `settings.json` has a `permissions` section with `allow`/`deny` rules. These systems layer:
-
-1. **Built-in permissions** - global baseline, no per-project config, no messages
-2. **Dippy** - per-project overrides with messages
-
-If built-in permissions deny, Dippy never sees the request. If built-in allows, Dippy can still ask or deny.
-
-### Opting In
-
-To enable file operation rules, update your hook matcher in `settings.json`:
-
-```json
-"matcher": "Bash|Write|Edit|MultiEdit"
-```
-
-**Trade-off:** This replaces Claude's "Allow editing this session" UI. There's no way for hooks to defer to Claude's native session memory.
-
-## Proposal: MCP Tool Rules
-
-MCP tools follow the pattern `mcp__<server>__<tool>`. Dippy could control which MCP operations are allowed per-project.
-
-### Proposed Syntax
+### Syntax
 
 ```
 allow-mcp <pattern>
@@ -323,6 +274,9 @@ ask-mcp <pattern>
 ask-mcp <pattern> "message"
 deny-mcp <pattern>
 deny-mcp <pattern> "message"
+
+after-mcp <pattern>
+after-mcp <pattern> "message"
 ```
 
 Patterns use fnmatch globs against the full tool name.
@@ -342,20 +296,17 @@ ask-mcp mcp__github__update_* "Modifying GitHub resources"
 # Block destructive operations
 deny-mcp mcp__github__delete_* "No deletions without manual review"
 deny-mcp mcp__github__merge_* "Merges need manual approval"
+
+# Post-action feedback
+after-mcp mcp__github__create_* "Check the GitHub UI to verify"
 ```
 
 ### Opting In
 
-To enable MCP rules, update your hook matcher:
+To enable MCP rules, update your hook matcher in `settings.json`:
 
 ```json
 "matcher": "Bash|mcp__.*"
-```
-
-Or for both file and MCP control:
-
-```json
-"matcher": "Bash|Write|Edit|MultiEdit|mcp__.*"
 ```
 
 ## After Rules
@@ -414,3 +365,52 @@ npx @vscode/vsce package
 code --install-extension dippy-syntax-*.vsix
 ```
 Highlights `.dippy` files and files named `config` (for `~/.dippy/config`).
+
+## Proposal: File Operation Rules
+
+Claude Code hooks can match on `Write`, `Edit`, and `MultiEdit` tools, not just `Bash`. This would let Dippy control file modifications with per-project config.
+
+### Proposed Syntax
+
+```
+allow-edit <glob>
+ask-edit <glob>
+ask-edit <glob> "message"
+deny-edit <glob>
+deny-edit <glob> "message"
+```
+
+Applies to Write, Edit, and MultiEdit operations. Globs match file paths using `**` for recursive directory matching (same as redirect rules).
+
+### Example
+
+```
+# Allow editing source files
+allow-edit src/**
+
+# Prompt for config changes
+ask-edit **/config.* "Config changes need review"
+
+# Block sensitive files
+deny-edit **/.env* "Use environment variables instead"
+deny-edit **/secrets/** "Secrets are managed externally"
+```
+
+### Interaction with Built-in Permissions
+
+Claude Code's `settings.json` has a `permissions` section with `allow`/`deny` rules. These systems layer:
+
+1. **Built-in permissions** - global baseline, no per-project config, no messages
+2. **Dippy** - per-project overrides with messages
+
+If built-in permissions deny, Dippy never sees the request. If built-in allows, Dippy can still ask or deny.
+
+### Opting In
+
+To enable file operation rules, update your hook matcher in `settings.json`:
+
+```json
+"matcher": "Bash|Write|Edit|MultiEdit"
+```
+
+**Trade-off:** This replaces Claude's "Allow editing this session" UI. There's no way for hooks to defer to Claude's native session memory.

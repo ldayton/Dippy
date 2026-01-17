@@ -50,6 +50,12 @@ class Config:
     after_rules: list[Rule] = field(default_factory=list)
     """After rules for PostToolUse feedback."""
 
+    mcp_rules: list[Rule] = field(default_factory=list)
+    """MCP tool rules in load order."""
+
+    after_mcp_rules: list[Rule] = field(default_factory=list)
+    """After-MCP rules for PostToolUse feedback on MCP tools."""
+
     default: str = "ask"  # 'allow' | 'ask'
     log: Path | None = None  # None = no logging
     log_full: bool = False  # log full command (requires log path)
@@ -106,6 +112,8 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
         rules=base.rules + overlay.rules,
         redirect_rules=base.redirect_rules + overlay.redirect_rules,
         after_rules=base.after_rules + overlay.after_rules,
+        mcp_rules=base.mcp_rules + overlay.mcp_rules,
+        after_mcp_rules=base.after_mcp_rules + overlay.after_mcp_rules,
         # Settings: overlay wins if set
         default=overlay.default if overlay.default != "ask" else base.default,
         log=overlay.log if overlay.log is not None else base.log,
@@ -123,6 +131,10 @@ def _tag_rules(config: Config, source: str, scope: str) -> Config:
         ],
         after_rules=[
             replace(r, source=source, scope=scope) for r in config.after_rules
+        ],
+        mcp_rules=[replace(r, source=source, scope=scope) for r in config.mcp_rules],
+        after_mcp_rules=[
+            replace(r, source=source, scope=scope) for r in config.after_mcp_rules
         ],
     )
 
@@ -186,6 +198,8 @@ def parse_config(text: str, source: str | None = None) -> Config:
     rules: list[Rule] = []
     redirect_rules: list[Rule] = []
     after_rules: list[Rule] = []
+    mcp_rules: list[Rule] = []
+    after_mcp_rules: list[Rule] = []
     settings: dict[str, bool | int | str | Path] = {}
     prefix = f"{source}: " if source else ""
 
@@ -247,6 +261,29 @@ def parse_config(text: str, source: str | None = None) -> Config:
                 pattern, message = _extract_message(rest)
                 after_rules.append(Rule("after", pattern, message=message))
 
+            elif directive == "allow-mcp":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                mcp_rules.append(Rule("allow", rest))
+
+            elif directive == "ask-mcp":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                mcp_rules.append(Rule("ask", pattern, message=message))
+
+            elif directive == "deny-mcp":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                mcp_rules.append(Rule("deny", pattern, message=message))
+
+            elif directive == "after-mcp":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                after_mcp_rules.append(Rule("after", pattern, message=message))
+
             elif directive == "set":
                 _apply_setting(settings, rest)
 
@@ -260,6 +297,8 @@ def parse_config(text: str, source: str | None = None) -> Config:
         rules=rules,
         redirect_rules=redirect_rules,
         after_rules=after_rules,
+        mcp_rules=mcp_rules,
+        after_mcp_rules=after_mcp_rules,
         default=settings.get("default", "ask"),
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
@@ -675,6 +714,52 @@ def match_after(words: list[str], config: Config, cwd: Path) -> str | None:
             matched = normalized_cmd == normalized_pattern[:-2]
         if matched:
             # message is None for pattern-only rules, "" for explicit empty
+            result = rule.message if rule.message is not None else ""
+    return result
+
+
+def match_mcp(tool_name: str, config: Config) -> Match | None:
+    """Match MCP tool name against mcp rules.
+
+    Simpler than command matching - just fnmatch against tool name.
+    Last match wins.
+
+    Args:
+        tool_name: MCP tool name (e.g., "mcp__github__get_issue").
+        config: Loaded configuration.
+
+    Returns:
+        Match object for the last matching rule, or None if no match.
+    """
+    result: Match | None = None
+    for rule in config.mcp_rules:
+        if fnmatch.fnmatch(tool_name, rule.pattern):
+            result = Match(
+                decision=rule.decision,
+                pattern=rule.pattern,
+                message=rule.message,
+                source=rule.source,
+                scope=rule.scope,
+            )
+    return result
+
+
+def match_after_mcp(tool_name: str, config: Config) -> str | None:
+    """Match MCP tool against after-mcp rules for PostToolUse feedback.
+
+    Last matching rule wins. Empty string message means silent (no output).
+
+    Args:
+        tool_name: MCP tool name (e.g., "mcp__github__create_pr").
+        config: Loaded configuration.
+
+    Returns:
+        Message string if a rule with message matches, empty string if silent
+        rule matches, None if no rule matches.
+    """
+    result: str | None = None
+    for rule in config.after_mcp_rules:
+        if fnmatch.fnmatch(tool_name, rule.pattern):
             result = rule.message if rule.message is not None else ""
     return result
 

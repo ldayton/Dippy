@@ -24,6 +24,8 @@ from dippy.core.config import (
     configure_logging,
     load_config,
     log_decision,
+    match_after_mcp,
+    match_mcp,
 )
 from dippy.core.analyzer import analyze
 
@@ -60,8 +62,8 @@ def _detect_mode_from_input(input_data: dict) -> str:
     if tool_name in ("shell", "run_shell", "run_shell_command", "execute_shell"):
         return "gemini"
 
-    # Claude uses "Bash" - warn if unexpected tool_name
-    if tool_name and tool_name != "Bash":
+    # Claude uses "Bash" and MCP tools use "mcp__*" prefix
+    if tool_name and tool_name != "Bash" and not tool_name.startswith("mcp__"):
         logging.warning(f"Unknown tool_name '{tool_name}', defaulting to Claude mode")
     return "claude"
 
@@ -212,6 +214,45 @@ def handle_post_tool_use(command: str, config: Config, cwd: Path) -> None:
     # empty string or None = silent (no output)
 
 
+# === MCP Tool Handling ===
+
+
+def is_mcp_tool(name: str) -> bool:
+    """Check if a tool name is an MCP tool."""
+    return name.startswith("mcp__")
+
+
+def check_mcp_tool(tool_name: str, config: Config) -> dict:
+    """Check if an MCP tool should be approved based on config rules.
+
+    Args:
+        tool_name: MCP tool name (e.g., "mcp__github__get_issue").
+        config: Loaded configuration.
+
+    Returns:
+        Hook response dict, or empty dict if no rules match (defer to default).
+    """
+    match = match_mcp(tool_name, config)
+    if match is None:
+        return {}  # No rules match - defer to Claude's default behavior
+    reason = match.message if match.message else f"[{match.pattern}]"
+    log_decision(match.decision, reason, rule=match.pattern)
+    if match.decision == "allow":
+        return approve(reason)
+    elif match.decision == "deny":
+        return deny(reason)
+    else:
+        return ask(reason)
+
+
+def handle_mcp_post_tool_use(tool_name: str, config: Config) -> None:
+    """Handle PostToolUse hook for MCP tools - output feedback if rule matches."""
+    message = match_after_mcp(tool_name, config)
+    if message:  # non-empty string
+        print(f"🐤 {message}")
+    # empty string or None = silent (no output)
+
+
 # === Hook Entry Point ===
 
 # Tool names that indicate shell/bash commands
@@ -273,10 +314,31 @@ def main():
         if MODE == "cursor":
             # Cursor sends command directly (beforeShellExecution hook)
             command = input_data.get("command", "")
+            tool_name = None
         else:
             # Claude Code and Gemini CLI use tool_name/tool_input format
             tool_name = input_data.get("tool_name", "")
             tool_input = input_data.get("tool_input", {})
+
+            # Check if this is an MCP tool
+            if is_mcp_tool(tool_name):
+                # Check for bypass permissions mode first
+                if hook_event != "PostToolUse":
+                    permission_mode = input_data.get("permission_mode", "default")
+                    if permission_mode in ("bypassPermissions", "dontAsk"):
+                        logging.info(f"Bypass mode ({permission_mode}): {tool_name}")
+                        log_decision("allow", permission_mode)
+                        print(json.dumps(approve(permission_mode)))
+                        return
+                # Handle MCP tool
+                if hook_event == "PostToolUse":
+                    logging.info(f"PostToolUse MCP: {tool_name}")
+                    handle_mcp_post_tool_use(tool_name, config)
+                else:
+                    logging.info(f"Checking MCP: {tool_name}")
+                    result = check_mcp_tool(tool_name, config)
+                    print(json.dumps(result))
+                return
 
             # Only handle shell/bash commands
             if tool_name not in SHELL_TOOL_NAMES:
@@ -286,7 +348,6 @@ def main():
             command = tool_input.get("command", "")
 
         # Check for bypass permissions mode (Claude Code PreToolUse only)
-        # When --dangerously-skip-permissions is used, permission_mode is "bypassPermissions"
         if hook_event != "PostToolUse":
             permission_mode = input_data.get("permission_mode", "default")
             if permission_mode in ("bypassPermissions", "dontAsk"):
