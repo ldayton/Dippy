@@ -347,6 +347,21 @@ def _analyze_simple_command(words: list[str], config: Config, cwd: Path) -> Deci
     if handler:
         result = handler.classify(tokens)
         desc = result.description or get_description(tokens, base)
+        # Check handler-provided redirect targets against config
+        if result.redirect_targets:
+            for target in result.redirect_targets:
+                redirect_match = match_redirect(target, config, cwd)
+                if redirect_match:
+                    if redirect_match.decision == "deny":
+                        msg = redirect_match.message or redirect_match.pattern
+                        return Decision("deny", f"{desc}: {msg}")
+                    elif redirect_match.decision == "ask":
+                        msg = redirect_match.message or redirect_match.pattern
+                        return Decision("ask", f"{desc}: {msg}")
+                    # allow - continue checking other targets
+                else:
+                    # No matching rule - ask by default for file writes
+                    return Decision("ask", desc)
         if result.action == "approve":
             return Decision("allow", desc)
         elif result.action == "delegate" and result.inner_command:

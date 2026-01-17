@@ -26,6 +26,9 @@ class Classification:
     action: Literal["approve", "ask", "delegate"]
     inner_command: str | None = None  # Required when action="delegate"
     description: str | None = None  # Optional, overrides default description
+    redirect_targets: tuple[str, ...] | None = (
+        None  # File targets to check against redirect rules
+    )
 
 
 class CLIHandler(Protocol):
