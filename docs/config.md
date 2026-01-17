@@ -344,6 +344,62 @@ Unlike PreToolUse rules (which control permission), after rules are purely infor
 
 To enable after rules, register Dippy for PostToolUse in `settings.json` (see Installation in README).
 
+## WebSearch Rules
+
+WebSearch rules control approval for Claude's web search tool. Patterns match against the search query string.
+
+### Syntax
+
+```
+allow-web                      # auto-approve all web searches
+allow-web <pattern>            # auto-approve searches matching pattern
+ask-web <pattern>              # prompt for searches matching pattern
+ask-web <pattern> "message"    # prompt with message shown to AI
+deny-web <pattern>             # block searches matching pattern
+deny-web <pattern> "message"   # block with message shown to AI
+
+after-web <pattern>            # post-search feedback (silent)
+after-web <pattern> "message"  # post-search feedback with message to AI
+```
+
+Patterns use fnmatch globs against the query string.
+
+### Example
+
+```
+# Auto-approve all web searches
+allow-web
+
+# Or approve only specific topics
+allow-web *framework*
+allow-web *documentation*
+
+# Prompt for sensitive searches
+ask-web *password* "Review: searching for sensitive info"
+ask-web *credential* "Credential-related search"
+
+# Block suspicious searches
+deny-web *exploit* "Blocked: suspicious search"
+
+# Post-search feedback
+after-web *api* "Verify the API version matches our project"
+after-web *library* "Check if it's actively maintained"
+```
+
+### Opting In
+
+To enable WebSearch rules, update your hook matcher in `settings.json`:
+
+```json
+"matcher": "Bash|WebSearch"
+```
+
+Or to enable both MCP and WebSearch:
+
+```json
+"matcher": "Bash|WebSearch|mcp__.*"
+```
+
 ## Implementation Notes
 
 **Hook caching:** Claude Code caches hooks at session start. Changes to dippy code or config require restarting the session to take effect.
