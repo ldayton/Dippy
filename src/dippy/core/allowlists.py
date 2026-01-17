@@ -1,5 +1,5 @@
 """
-Shared patterns and safe command sets for Dippy.
+Allowlists for Dippy - known safe commands and transparent wrappers.
 """
 
 # === Simple Safe Commands ===
@@ -129,10 +129,10 @@ SIMPLE_SAFE = frozenset(
 )
 
 
-# === Prefix Commands ===
-# Commands that wrap other commands (we check what they wrap)
+# === Transparent Wrappers ===
+# Commands that wrap other commands - we analyze the inner command instead
 
-PREFIX_COMMANDS = frozenset(
+WRAPPER_COMMANDS = frozenset(
     {
         "time",
         "timeout",
@@ -142,6 +142,5 @@ PREFIX_COMMANDS = frozenset(
         "ltrace",
         "command",
         "builtin",
-        # Note: xargs and env have their own handlers in cli/
     }
 )

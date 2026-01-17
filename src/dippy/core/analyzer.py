@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from dippy.core.config import Config, match_redirect
-from dippy.core.patterns import PREFIX_COMMANDS, SIMPLE_SAFE
+from dippy.core.allowlists import SIMPLE_SAFE, WRAPPER_COMMANDS
 from dippy.cli import get_handler, get_description
 from dippy.vendor.parable import parse, ParseError
 
@@ -361,8 +361,8 @@ def _analyze_simple_command(words: list[str], config: Config, cwd: Path) -> Deci
             msg = config_match.message or config_match.pattern
             return Decision("ask", f"{base}: {msg}")
 
-    # 2. Handle prefix commands (time, env, timeout, etc.)
-    if base in PREFIX_COMMANDS and len(tokens) > 1:
+    # 2. Handle wrapper commands (time, timeout, etc.) - analyze inner command
+    if base in WRAPPER_COMMANDS and len(tokens) > 1:
         if base == "command" and len(tokens) > 1 and tokens[1] in ("-v", "-V"):
             return Decision("allow", "command -v")
 
