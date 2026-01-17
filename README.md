@@ -47,19 +47,21 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively); you only need 
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__.*",
         "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__.*",
         "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
       }
     ]
   }
 }
 ```
+
+Use `"matcher": "Bash"` if you only want shell command rules (no MCP tool control).
 
 ---
 
@@ -86,9 +88,13 @@ deny docker run *--privileged*         # still ban privileged mode, last matchin
 deny python "Use uv run python, which runs in project environment"  # remind Claude to use uv
 
 allow-redirect /tmp/**                 # allow temp file writes
-deny-redirect **/.env* "Never write secrets, as me to do it"        # block env writes
+deny-redirect **/.env* "Never write secrets, ask me to do it"       # block env writes
 
-after git commit * "Reread prompts/next-iteration.md"  # after hook keeps Claude on task, following instructions
+allow-mcp mcp__github__get_*           # allow read-only GitHub MCP tools
+allow-mcp mcp__github__list_*
+deny-mcp mcp__*__delete_* "No deletions"  # block destructive MCP operations
+
+after git commit * "Reread prompts/next-iteration.md"  # after hook keeps Claude on task
 ```
 
 Configuration reference: `docs/config-v1.md`
