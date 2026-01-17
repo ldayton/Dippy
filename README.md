@@ -40,7 +40,7 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 git clone https://github.com/ldayton/Dippy.git
 ```
 
-Add to `~/.claude/settings.json` (or use `/hooks` interactively); you only need `PostToolUse` if you want `after` rules in your config:
+Add to `~/.claude/settings.json` (or use `/hooks` interactively):
 
 ```json
 {
@@ -60,8 +60,6 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively); you only need 
   }
 }
 ```
-
-Use `"matcher": "Bash"` if you only want shell command rules (no MCP tool control).
 
 ---
 
