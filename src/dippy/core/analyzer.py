@@ -137,6 +137,10 @@ def _analyze_node(node, config: Config, cwd: Path) -> Decision:
         # ! command - negates exit status, analyze the inner command
         return _analyze_node(node.pipeline, config, cwd)
 
+    elif kind == "coproc":
+        # coproc [NAME] command - analyze the inner command
+        return _analyze_node(node.command, config, cwd)
+
     elif kind == "arith-cmd":
         # (( expr )) - check for command substitutions in the expression
         decisions = []
