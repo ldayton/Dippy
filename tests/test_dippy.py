@@ -3978,13 +3978,16 @@ class TestPostToolUse:
     """Test PostToolUse hook handling."""
 
     def test_post_tool_use_with_message(self, tmp_path, capsys):
+        import json
         from dippy.core.config import Config, Rule
         from dippy.dippy import handle_post_tool_use
 
         cfg = Config(after_rules=[Rule("after", "git push *", message="Check CI")])
         handle_post_tool_use("git push origin main", cfg, tmp_path)
         captured = capsys.readouterr()
-        assert captured.out == "🐤 Check CI\n"
+        output = json.loads(captured.out)
+        assert output["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
+        assert output["hookSpecificOutput"]["additionalContext"] == "🐤 Check CI"
 
     def test_post_tool_use_no_match(self, tmp_path, capsys):
         from dippy.core.config import Config, Rule
@@ -4005,6 +4008,7 @@ class TestPostToolUse:
         assert captured.out == ""
 
     def test_post_tool_use_last_match_wins(self, tmp_path, capsys):
+        import json
         from dippy.core.config import Config, Rule
         from dippy.dippy import handle_post_tool_use
 
@@ -4016,7 +4020,8 @@ class TestPostToolUse:
         )
         handle_post_tool_use("npm install lodash", cfg, tmp_path)
         captured = capsys.readouterr()
-        assert captured.out == "🐤 Installing deps\n"
+        output = json.loads(captured.out)
+        assert output["hookSpecificOutput"]["additionalContext"] == "🐤 Installing deps"
 
     def test_post_tool_use_quoted_args(self, tmp_path, capsys):
         """Quoted arguments should be parsed properly, not split on spaces.
@@ -4026,6 +4031,7 @@ class TestPostToolUse:
 
         Pattern 'git commit -m fix:*' matches proper parsing but not naive split.
         """
+        import json
         from dippy.core.config import Config, Rule
         from dippy.dippy import handle_post_tool_use
 
@@ -4034,4 +4040,5 @@ class TestPostToolUse:
         )
         handle_post_tool_use('git commit -m "fix: spaces in message"', cfg, tmp_path)
         captured = capsys.readouterr()
-        assert captured.out == "🐤 Check CI\n"
+        output = json.loads(captured.out)
+        assert output["hookSpecificOutput"]["additionalContext"] == "🐤 Check CI"
