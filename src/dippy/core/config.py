@@ -56,6 +56,12 @@ class Config:
     after_mcp_rules: list[Rule] = field(default_factory=list)
     """After-MCP rules for PostToolUse feedback on MCP tools."""
 
+    web_rules: list[Rule] = field(default_factory=list)
+    """WebSearch tool rules in load order."""
+
+    after_web_rules: list[Rule] = field(default_factory=list)
+    """After-web rules for PostToolUse feedback on WebSearch."""
+
     default: str = "ask"  # 'allow' | 'ask'
     log: Path | None = None  # None = no logging
     log_full: bool = False  # log full command (requires log path)
@@ -114,6 +120,8 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
         after_rules=base.after_rules + overlay.after_rules,
         mcp_rules=base.mcp_rules + overlay.mcp_rules,
         after_mcp_rules=base.after_mcp_rules + overlay.after_mcp_rules,
+        web_rules=base.web_rules + overlay.web_rules,
+        after_web_rules=base.after_web_rules + overlay.after_web_rules,
         # Settings: overlay wins if set
         default=overlay.default if overlay.default != "ask" else base.default,
         log=overlay.log if overlay.log is not None else base.log,
@@ -135,6 +143,10 @@ def _tag_rules(config: Config, source: str, scope: str) -> Config:
         mcp_rules=[replace(r, source=source, scope=scope) for r in config.mcp_rules],
         after_mcp_rules=[
             replace(r, source=source, scope=scope) for r in config.after_mcp_rules
+        ],
+        web_rules=[replace(r, source=source, scope=scope) for r in config.web_rules],
+        after_web_rules=[
+            replace(r, source=source, scope=scope) for r in config.after_web_rules
         ],
     )
 
@@ -200,6 +212,8 @@ def parse_config(text: str, source: str | None = None) -> Config:
     after_rules: list[Rule] = []
     mcp_rules: list[Rule] = []
     after_mcp_rules: list[Rule] = []
+    web_rules: list[Rule] = []
+    after_web_rules: list[Rule] = []
     settings: dict[str, bool | int | str | Path] = {}
     prefix = f"{source}: " if source else ""
 
@@ -284,6 +298,28 @@ def parse_config(text: str, source: str | None = None) -> Config:
                 pattern, message = _extract_message(rest)
                 after_mcp_rules.append(Rule("after", pattern, message=message))
 
+            elif directive == "allow-web":
+                pattern = rest if rest else "*"
+                web_rules.append(Rule("allow", pattern))
+
+            elif directive == "ask-web":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                web_rules.append(Rule("ask", pattern, message=message))
+
+            elif directive == "deny-web":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                web_rules.append(Rule("deny", pattern, message=message))
+
+            elif directive == "after-web":
+                if not rest:
+                    raise ValueError("requires a pattern")
+                pattern, message = _extract_message(rest)
+                after_web_rules.append(Rule("after", pattern, message=message))
+
             elif directive == "set":
                 _apply_setting(settings, rest)
 
@@ -299,6 +335,8 @@ def parse_config(text: str, source: str | None = None) -> Config:
         after_rules=after_rules,
         mcp_rules=mcp_rules,
         after_mcp_rules=after_mcp_rules,
+        web_rules=web_rules,
+        after_web_rules=after_web_rules,
         default=settings.get("default", "ask"),
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
@@ -760,6 +798,52 @@ def match_after_mcp(tool_name: str, config: Config) -> str | None:
     result: str | None = None
     for rule in config.after_mcp_rules:
         if fnmatch.fnmatch(tool_name, rule.pattern):
+            result = rule.message if rule.message is not None else ""
+    return result
+
+
+def match_web(query: str, config: Config) -> Match | None:
+    """Match WebSearch query against web rules.
+
+    Simpler than command matching - just fnmatch against query string.
+    Last match wins.
+
+    Args:
+        query: WebSearch query string.
+        config: Loaded configuration.
+
+    Returns:
+        Match object for the last matching rule, or None if no match.
+    """
+    result: Match | None = None
+    for rule in config.web_rules:
+        if fnmatch.fnmatch(query, rule.pattern):
+            result = Match(
+                decision=rule.decision,
+                pattern=rule.pattern,
+                message=rule.message,
+                source=rule.source,
+                scope=rule.scope,
+            )
+    return result
+
+
+def match_after_web(query: str, config: Config) -> str | None:
+    """Match WebSearch query against after-web rules for PostToolUse feedback.
+
+    Last matching rule wins. Empty string message means silent (no output).
+
+    Args:
+        query: WebSearch query string.
+        config: Loaded configuration.
+
+    Returns:
+        Message string if a rule with message matches, empty string if silent
+        rule matches, None if no rule matches.
+    """
+    result: str | None = None
+    for rule in config.after_web_rules:
+        if fnmatch.fnmatch(query, rule.pattern):
             result = rule.message if rule.message is not None else ""
     return result
 
