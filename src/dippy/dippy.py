@@ -204,6 +204,16 @@ def check_command(command: str, config: Config, cwd: Path) -> dict:
         return ask(result.reason)
 
 
+def post_tool_response(message: str) -> dict:
+    """Return PostToolUse response with feedback for Claude."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": f"🐤 {message}",
+        }
+    }
+
+
 def handle_post_tool_use(command: str, config: Config, cwd: Path) -> None:
     """Handle PostToolUse hook - output feedback message if rule matches."""
     from dippy.core.config import match_after
@@ -212,7 +222,7 @@ def handle_post_tool_use(command: str, config: Config, cwd: Path) -> None:
     words = tokenize(command)
     message = match_after(words, config, cwd)
     if message:  # non-empty string
-        print(f"🐤 {message}")
+        print(json.dumps(post_tool_response(message)))
     # empty string or None = silent (no output)
 
 
@@ -251,7 +261,7 @@ def handle_mcp_post_tool_use(tool_name: str, config: Config) -> None:
     """Handle PostToolUse hook for MCP tools - output feedback if rule matches."""
     message = match_after_mcp(tool_name, config)
     if message:  # non-empty string
-        print(f"🐤 {message}")
+        print(json.dumps(post_tool_response(message)))
     # empty string or None = silent (no output)
 
 
@@ -285,7 +295,7 @@ def handle_web_post_tool_use(query: str, config: Config) -> None:
     """Handle PostToolUse hook for WebSearch - output feedback if rule matches."""
     message = match_after_web(query, config)
     if message:  # non-empty string
-        print(f"🐤 {message}")
+        print(json.dumps(post_tool_response(message)))
     # empty string or None = silent (no output)
 
 

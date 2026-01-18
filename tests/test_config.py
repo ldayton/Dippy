@@ -2295,16 +2295,12 @@ class TestMatchAfterWeb:
     """Test after-web rule matching for PostToolUse feedback."""
 
     def test_basic_match(self):
-        cfg = Config(
-            after_web_rules=[Rule("after", "*api*", message="Check version")]
-        )
+        cfg = Config(after_web_rules=[Rule("after", "*api*", message="Check version")])
         result = match_after_web("rest api tutorial", cfg)
         assert result == "Check version"
 
     def test_no_match(self):
-        cfg = Config(
-            after_web_rules=[Rule("after", "*api*", message="Check version")]
-        )
+        cfg = Config(after_web_rules=[Rule("after", "*api*", message="Check version")])
         result = match_after_web("python basics", cfg)
         assert result is None
 
