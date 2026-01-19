@@ -384,9 +384,10 @@ def main():
                     print(json.dumps(result))
                 return
 
-            # Check if this is a WebSearch tool
-            if tool_name == "WebSearch":
-                query = tool_input.get("query", "")
+            # Check if this is a web tool (Claude: WebSearch/WebFetch, Gemini: google_web_search/web_fetch)
+            if tool_name in ("WebSearch", "WebFetch", "google_web_search", "web_fetch"):
+                # WebSearch/google_web_search use query, WebFetch/web_fetch use url
+                match_value = tool_input.get("query") or tool_input.get("url", "")
                 # Check for bypass permissions mode first
                 if hook_event != "PostToolUse":
                     permission_mode = input_data.get("permission_mode", "default")
@@ -395,13 +396,13 @@ def main():
                         log_decision("allow", permission_mode)
                         print(json.dumps(approve(permission_mode)))
                         return
-                # Handle WebSearch tool
+                # Handle WebSearch/WebFetch tool
                 if hook_event == "PostToolUse":
-                    logging.info(f"PostToolUse WebSearch: {query}")
-                    handle_web_post_tool_use(query, config)
+                    logging.info(f"PostToolUse {tool_name}: {match_value}")
+                    handle_web_post_tool_use(match_value, config)
                 else:
-                    logging.info(f"Checking WebSearch: {query}")
-                    result = check_web_tool(query, config)
+                    logging.info(f"Checking {tool_name}: {match_value}")
+                    result = check_web_tool(match_value, config)
                     print(json.dumps(result))
                 return
 

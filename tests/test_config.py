@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import importlib
+import io
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
+
+import dippy.core.config
+import dippy.dippy
 
 from dippy.core.config import (
     Config,
@@ -2323,3 +2329,194 @@ class TestMatchAfterWeb:
         cfg = Config(after_web_rules=[Rule("after", "*docs*", message="")])
         result = match_after_web("python docs", cfg)
         assert result == ""
+
+
+class TestWebFetchEndToEnd:
+    """End-to-end tests verifying WebFetch uses the same web_rules as WebSearch."""
+
+    def test_webfetch_tool_uses_web_rules(self, tmp_path, monkeypatch):
+        """Test that WebFetch tools are routed through web rules using URL."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web\n")
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {
+                "url": "https://docs.python.org/3/",
+                "prompt": "extract info",
+            },
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        import importlib
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_webfetch_url_pattern_matching(self, tmp_path, monkeypatch):
+        """Test that URL patterns work for WebFetch."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web *github.com*\n")
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {
+                "url": "https://github.com/user/repo",
+                "prompt": "get readme",
+            },
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        import importlib
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_webfetch_deny_blocks_url(self, tmp_path, monkeypatch):
+        """Test that deny-web blocks WebFetch by URL pattern."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *malicious* "Blocked URL"\n')
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {
+                "url": "https://malicious-site.com/payload",
+                "prompt": "fetch",
+            },
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        import importlib
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+        assert "Blocked URL" in output["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_webfetch_no_match_defers(self, tmp_path, monkeypatch):
+        """Test that WebFetch with no matching rules returns empty (defer)."""
+        import io
+        import json
+        import sys
+        import dippy.core.config
+
+        monkeypatch.setattr(
+            dippy.core.config, "USER_CONFIG", tmp_path / "no-such-config"
+        )
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow git *\n")  # No web rules
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://example.com", "prompt": "fetch"},
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output == {}  # Empty = defer to Claude's default
+
+
+class TestGeminiWebToolsEndToEnd:
+    """End-to-end tests verifying Gemini CLI web tools use web_rules."""
+
+    def test_google_web_search_uses_web_rules(self, tmp_path, monkeypatch):
+        """Test that Gemini's google_web_search routes through web rules."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web\n")
+        hook_input = {
+            "tool_name": "google_web_search",
+            "tool_input": {"query": "python documentation"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_gemini_web_fetch_uses_web_rules(self, tmp_path, monkeypatch):
+        """Test that Gemini's web_fetch routes through web rules."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web *github.com*\n")
+        hook_input = {
+            "tool_name": "web_fetch",
+            "tool_input": {"url": "https://github.com/user/repo"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_google_web_search_deny_blocks(self, tmp_path, monkeypatch):
+        """Test that deny-web blocks Gemini's google_web_search."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *hack* "Blocked"\n')
+        hook_input = {
+            "tool_name": "google_web_search",
+            "tool_input": {"query": "hacking tutorials"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+
+    def test_gemini_web_fetch_deny_blocks(self, tmp_path, monkeypatch):
+        """Test that deny-web blocks Gemini's web_fetch by URL."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *malicious* "Blocked URL"\n')
+        hook_input = {
+            "tool_name": "web_fetch",
+            "tool_input": {"url": "https://malicious-site.com"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
