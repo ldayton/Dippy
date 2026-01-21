@@ -47,13 +47,7 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively):
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|mcp__.*",
-        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash|mcp__.*",
+        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
       }
     ]
@@ -65,37 +59,23 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively):
 
 ## Configuration
 
-⚠️ Configuration is still evolving; syntax and behaviors may change.
-
-Dippy reads config from (lowest to highest priority):
-
-- `~/.dippy/config` (user global)
-- `.dippy` in the project tree (walks up from cwd)
-- `$DIPPY_CONFIG` (env override)
-
-Sample config:
+Dippy is highly customizable. Beyond simple allow/deny rules, you can attach messages that steer the AI back on track when it goes astray—no wasted turns.
 
 ```
-set log ~/.dippy/audit.log             # write audit log to this path
-set log-full                           # include full command in audit log
-
-deny docker *                          # block all docker by default
-allow docker run nginx:*               # allow nginx runs
-deny docker run *--privileged*         # still ban privileged mode, last matching rule wins
-
-deny python "Use uv run python, which runs in project environment"  # remind Claude to use uv
-
-allow-redirect /tmp/**                 # allow temp file writes
-deny-redirect **/.env* "Never write secrets, ask me to do it"       # block env writes
-
-allow-mcp mcp__github__get_*           # allow read-only GitHub MCP tools
-allow-mcp mcp__github__list_*
-deny-mcp mcp__*__delete_* "No deletions"  # block destructive MCP operations
-
-after git commit * "Reread prompts/next-iteration.md"  # after hook keeps Claude on task
+deny python "Use uv run python, which runs in project environment"
+deny rm -rf * "Use trash instead"
+deny-redirect **/.env* "Never write secrets, ask me to do it"
 ```
 
-Configuration reference: [docs/config.md](docs/config.md)
+Dippy reads config from `~/.dippy/config` (global) and `.dippy` in your project root.
+
+**Full documentation:** [Dippy Wiki](https://github.com/ldayton/Dippy/wiki)
+
+---
+
+## Extensions
+
+Dippy can do more than filter shell commands. See the [wiki](https://github.com/ldayton/Dippy/wiki) for additional capabilities.
 
 ---
 
