@@ -2,14 +2,14 @@
 
 #---- Python ----#
 allow rm -rf /**/__pycache__
-deny python3 * "Use `uv run python`"
-deny python * "Use `uv run python`"
-deny uv run ruff * "Use `just fmt --fix` and `just lint --fix`"
-allow uv run pytest *
-allow uv run python -c *
+deny python3 "Use `uv run python`"
+deny python "Use `uv run python`"
+deny uv run ruff "Use `just fmt --fix` and `just lint --fix`"
+allow uv run pytest
+allow uv run python -c
 
 #---- Just ----#
-allow just check *
-allow just fmt *
-allow just lint *
-allow just test *
+allow just check
+allow just fmt
+allow just lint
+allow just test
