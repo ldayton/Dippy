@@ -1123,12 +1123,60 @@ TESTS = [
     ("aws athena batch-get-named-query --named-query-ids abc123 def456", True),
     ("aws athena batch-get-query-execution --query-execution-ids abc123 def456", True),
     ("aws athena batch-get-prepared-statement --prepared-statement-names stmt1 stmt2 --work-group primary", True),
-    # Athena - mutations require confirmation
-    ("aws athena start-query-execution --query-string 'SELECT * FROM tbl' --work-group primary", False),
+    # Athena start-query-execution - read-only SQL is approved
+    ("aws athena start-query-execution --query-string 'SELECT * FROM tbl' --work-group primary", True),
     (
         "aws athena start-query-execution --query-string 'SELECT 1' --result-configuration OutputLocation=s3://bucket/",
-        False,
+        True,
     ),
+    # Athena - read-only keywords
+    ("aws athena start-query-execution --query-string 'select * from foo'", True),  # lowercase
+    ("aws athena start-query-execution --query-string 'SHOW DATABASES'", True),
+    ("aws athena start-query-execution --query-string 'SHOW TABLES'", True),
+    ("aws athena start-query-execution --query-string 'SHOW PARTITIONS tbl'", True),
+    ("aws athena start-query-execution --query-string 'DESCRIBE tbl'", True),
+    ("aws athena start-query-execution --query-string 'DESCRIBE FORMATTED tbl'", True),
+    ("aws athena start-query-execution --query-string 'EXPLAIN SELECT 1'", True),
+    ("aws athena start-query-execution --query-string 'EXPLAIN ANALYZE SELECT 1'", True),
+    # Athena - WITH (CTE) followed by SELECT is read-only
+    ("aws athena start-query-execution --query-string 'WITH cte AS (SELECT 1) SELECT * FROM cte'", True),
+    ("aws athena start-query-execution --query-string '  WITH x AS (SELECT 1) SELECT * FROM x'", True),
+    # Athena - comments before SELECT
+    ("aws athena start-query-execution --query-string '-- comment\nSELECT 1'", True),
+    ("aws athena start-query-execution --query-string '/* block */ SELECT 1'", True),
+    ("aws athena start-query-execution --query-string '  -- comment\n  /* block */  SELECT 1'", True),
+    # Athena - --query-string= syntax
+    ("aws athena start-query-execution --query-string=SELECT * FROM tbl --work-group primary", True),
+    # Athena start-query-execution - DDL requires confirmation
+    ("aws athena start-query-execution --query-string 'CREATE TABLE foo (id INT)'", False),
+    ("aws athena start-query-execution --query-string 'CREATE EXTERNAL TABLE foo (id INT)'", False),
+    ("aws athena start-query-execution --query-string 'CREATE TABLE foo AS SELECT 1'", False),  # CTAS
+    ("aws athena start-query-execution --query-string 'ALTER TABLE foo ADD COLUMNS (bar STRING)'", False),
+    ("aws athena start-query-execution --query-string 'DROP TABLE foo'", False),
+    ("aws athena start-query-execution --query-string 'DROP DATABASE mydb'", False),
+    ("aws athena start-query-execution --query-string 'TRUNCATE TABLE foo'", False),
+    ("aws athena start-query-execution --query-string 'MSCK REPAIR TABLE foo'", False),
+    # Athena start-query-execution - DML requires confirmation
+    ("aws athena start-query-execution --query-string 'INSERT INTO foo SELECT * FROM bar'", False),
+    ("aws athena start-query-execution --query-string 'INSERT INTO foo VALUES (1, 2)'", False),
+    ("aws athena start-query-execution --query-string 'DELETE FROM foo WHERE id = 1'", False),
+    ("aws athena start-query-execution --query-string 'UPDATE foo SET bar = 1'", False),
+    ("aws athena start-query-execution --query-string 'MERGE INTO foo USING bar ON ...'", False),
+    # Athena start-query-execution - other mutations
+    ("aws athena start-query-execution --query-string 'VACUUM foo'", False),
+    ("aws athena start-query-execution --query-string 'UNLOAD (SELECT * FROM foo) TO s3://bucket/'", False),
+    ("aws athena start-query-execution --query-string 'GRANT SELECT ON foo TO user'", False),
+    ("aws athena start-query-execution --query-string 'REVOKE SELECT ON foo FROM user'", False),
+    # Athena start-query-execution - WITH followed by INSERT is NOT read-only
+    ("aws athena start-query-execution --query-string 'WITH cte AS (SELECT 1) INSERT INTO foo SELECT * FROM cte'", False),
+    # Athena start-query-execution - unknown/unparseable requires confirmation
+    ("aws athena start-query-execution --query-string 'CALL some_procedure()'", False),
+    ("aws athena start-query-execution --query-string ''", False),  # empty
+    ("aws athena start-query-execution --query-string '   '", False),  # whitespace only
+    ("aws athena start-query-execution --query-string '-- just a comment'", False),
+    # Athena start-query-execution - no query string provided
+    ("aws athena start-query-execution --work-group primary", False),
+    # Athena - other mutations require confirmation
     ("aws athena stop-query-execution --query-execution-id abc123", False),
     ("aws athena start-session --work-group primary --engine-configuration file://config.json", False),
     ("aws athena start-calculation-execution --session-id sess --code-block 'print(1)'", False),

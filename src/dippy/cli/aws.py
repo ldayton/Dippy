@@ -4,7 +4,115 @@ AWS CLI handler for Dippy.
 Handles aws, aws-vault, and similar AWS tools.
 """
 
+import re
+
 from dippy.cli import Classification
+
+# SQL read-only detection for Athena queries
+_SKIP_PATTERN = re.compile(r"\s+|--[^\n]*|/\*.*?\*/", re.DOTALL)
+_KEYWORD_PATTERN = re.compile(r"[A-Za-z_]\w*")
+_READONLY_KEYWORDS = frozenset({"SELECT", "SHOW", "DESCRIBE", "EXPLAIN"})
+_WRITE_KEYWORDS = frozenset(
+    {
+        "INSERT",
+        "CREATE",
+        "ALTER",
+        "DROP",
+        "TRUNCATE",
+        "DELETE",
+        "UPDATE",
+        "MERGE",
+        "MSCK",
+        "VACUUM",
+        "UNLOAD",
+        "GRANT",
+        "REVOKE",
+    }
+)
+
+
+def _skip_cte(sql: str, pos: int) -> int:
+    """Skip over CTE definitions (name AS (...), ...) to find main statement."""
+    length = len(sql)
+    expect_as = True  # After WITH/comma, expect: name AS (...)
+    while pos < length:
+        # Skip whitespace and comments
+        m = _SKIP_PATTERN.match(sql, pos)
+        if m:
+            pos = m.end()
+            continue
+        # Check for opening paren - skip balanced parens
+        if sql[pos] == "(":
+            depth = 1
+            pos += 1
+            while pos < length and depth > 0:
+                if sql[pos] == "(":
+                    depth += 1
+                elif sql[pos] == ")":
+                    depth -= 1
+                pos += 1
+            expect_as = False  # After CTE body, expect comma or main statement
+            continue
+        # Check for comma (another CTE follows)
+        if sql[pos] == ",":
+            pos += 1
+            expect_as = True  # After comma, expect another CTE name
+            continue
+        # Check for identifier/keyword
+        m = _KEYWORD_PATTERN.match(sql, pos)
+        if m:
+            kw = m.group().upper()
+            if expect_as:
+                # This is a CTE name or AS keyword - skip it
+                pos = m.end()
+                if kw == "AS":
+                    expect_as = False
+                continue
+            # Not expecting AS - check if this is the main statement
+            if kw in _READONLY_KEYWORDS or kw in _WRITE_KEYWORDS:
+                return pos
+            # Unknown keyword after CTE - skip it
+            pos = m.end()
+            continue
+        # Unknown character - move forward
+        pos += 1
+    return pos
+
+
+def is_readonly_sql(sql: str) -> bool | None:
+    """Check if SQL is read-only. Returns True if read-only, False if write, None if unknown."""
+    pos = 0
+    while pos < len(sql):
+        # Skip whitespace and comments
+        m = _SKIP_PATTERN.match(sql, pos)
+        if m:
+            pos = m.end()
+            continue
+        # Find keyword
+        m = _KEYWORD_PATTERN.match(sql, pos)
+        if not m:
+            return None
+        kw = m.group().upper()
+        if kw == "WITH":
+            # CTE - skip past all CTE definitions to find actual statement
+            pos = _skip_cte(sql, m.end())
+            continue
+        if kw in _READONLY_KEYWORDS:
+            return True
+        if kw in _WRITE_KEYWORDS:
+            return False
+        return None
+    return None
+
+
+def _extract_athena_query_string(tokens: list[str]) -> str | None:
+    """Extract --query-string value from Athena command tokens."""
+    for i, token in enumerate(tokens):
+        if token == "--query-string" and i + 1 < len(tokens):
+            return tokens[i + 1]
+        if token.startswith("--query-string="):
+            return token[len("--query-string=") :]
+    return None
 
 COMMANDS = ["aws"]
 
@@ -324,6 +432,16 @@ def classify(tokens: list[str]) -> Classification:
 
     # SSM special handling - --with-decryption exposes sensitive data
     if service == "ssm" and "--with-decryption" in tokens:
+        return Classification("ask", description=desc)
+
+    # Athena special handling - analyze SQL for read-only queries
+    if service == "athena" and action == "start-query-execution":
+        query_string = _extract_athena_query_string(tokens)
+        if query_string is not None:
+            readonly = is_readonly_sql(query_string)
+            if readonly is True:
+                return Classification("approve", description=desc)
+        # Not read-only or couldn't determine - ask
         return Classification("ask", description=desc)
 
     # Check specific safe commands
