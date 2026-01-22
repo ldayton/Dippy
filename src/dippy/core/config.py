@@ -59,6 +59,9 @@ class Config:
     after_mcp_rules: list[Rule] = field(default_factory=list)
     """After-MCP rules for PostToolUse feedback on MCP tools."""
 
+    aliases: dict[str, str] = field(default_factory=dict)
+    """Command aliases mapping source to target (e.g., ~/bin/gh -> gh)."""
+
     default: str = "ask"  # 'allow' | 'ask'
     log: Path | None = None  # None = no logging
     log_full: bool = False  # log full command (requires log path)
@@ -117,6 +120,8 @@ def _merge_configs(base: Config, overlay: Config) -> Config:
         after_rules=base.after_rules + overlay.after_rules,
         mcp_rules=base.mcp_rules + overlay.mcp_rules,
         after_mcp_rules=base.after_mcp_rules + overlay.after_mcp_rules,
+        # Aliases: overlay wins for conflicting keys
+        aliases={**base.aliases, **overlay.aliases},
         # Settings: overlay wins if set
         default=overlay.default if overlay.default != "ask" else base.default,
         log=overlay.log if overlay.log is not None else base.log,
@@ -203,6 +208,7 @@ def parse_config(text: str, source: str | None = None) -> Config:
     after_rules: list[Rule] = []
     mcp_rules: list[Rule] = []
     after_mcp_rules: list[Rule] = []
+    aliases: dict[str, str] = {}
     settings: dict[str, bool | int | str | Path] = {}
     prefix = f"{source}: " if source else ""
 
@@ -302,6 +308,19 @@ def parse_config(text: str, source: str | None = None) -> Config:
                 pattern, message = _extract_message(rest)
                 after_mcp_rules.append(Rule("after", pattern, message=message))
 
+            elif directive == "alias":
+                parts = rest.split()
+                if len(parts) != 2:
+                    raise ValueError("requires exactly two arguments: source target")
+                alias_source, alias_target = parts
+                expanded_source = _expand_pattern_tildes(alias_source)
+                if expanded_source in aliases:
+                    logging.warning(
+                        f"{prefix}line {lineno}: alias '{alias_source}' redefined, "
+                        "overwriting"
+                    )
+                aliases[expanded_source] = alias_target
+
             elif directive == "set":
                 _apply_setting(settings, rest)
 
@@ -317,6 +336,7 @@ def parse_config(text: str, source: str | None = None) -> Config:
         after_rules=after_rules,
         mcp_rules=mcp_rules,
         after_mcp_rules=after_mcp_rules,
+        aliases=aliases,
         default=settings.get("default", "ask"),
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
@@ -606,9 +626,24 @@ def _has_glob_chars(pattern: str) -> bool:
     return any(c in pattern for c in "*?[")
 
 
+def _resolve_alias(word: str, config: Config, cwd: Path) -> str:
+    """Resolve command word through aliases."""
+    normalized_word = _normalize_token(word, cwd)
+    for alias_source, alias_target in config.aliases.items():
+        normalized_source = _normalize_token(alias_source, cwd)
+        if normalized_word == normalized_source:
+            return alias_target
+    return word
+
+
 def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
     """Match command words against rules. Returns last matching rule."""
-    normalized_cmd = _normalize_words(words, cwd)
+    if words:
+        resolved_first = _resolve_alias(words[0], config, cwd)
+        resolved_words = [resolved_first] + words[1:]
+    else:
+        resolved_words = words
+    normalized_cmd = _normalize_words(resolved_words, cwd)
     result: Match | None = None
     for rule in config.rules:
         normalized_pattern = _normalize_pattern(rule.pattern, cwd)
@@ -746,7 +781,12 @@ def match_after(words: list[str], config: Config, cwd: Path) -> str | None:
         Message string if a rule with message matches, empty string if silent
         rule matches, None if no rule matches.
     """
-    normalized_cmd = _normalize_words(words, cwd)
+    if words:
+        resolved_first = _resolve_alias(words[0], config, cwd)
+        resolved_words = [resolved_first] + words[1:]
+    else:
+        resolved_words = words
+    normalized_cmd = _normalize_words(resolved_words, cwd)
     result: str | None = None
     for rule in config.after_rules:
         normalized_pattern = _normalize_pattern(rule.pattern, cwd)

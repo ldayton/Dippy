@@ -1825,3 +1825,116 @@ class TestMcpEndToEnd:
         output = json.loads(captured_output.getvalue())
         # ls is safe, should be approved (not affected by MCP deny rule)
         assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+
+class TestAlias:
+    """Test alias directive for mapping wrapper scripts to canonical names."""
+
+    def test_alias_tilde_path(self, tmp_path):
+        """alias ~/bin/gh gh + allow gh matches ~/bin/gh pr list."""
+        home = str(Path.home())
+        cfg = parse_config(f"alias ~/bin/gh gh\nallow gh")
+        assert cfg.aliases == {f"{home}/bin/gh": "gh"}
+        c = SimpleCommand(words=["~/bin/gh", "pr", "list"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+
+    def test_alias_relative_path(self, tmp_path):
+        """alias ./bin/gh gh works."""
+        cfg = parse_config("alias ./bin/gh gh\nallow gh")
+        # Relative paths are stored as-is at parse time, resolved at match time
+        assert cfg.aliases == {"./bin/gh": "gh"}
+        c = SimpleCommand(words=["./bin/gh", "pr", "list"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+
+    def test_alias_bare_command(self, tmp_path):
+        """alias mygit git + allow git matches mygit status."""
+        cfg = parse_config("alias mygit git\nallow git")
+        assert cfg.aliases == {"mygit": "git"}
+        c = SimpleCommand(words=["mygit", "status"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+
+    def test_alias_preserves_args(self, tmp_path):
+        """args passed through after alias resolution."""
+        cfg = parse_config("alias mygit git\nallow git commit *")
+        c = SimpleCommand(words=["mygit", "commit", "-m", "message"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
+
+    def test_alias_with_rules(self, tmp_path):
+        """alias + allow/deny rules work together."""
+        cfg = parse_config(
+            "alias mygit git\nallow git status\ndeny git push"
+        )
+        # Allow status
+        c1 = SimpleCommand(words=["mygit", "status"])
+        m1 = match_command(c1, cfg, tmp_path)
+        assert m1 is not None
+        assert m1.decision == "allow"
+        # Deny push
+        c2 = SimpleCommand(words=["mygit", "push"])
+        m2 = match_command(c2, cfg, tmp_path)
+        assert m2 is not None
+        assert m2.decision == "deny"
+
+    def test_alias_missing_target(self, caplog):
+        """alias foo warns and skips."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            cfg = parse_config("alias foo")
+        assert cfg.aliases == {}
+        assert "requires exactly two arguments" in caplog.text
+
+    def test_alias_too_many_args(self, caplog):
+        """alias foo bar baz warns and skips."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            cfg = parse_config("alias foo bar baz")
+        assert cfg.aliases == {}
+        assert "requires exactly two arguments" in caplog.text
+
+    def test_alias_redefined(self, caplog):
+        """second alias foo x overwrites first, logs warning."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            cfg = parse_config("alias foo bar\nalias foo baz")
+        assert cfg.aliases == {"foo": "baz"}
+        assert "redefined" in caplog.text
+
+    def test_alias_merge(self):
+        """later config overrides earlier alias."""
+        base = Config(aliases={"foo": "bar", "baz": "qux"})
+        overlay = Config(aliases={"foo": "override"})
+        merged = _merge_configs(base, overlay)
+        assert merged.aliases == {"foo": "override", "baz": "qux"}
+
+    def test_alias_with_after_rules(self, tmp_path):
+        """alias works with after rules too."""
+        cfg = parse_config('alias mygit git\nafter git push * "Pushed!"')
+        result = match_after(["mygit", "push", "origin", "main"], cfg, tmp_path)
+        assert result == "Pushed!"
+
+    def test_alias_no_match_without_rule(self, tmp_path):
+        """alias alone doesn't create implicit allow."""
+        cfg = parse_config("alias mygit git")
+        c = SimpleCommand(words=["mygit", "status"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is None
+
+    def test_alias_absolute_path(self, tmp_path):
+        """alias /usr/local/bin/gh gh works."""
+        cfg = parse_config("alias /usr/local/bin/gh gh\nallow gh")
+        assert cfg.aliases == {"/usr/local/bin/gh": "gh"}
+        c = SimpleCommand(words=["/usr/local/bin/gh", "pr", "list"])
+        m = match_command(c, cfg, tmp_path)
+        assert m is not None
+        assert m.decision == "allow"
