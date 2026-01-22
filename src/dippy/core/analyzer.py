@@ -5,6 +5,8 @@ Single recursive walk of bash AST with consistent decision-making.
 Unknown constructs default to ask. Decisions bubble up (deny > ask > allow).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal

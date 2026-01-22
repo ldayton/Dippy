@@ -4,6 +4,8 @@ Dmesg command handler for Dippy.
 Dmesg is safe for viewing kernel messages, but -c/--clear clears the ring buffer.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["dmesg"]

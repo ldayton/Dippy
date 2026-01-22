@@ -1,6 +1,8 @@
 """Parable - A recursive descent parser for bash."""
 
 
+from __future__ import annotations
+
 class ParseError(Exception):
     """Raised when parsing fails."""
 

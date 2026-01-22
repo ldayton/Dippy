@@ -5,6 +5,8 @@ Tests cover awk, gawk, mawk, nawk commands.
 Awk is safe for text processing but can execute shell commands.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

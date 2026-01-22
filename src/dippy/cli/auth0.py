@@ -4,6 +4,8 @@ Auth0 CLI command handler for Dippy.
 Auth0 commands for identity management.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["auth0"]

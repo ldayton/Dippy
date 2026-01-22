@@ -2,6 +2,8 @@
 Tests for the main Dippy router and integration.
 """
 
+from __future__ import annotations
+
 import pytest
 
 

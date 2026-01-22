@@ -1,5 +1,7 @@
 """Test multi-CLI mode support (Claude, Gemini, Cursor) and auto-detection."""
 
+from __future__ import annotations
+
 import importlib
 import pytest
 

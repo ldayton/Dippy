@@ -5,6 +5,8 @@ Tar can list, create, or extract archives.
 Only listing (-t/--list) is safe.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["tar"]

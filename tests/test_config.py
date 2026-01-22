@@ -1,5 +1,7 @@
 """Tests for config loading, merging, and logging."""
 
+from __future__ import annotations
+
 import json
 import os
 import stat

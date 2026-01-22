@@ -4,6 +4,8 @@ Comprehensive tests for Cargo (Rust) CLI handler.
 Tests cover cargo commands for Rust package management.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

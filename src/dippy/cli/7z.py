@@ -5,6 +5,8 @@ Handles unzip, 7z, 7za, 7zr, 7zz commands.
 Read-only operations (list, test, info) are safe, extraction/modification is not.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["unzip", "7z", "7za", "7zr", "7zz"]

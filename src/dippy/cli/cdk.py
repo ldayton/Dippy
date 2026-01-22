@@ -5,6 +5,8 @@ CDK commands for infrastructure as code.
 Most commands modify infrastructure, only a few are safe.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["cdk"]

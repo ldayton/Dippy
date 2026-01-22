@@ -4,6 +4,8 @@ Comprehensive tests for ruff CLI handler.
 Ruff is mostly safe for linting/formatting, but "ruff clean" removes cache.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

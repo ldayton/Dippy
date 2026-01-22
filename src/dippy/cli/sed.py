@@ -4,6 +4,8 @@ Sed command handler for Dippy.
 Sed is safe for text processing, but -i flag modifies files in place.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["sed"]

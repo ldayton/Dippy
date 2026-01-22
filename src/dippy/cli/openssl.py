@@ -5,6 +5,8 @@ OpenSSL has various commands, some are read-only (viewing certs)
 and some modify files or do crypto operations.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["openssl"]

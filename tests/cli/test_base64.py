@@ -6,6 +6,8 @@ base64-encoded/decoded data. It's always safe as a SIMPLE_SAFE command
 since it only transforms data (output redirects are handled separately).
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

@@ -2,8 +2,8 @@
 """Claude Code hook entry point for Dippy."""
 import sys
 
-if sys.version_info < (3, 10):
-    sys.exit("Dippy requires Python 3.10+. You have %d.%d." % sys.version_info[:2])
+if sys.version_info < (3, 9):
+    sys.exit("Dippy requires Python 3.9+. You have %d.%d." % sys.version_info[:2])
 
 from pathlib import Path
 

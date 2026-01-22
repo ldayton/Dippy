@@ -5,6 +5,8 @@ Pytest runs arbitrary Python code, so test execution requires approval.
 Safe operations like --version, --help, --collect-only are auto-approved.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["pytest"]

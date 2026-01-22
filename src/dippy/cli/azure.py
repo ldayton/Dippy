@@ -4,6 +4,8 @@ Azure CLI handler for Dippy.
 Handles az commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["az"]

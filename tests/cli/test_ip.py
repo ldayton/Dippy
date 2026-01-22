@@ -4,6 +4,8 @@ Comprehensive tests for ip CLI handler.
 The ip command is safe for viewing, but modification commands need confirmation.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

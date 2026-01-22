@@ -4,6 +4,8 @@ Node package manager CLI handler for Dippy.
 Handles npm, yarn, and pnpm commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["npm", "yarn", "pnpm"]

@@ -5,6 +5,8 @@ Handles bash, sh, zsh with -c flag (inline commands).
 Delegates to inner command check.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["bash", "sh", "zsh", "dash", "ksh", "fish"]

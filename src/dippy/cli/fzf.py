@@ -9,6 +9,8 @@ Unsafe operations:
 - --bind with execute/execute-silent/become: Can run arbitrary commands
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["fzf"]

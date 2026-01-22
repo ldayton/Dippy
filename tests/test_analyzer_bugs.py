@@ -1,5 +1,7 @@
 """Tests for analyzer bugs found in PR #29 review."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest

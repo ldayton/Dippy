@@ -2,6 +2,8 @@
 Tests for the core parser module.
 """
 
+from __future__ import annotations
+
 from dippy.core.parser import tokenize
 
 

@@ -6,6 +6,8 @@ Helm is the Kubernetes package manager. Safe operations are read-only queries
 mutate cluster state, local files, or remote registries.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["helm"]

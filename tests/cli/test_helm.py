@@ -6,6 +6,8 @@ and dry-run modes. Unsafe operations mutate cluster state, local files,
 or remote registries.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

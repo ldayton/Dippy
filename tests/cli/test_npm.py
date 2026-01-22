@@ -4,6 +4,8 @@ Comprehensive tests for npm/yarn/pnpm CLI handler.
 Package managers need confirmation for install/publish/run operations.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

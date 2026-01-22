@@ -7,6 +7,8 @@ Find is mostly safe for searching, but has dangerous flags:
 - -delete: Delete found files
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["find"]

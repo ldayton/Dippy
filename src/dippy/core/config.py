@@ -1,5 +1,7 @@
 """Dippy configuration system v1."""
 
+from __future__ import annotations
+
 import fnmatch
 import os
 import re
@@ -767,7 +769,7 @@ def match_after_mcp(tool_name: str, config: Config) -> str | None:
 # === Logging ===
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class _LogConfig:
     """Internal log configuration."""
 

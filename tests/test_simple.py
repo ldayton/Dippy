@@ -2,6 +2,8 @@
 Tests for simple safe commands (ls, cat, head, etc.)
 """
 
+from __future__ import annotations
+
 import pytest
 
 

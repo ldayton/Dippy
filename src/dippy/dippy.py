@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 #!/usr/bin/env python3
 """
 Dippy - Approval autopilot for Claude Code, Gemini CLI, and Cursor.

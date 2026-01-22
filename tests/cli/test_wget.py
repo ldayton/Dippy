@@ -1,5 +1,7 @@
 """Test cases for wget command safety checks."""
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

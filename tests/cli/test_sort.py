@@ -4,6 +4,8 @@ Comprehensive tests for sort CLI handler.
 Sort is safe for text processing, but -o flag writes to a file.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

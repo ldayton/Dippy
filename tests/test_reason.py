@@ -1,5 +1,7 @@
 """Test cases for hook output format and reasons."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest

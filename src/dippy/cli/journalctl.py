@@ -4,6 +4,8 @@ Journalctl command handler for Dippy.
 Journalctl is safe for viewing logs, but modification flags need confirmation.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["journalctl"]

@@ -5,6 +5,8 @@ Awk is safe for text processing, but -f flag runs scripts
 and the program can contain output redirects.
 """
 
+from __future__ import annotations
+
 import re
 
 from dippy.cli import Classification

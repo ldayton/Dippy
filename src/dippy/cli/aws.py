@@ -4,6 +4,8 @@ AWS CLI handler for Dippy.
 Handles aws, aws-vault, and similar AWS tools.
 """
 
+from __future__ import annotations
+
 import re
 
 from dippy.cli import Classification

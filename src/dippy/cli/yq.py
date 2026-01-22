@@ -4,6 +4,8 @@ yq is a YAML/JSON/XML processor. It outputs to stdout by default,
 but -i/--inplace modifies files in place.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["yq"]

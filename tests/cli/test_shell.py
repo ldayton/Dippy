@@ -4,6 +4,8 @@ Comprehensive tests for shell (bash/sh/zsh) CLI handler.
 Shell commands with -c flag are checked for inner command safety.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

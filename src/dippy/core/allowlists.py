@@ -2,6 +2,8 @@
 Allowlists for Dippy - known safe commands and transparent wrappers.
 """
 
+from __future__ import annotations
+
 # === Simple Safe Commands ===
 # These are always safe regardless of arguments (except output redirects)
 

@@ -6,6 +6,8 @@ ansible-inventory, ansible-doc, ansible-pull, ansible-config,
 ansible-console, ansible-lint, and ansible-test commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = [

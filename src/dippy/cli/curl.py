@@ -4,6 +4,8 @@ Curl command handler for Dippy.
 Approves GET/HEAD requests, blocks data-sending operations.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["curl"]

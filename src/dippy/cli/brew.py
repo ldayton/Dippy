@@ -2,6 +2,8 @@
 Homebrew CLI handler for Dippy.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["brew"]

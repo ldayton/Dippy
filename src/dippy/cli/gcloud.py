@@ -4,6 +4,8 @@ Google Cloud CLI handler for Dippy.
 Handles gcloud, gsutil, and bq commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["gcloud", "gsutil"]

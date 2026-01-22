@@ -4,6 +4,8 @@ Comprehensive tests for 7z archive CLI handlers.
 Tests cover unzip, 7z, 7za, 7zr, 7zz commands.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

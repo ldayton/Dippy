@@ -8,6 +8,8 @@ Unsafe operations include building images (external effects),
 installing plugins, and modifying template files.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["packer"]
