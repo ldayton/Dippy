@@ -1223,3 +1223,31 @@ def test_aws(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+# Athena description tests - verify reason messages include SQL classification
+ATHENA_DESCRIPTION_TESTS = [
+    # Read-only queries show (read-only)
+    ("aws athena start-query-execution --query-string 'SELECT 1'", "(read-only)"),
+    ("aws athena start-query-execution --query-string 'SHOW TABLES'", "(read-only)"),
+    ("aws athena start-query-execution --query-string 'DESCRIBE foo'", "(read-only)"),
+    ("aws athena start-query-execution --query-string 'EXPLAIN SELECT 1'", "(read-only)"),
+    ("aws athena start-query-execution --query-string 'WITH x AS (SELECT 1) SELECT * FROM x'", "(read-only)"),
+    # Write queries show (write)
+    ("aws athena start-query-execution --query-string 'INSERT INTO foo VALUES (1)'", "(write)"),
+    ("aws athena start-query-execution --query-string 'CREATE TABLE foo (id INT)'", "(write)"),
+    ("aws athena start-query-execution --query-string 'DROP TABLE foo'", "(write)"),
+    ("aws athena start-query-execution --query-string 'DELETE FROM foo'", "(write)"),
+    ("aws athena start-query-execution --query-string 'WITH x AS (SELECT 1) INSERT INTO foo SELECT * FROM x'", "(write)"),
+    # Unknown/missing query string shows no suffix
+    ("aws athena start-query-execution --query-string 'CALL proc()'", "start-query-execution"),
+    ("aws athena start-query-execution --work-group primary", "start-query-execution"),
+]
+
+
+@pytest.mark.parametrize("command,expected_suffix", ATHENA_DESCRIPTION_TESTS)
+def test_athena_descriptions(check, command: str, expected_suffix: str) -> None:
+    """Test that Athena query descriptions include SQL classification."""
+    result = check(command)
+    reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+    assert expected_suffix in reason, f"Expected '{expected_suffix}' in reason '{reason}' for: {command}"

@@ -440,8 +440,10 @@ def classify(tokens: list[str]) -> Classification:
         if query_string is not None:
             readonly = is_readonly_sql(query_string)
             if readonly is True:
-                return Classification("approve", description=desc)
-        # Not read-only or couldn't determine - ask
+                return Classification("approve", description=f"{desc} (read-only)")
+            if readonly is False:
+                return Classification("ask", description=f"{desc} (write)")
+        # Couldn't determine - ask
         return Classification("ask", description=desc)
 
     # Check specific safe commands
