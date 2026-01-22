@@ -1833,7 +1833,7 @@ class TestAlias:
     def test_alias_tilde_path(self, tmp_path):
         """alias ~/bin/gh gh + allow gh matches ~/bin/gh pr list."""
         home = str(Path.home())
-        cfg = parse_config(f"alias ~/bin/gh gh\nallow gh")
+        cfg = parse_config("alias ~/bin/gh gh\nallow gh")
         assert cfg.aliases == {f"{home}/bin/gh": "gh"}
         c = SimpleCommand(words=["~/bin/gh", "pr", "list"])
         m = match_command(c, cfg, tmp_path)
@@ -1869,9 +1869,7 @@ class TestAlias:
 
     def test_alias_with_rules(self, tmp_path):
         """alias + allow/deny rules work together."""
-        cfg = parse_config(
-            "alias mygit git\nallow git status\ndeny git push"
-        )
+        cfg = parse_config("alias mygit git\nallow git status\ndeny git push")
         # Allow status
         c1 = SimpleCommand(words=["mygit", "status"])
         m1 = match_command(c1, cfg, tmp_path)
