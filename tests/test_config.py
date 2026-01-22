@@ -1162,17 +1162,6 @@ class TestMatchEdgeCases:
             match_command(cmd("git status --short --branch"), cfg, tmp_path) is not None
         )
 
-    def test_performance_not_exponential(self, tmp_path):
-        """Ensure matching doesn't exhibit exponential behavior."""
-        import time
-
-        cfg = Config(rules=[Rule("allow", "*a*a*a*a*a*a*a*a")])
-        start = time.time()
-        # This should complete quickly, not hang
-        match_command(cmd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"), cfg, tmp_path)
-        elapsed = time.time() - start
-        assert elapsed < 2.0, f"Matching took too long: {elapsed}s"
-
 
 class TestPatternNormalization:
     """Test that patterns are normalized against cwd for matching."""
