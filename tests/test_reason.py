@@ -22,7 +22,8 @@ def check():
 def get_reason(result: dict) -> str:
     """Extract reason without bird emoji."""
     reason = result["hookSpecificOutput"]["permissionDecisionReason"]
-    return reason.removeprefix("🐤 ")
+    prefix = "🐤 "
+    return reason[len(prefix):] if reason.startswith(prefix) else reason
 
 
 class TestOutputFormat:
