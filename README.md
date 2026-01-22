@@ -63,7 +63,7 @@ Dippy is highly customizable. Beyond simple allow/deny rules, you can attach mes
 
 ```
 deny python "Use uv run python, which runs in project environment"
-deny rm -rf * "Use trash instead"
+deny rm -rf "Use trash instead"
 deny-redirect **/.env* "Never write secrets, ask me to do it"
 ```
 
