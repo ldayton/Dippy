@@ -3,7 +3,8 @@
 import sys
 
 if sys.version_info < (3, 8):
-    sys.exit("Dippy requires Python 3.8+. You have %d.%d." % sys.version_info[:2])
+    print("Dippy requires Python 3.8+. You have %d.%d." % sys.version_info[:2], file=sys.stderr)
+    sys.exit(1)
 
 from pathlib import Path
 
