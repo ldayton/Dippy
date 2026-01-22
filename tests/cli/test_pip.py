@@ -4,6 +4,8 @@ Comprehensive tests for pip CLI handler.
 Pip is safe for viewing packages, but install/uninstall need confirmation.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

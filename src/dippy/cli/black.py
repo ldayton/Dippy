@@ -4,6 +4,8 @@ black is a Python code formatter. It modifies files in place by default,
 but --check and --diff are read-only modes.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["black"]

@@ -7,6 +7,8 @@ no code execution). Uses AST-based static analysis with a whitelist approach.
 Conservative by design: if we can't prove it's safe, ask for confirmation.
 """
 
+from __future__ import annotations
+
 import ast
 from pathlib import Path
 from typing import NamedTuple

@@ -6,6 +6,8 @@ Each handler module exports:
 - classify(tokens: list[str]) -> Classification - classify command for approval
 """
 
+from __future__ import annotations
+
 import importlib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -13,7 +15,7 @@ from pathlib import Path
 from typing import Literal, Optional, Protocol
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Classification:
     """Result of classifying a command.
 

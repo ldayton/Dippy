@@ -6,6 +6,8 @@ flags are safe (informational only). Running the server itself is unsafe as it
 starts a service, binds ports, creates lockfiles, and writes data to storage.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["prometheus"]

@@ -5,6 +5,8 @@ Wget downloads files by default, so most operations are unsafe.
 Only --spider mode (check availability without downloading) is safe.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["wget"]

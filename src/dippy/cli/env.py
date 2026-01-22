@@ -5,6 +5,8 @@ Env is used to set environment variables and run commands.
 Delegates to inner command check.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["env"]

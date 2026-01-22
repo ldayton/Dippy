@@ -4,6 +4,8 @@ Fd is a file search tool. All searches are safe, but --exec and --exec-batch
 delegate to inner commands for safety checks.
 """
 
+from __future__ import annotations
+
 import shlex
 
 from dippy.cli import Classification

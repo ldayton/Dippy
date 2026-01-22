@@ -1,5 +1,7 @@
 """Test cases for google cloud cli (gcloud)."""
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

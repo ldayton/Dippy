@@ -4,6 +4,8 @@ Kubectl command handler for Dippy.
 Handles kubectl and similar Kubernetes CLI tools.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["kubectl", "k"]

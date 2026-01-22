@@ -4,6 +4,8 @@ Docker command handler for Dippy.
 Handles docker, docker-compose, and podman commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]

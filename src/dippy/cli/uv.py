@@ -5,6 +5,8 @@ UV is a Python package manager with various commands.
 Some commands need special handling for inner command checking.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["uv", "uvx"]

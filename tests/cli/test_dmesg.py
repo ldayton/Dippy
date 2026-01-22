@@ -4,6 +4,8 @@ Comprehensive tests for dmesg CLI handler.
 Dmesg is safe for viewing kernel messages, but -c/--clear clears the ring buffer.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

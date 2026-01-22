@@ -4,6 +4,8 @@ GitHub CLI (gh) command handler for Dippy.
 Approves read-only gh operations, blocks mutations.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["gh"]

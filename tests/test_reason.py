@@ -1,5 +1,7 @@
 """Test cases for hook output format and reasons."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -20,7 +22,8 @@ def check():
 def get_reason(result: dict) -> str:
     """Extract reason without bird emoji."""
     reason = result["hookSpecificOutput"]["permissionDecisionReason"]
-    return reason.removeprefix("🐤 ")
+    prefix = "🐤 "
+    return reason[len(prefix) :] if reason.startswith(prefix) else reason
 
 
 class TestOutputFormat:

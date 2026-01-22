@@ -1,5 +1,7 @@
 """Tests for allowlist invariants."""
 
+from __future__ import annotations
+
 from dippy.cli import KNOWN_HANDLERS
 from dippy.core.allowlists import SIMPLE_SAFE, WRAPPER_COMMANDS
 

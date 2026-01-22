@@ -4,6 +4,8 @@ pre-commit manages git pre-commit hooks. Most commands modify files or hooks.
 Only validation and help commands are safe.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["pre-commit"]

@@ -5,6 +5,8 @@ Ruff is a Python linter/formatter. Read-only commands are safe,
 but format/clean and --fix modify files.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["ruff"]

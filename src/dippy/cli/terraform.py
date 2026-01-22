@@ -4,6 +4,8 @@ Terraform command handler for Dippy.
 Handles terraform and tofu (OpenTofu) commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["terraform", "tf"]

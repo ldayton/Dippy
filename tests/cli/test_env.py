@@ -4,6 +4,8 @@ Comprehensive tests for env CLI handler.
 Env runs commands with modified environment - we check the inner command.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

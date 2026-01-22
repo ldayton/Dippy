@@ -4,6 +4,8 @@ Comprehensive tests for sed CLI handler.
 Sed is safe for text processing, but -i flag modifies files in place.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

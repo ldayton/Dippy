@@ -5,6 +5,8 @@ Xargs executes commands with arguments from stdin.
 Delegates to inner command check.
 """
 
+from __future__ import annotations
+
 import shlex
 
 from dippy.cli import Classification

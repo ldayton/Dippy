@@ -4,6 +4,8 @@ Python package manager CLI handler for Dippy.
 Handles pip, pip3, and uv commands.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["pip", "pip3"]

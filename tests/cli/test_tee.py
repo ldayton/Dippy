@@ -1,5 +1,7 @@
 """Tests for tee CLI handler."""
 
+from __future__ import annotations
+
 from conftest import is_approved, needs_confirmation
 from dippy.core.config import Config, Rule
 

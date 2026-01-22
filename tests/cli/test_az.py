@@ -1,5 +1,7 @@
 """Test cases for azure cli (az)."""
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

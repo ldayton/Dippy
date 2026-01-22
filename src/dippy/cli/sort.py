@@ -4,6 +4,8 @@ Sort command handler for Dippy.
 Sort is safe for text processing, but -o flag writes to a file.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["sort"]

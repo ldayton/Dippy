@@ -4,6 +4,8 @@ Comprehensive tests for journalctl CLI handler.
 Journalctl is safe for viewing logs, but modification flags need confirmation.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

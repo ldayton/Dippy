@@ -4,6 +4,8 @@ Ifconfig command handler for Dippy.
 Ifconfig is safe for viewing, but modification commands need confirmation.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["ifconfig"]

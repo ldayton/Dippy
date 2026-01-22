@@ -4,6 +4,8 @@ Comprehensive tests for tar CLI handler.
 Tar with -t/--list is safe, but -c (create) and -x (extract) need confirmation.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

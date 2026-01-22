@@ -3,6 +3,8 @@
 xxd is a hex dump tool. Safe for reading, but -r (revert) mode writes files.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["xxd"]

@@ -5,6 +5,8 @@ UV has safe commands like sync/lock/tree and unsafe ones like pip install.
 UV run checks the inner command for safety.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

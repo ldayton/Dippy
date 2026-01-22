@@ -5,6 +5,8 @@ The ip command is safe for viewing network info, but modification
 commands need confirmation.
 """
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["ip"]

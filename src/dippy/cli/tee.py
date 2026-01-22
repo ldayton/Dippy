@@ -1,5 +1,7 @@
 """tee command handler - writes stdin to files."""
 
+from __future__ import annotations
+
 from dippy.cli import Classification
 
 COMMANDS = ["tee"]

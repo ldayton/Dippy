@@ -5,6 +5,8 @@ not just the command name. These tests verify that handlers include the
 triggering flag or action in their description.
 """
 
+from __future__ import annotations
+
 import pytest
 
 

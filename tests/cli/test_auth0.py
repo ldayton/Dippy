@@ -4,6 +4,8 @@ Comprehensive tests for Auth0 CLI handler.
 Tests cover auth0 commands for identity management.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation

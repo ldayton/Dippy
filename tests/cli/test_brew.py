@@ -1,5 +1,7 @@
 """Test cases for Homebrew CLI (brew)."""
 
+from __future__ import annotations
+
 import pytest
 
 from conftest import is_approved, needs_confirmation
