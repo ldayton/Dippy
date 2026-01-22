@@ -176,6 +176,28 @@ SAFE_COMMANDS = {
     ("sns", "list-subscriptions"),
     ("dynamodb", "list-tables"),
     ("dynamodb", "describe-table"),
+    # Athena - query service for S3 data
+    ("athena", "list-databases"),
+    ("athena", "list-data-catalogs"),
+    ("athena", "list-engine-versions"),
+    ("athena", "list-named-queries"),
+    ("athena", "list-query-executions"),
+    ("athena", "list-prepared-statements"),
+    ("athena", "list-work-groups"),
+    ("athena", "list-table-metadata"),
+    ("athena", "list-tags-for-resource"),
+    ("athena", "get-database"),
+    ("athena", "get-data-catalog"),
+    ("athena", "get-named-query"),
+    ("athena", "get-prepared-statement"),
+    ("athena", "get-query-execution"),
+    ("athena", "get-query-results"),
+    ("athena", "get-query-runtime-statistics"),
+    ("athena", "get-table-metadata"),
+    ("athena", "get-work-group"),
+    ("athena", "batch-get-named-query"),
+    ("athena", "batch-get-query-execution"),
+    ("athena", "batch-get-prepared-statement"),
 }
 
 
