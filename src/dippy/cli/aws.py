@@ -114,6 +114,7 @@ def _extract_athena_query_string(tokens: list[str]) -> str | None:
             return token[len("--query-string=") :]
     return None
 
+
 COMMANDS = ["aws"]
 
 # Safe action prefixes that appear in AWS CLI commands
