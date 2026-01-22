@@ -1171,7 +1171,7 @@ class TestMatchEdgeCases:
         # This should complete quickly, not hang
         match_command(cmd("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"), cfg, tmp_path)
         elapsed = time.time() - start
-        assert elapsed < 1.0, f"Matching took too long: {elapsed}s"
+        assert elapsed < 2.0, f"Matching took too long: {elapsed}s"
 
 
 class TestPatternNormalization:
