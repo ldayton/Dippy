@@ -1083,6 +1083,240 @@ TESTS = [
     ("aws configure sso-session", False),
     ("aws configure import --csv file://creds.csv", False),
     ("aws configure export-credentials", False),
+    # aws athena - Interactive query service for S3
+    ("aws athena list-databases --catalog-name AwsDataCatalog", True),
+    ("aws athena list-data-catalogs", True),
+    ("aws athena list-engine-versions", True),
+    ("aws athena list-named-queries", True),
+    ("aws athena list-named-queries --work-group primary", True),
+    ("aws athena list-query-executions", True),
+    ("aws athena list-query-executions --work-group primary", True),
+    ("aws athena list-prepared-statements --work-group primary", True),
+    ("aws athena list-work-groups", True),
+    ("aws athena list-table-metadata --catalog-name cat --database-name db", True),
+    ("aws athena list-tags-for-resource --resource-arn arn:aws:athena:...", True),
+    ("aws athena list-capacity-reservations", True),
+    ("aws athena list-calculation-executions --session-id sess", True),
+    ("aws athena list-executors --session-id sess", True),
+    ("aws athena list-notebook-metadata --work-group primary", True),
+    ("aws athena list-notebook-sessions --notebook-id nb", True),
+    ("aws athena list-sessions --work-group primary --state-filter IDLE", True),
+    ("aws athena list-application-dpu-sizes", True),
+    (
+        "aws athena get-database --catalog-name AwsDataCatalog --database-name mydb",
+        True,
+    ),
+    ("aws athena get-data-catalog --name AwsDataCatalog", True),
+    ("aws athena get-named-query --named-query-id abc123", True),
+    (
+        "aws athena get-prepared-statement --statement-name stmt --work-group primary",
+        True,
+    ),
+    ("aws athena get-query-execution --query-execution-id abc123", True),
+    ("aws athena get-query-results --query-execution-id abc123", True),
+    (
+        "aws athena get-query-results --query-execution-id abc123 --max-results 100",
+        True,
+    ),
+    ("aws athena get-query-runtime-statistics --query-execution-id abc123", True),
+    (
+        "aws athena get-table-metadata --catalog-name cat --database-name db --table-name tbl",
+        True,
+    ),
+    ("aws athena get-work-group --work-group primary", True),
+    ("aws athena get-capacity-reservation --name myreservation", True),
+    (
+        "aws athena get-capacity-assignment-configuration --capacity-reservation-name res",
+        True,
+    ),
+    ("aws athena get-calculation-execution --calculation-execution-id calc", True),
+    ("aws athena get-calculation-execution-code --calculation-execution-id calc", True),
+    (
+        "aws athena get-calculation-execution-status --calculation-execution-id calc",
+        True,
+    ),
+    ("aws athena get-notebook-metadata --notebook-id nb", True),
+    ("aws athena get-session --session-id sess", True),
+    ("aws athena get-session-status --session-id sess", True),
+    ("aws athena batch-get-named-query --named-query-ids abc123 def456", True),
+    ("aws athena batch-get-query-execution --query-execution-ids abc123 def456", True),
+    (
+        "aws athena batch-get-prepared-statement --prepared-statement-names stmt1 stmt2 --work-group primary",
+        True,
+    ),
+    # Athena start-query-execution - read-only SQL is approved
+    (
+        "aws athena start-query-execution --query-string 'SELECT * FROM tbl' --work-group primary",
+        True,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'SELECT 1' --result-configuration OutputLocation=s3://bucket/",
+        True,
+    ),
+    # Athena - read-only keywords
+    (
+        "aws athena start-query-execution --query-string 'select * from foo'",
+        True,
+    ),  # lowercase
+    ("aws athena start-query-execution --query-string 'SHOW DATABASES'", True),
+    ("aws athena start-query-execution --query-string 'SHOW TABLES'", True),
+    ("aws athena start-query-execution --query-string 'SHOW PARTITIONS tbl'", True),
+    ("aws athena start-query-execution --query-string 'DESCRIBE tbl'", True),
+    ("aws athena start-query-execution --query-string 'DESCRIBE FORMATTED tbl'", True),
+    ("aws athena start-query-execution --query-string 'EXPLAIN SELECT 1'", True),
+    (
+        "aws athena start-query-execution --query-string 'EXPLAIN ANALYZE SELECT 1'",
+        True,
+    ),
+    # Athena - WITH (CTE) followed by SELECT is read-only
+    (
+        "aws athena start-query-execution --query-string 'WITH cte AS (SELECT 1) SELECT * FROM cte'",
+        True,
+    ),
+    (
+        "aws athena start-query-execution --query-string '  WITH x AS (SELECT 1) SELECT * FROM x'",
+        True,
+    ),
+    # Athena - comments before SELECT
+    ("aws athena start-query-execution --query-string '-- comment\nSELECT 1'", True),
+    ("aws athena start-query-execution --query-string '/* block */ SELECT 1'", True),
+    (
+        "aws athena start-query-execution --query-string '  -- comment\n  /* block */  SELECT 1'",
+        True,
+    ),
+    # Athena - --query-string= syntax
+    (
+        "aws athena start-query-execution --query-string=SELECT * FROM tbl --work-group primary",
+        True,
+    ),
+    # Athena start-query-execution - DDL requires confirmation
+    (
+        "aws athena start-query-execution --query-string 'CREATE TABLE foo (id INT)'",
+        False,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'CREATE EXTERNAL TABLE foo (id INT)'",
+        False,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'CREATE TABLE foo AS SELECT 1'",
+        False,
+    ),  # CTAS
+    (
+        "aws athena start-query-execution --query-string 'ALTER TABLE foo ADD COLUMNS (bar STRING)'",
+        False,
+    ),
+    ("aws athena start-query-execution --query-string 'DROP TABLE foo'", False),
+    ("aws athena start-query-execution --query-string 'DROP DATABASE mydb'", False),
+    ("aws athena start-query-execution --query-string 'TRUNCATE TABLE foo'", False),
+    ("aws athena start-query-execution --query-string 'MSCK REPAIR TABLE foo'", False),
+    # Athena start-query-execution - DML requires confirmation
+    (
+        "aws athena start-query-execution --query-string 'INSERT INTO foo SELECT * FROM bar'",
+        False,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'INSERT INTO foo VALUES (1, 2)'",
+        False,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'DELETE FROM foo WHERE id = 1'",
+        False,
+    ),
+    ("aws athena start-query-execution --query-string 'UPDATE foo SET bar = 1'", False),
+    (
+        "aws athena start-query-execution --query-string 'MERGE INTO foo USING bar ON ...'",
+        False,
+    ),
+    # Athena start-query-execution - other mutations
+    ("aws athena start-query-execution --query-string 'VACUUM foo'", False),
+    (
+        "aws athena start-query-execution --query-string 'UNLOAD (SELECT * FROM foo) TO s3://bucket/'",
+        False,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'GRANT SELECT ON foo TO user'",
+        False,
+    ),
+    (
+        "aws athena start-query-execution --query-string 'REVOKE SELECT ON foo FROM user'",
+        False,
+    ),
+    # Athena start-query-execution - WITH followed by INSERT is NOT read-only
+    (
+        "aws athena start-query-execution --query-string 'WITH cte AS (SELECT 1) INSERT INTO foo SELECT * FROM cte'",
+        False,
+    ),
+    # Athena start-query-execution - unknown/unparseable requires confirmation
+    ("aws athena start-query-execution --query-string 'CALL some_procedure()'", False),
+    ("aws athena start-query-execution --query-string ''", False),  # empty
+    ("aws athena start-query-execution --query-string '   '", False),  # whitespace only
+    ("aws athena start-query-execution --query-string '-- just a comment'", False),
+    # Athena start-query-execution - no query string provided
+    ("aws athena start-query-execution --work-group primary", False),
+    # Athena - other mutations require confirmation
+    ("aws athena stop-query-execution --query-execution-id abc123", False),
+    (
+        "aws athena start-session --work-group primary --engine-configuration file://config.json",
+        False,
+    ),
+    (
+        "aws athena start-calculation-execution --session-id sess --code-block 'print(1)'",
+        False,
+    ),
+    ("aws athena stop-calculation-execution --calculation-execution-id calc", False),
+    ("aws athena terminate-session --session-id sess", False),
+    ("aws athena create-work-group --name newworkgroup", False),
+    ("aws athena delete-work-group --work-group myworkgroup", False),
+    ("aws athena update-work-group --work-group myworkgroup --state ENABLED", False),
+    (
+        "aws athena create-named-query --name myquery --database mydb --query-string 'SELECT 1'",
+        False,
+    ),
+    ("aws athena delete-named-query --named-query-id abc123", False),
+    (
+        "aws athena create-prepared-statement --statement-name stmt --work-group primary --query-statement 'SELECT ?'",
+        False,
+    ),
+    (
+        "aws athena delete-prepared-statement --statement-name stmt --work-group primary",
+        False,
+    ),
+    (
+        "aws athena update-prepared-statement --statement-name stmt --work-group primary --query-statement 'SELECT ?'",
+        False,
+    ),
+    (
+        "aws athena create-data-catalog --name mycat --type HIVE --parameters metadata-function=...",
+        False,
+    ),
+    ("aws athena delete-data-catalog --name mycat", False),
+    ("aws athena update-data-catalog --name mycat --type HIVE", False),
+    ("aws athena create-notebook --work-group primary --name mynotebook", False),
+    ("aws athena delete-notebook --notebook-id nb", False),
+    ("aws athena update-notebook --notebook-id nb --payload file://nb.json", False),
+    ("aws athena update-notebook-metadata --notebook-id nb --name newname", False),
+    (
+        "aws athena import-notebook --work-group primary --name imported --payload file://nb.json",
+        False,
+    ),
+    ("aws athena export-notebook --notebook-id nb", False),
+    ("aws athena create-capacity-reservation --name myres --target-dpus 24", False),
+    ("aws athena cancel-capacity-reservation --name myres", False),
+    ("aws athena delete-capacity-reservation --name myres", False),
+    ("aws athena update-capacity-reservation --name myres --target-dpus 48", False),
+    (
+        "aws athena put-capacity-assignment-configuration --capacity-reservation-name res --capacity-assignments file://a.json",
+        False,
+    ),
+    (
+        "aws athena tag-resource --resource-arn arn:aws:athena:... --tags Key=env,Value=prod",
+        False,
+    ),
+    (
+        "aws athena untag-resource --resource-arn arn:aws:athena:... --tag-keys env",
+        False,
+    ),
     # aws help
     ("aws help", True),
     ("aws ec2 help", True),
@@ -1100,3 +1334,51 @@ def test_aws(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+# Athena description tests - verify reason messages include SQL classification
+ATHENA_DESCRIPTION_TESTS = [
+    # Read-only queries show (read-only)
+    ("aws athena start-query-execution --query-string 'SELECT 1'", "(read-only)"),
+    ("aws athena start-query-execution --query-string 'SHOW TABLES'", "(read-only)"),
+    ("aws athena start-query-execution --query-string 'DESCRIBE foo'", "(read-only)"),
+    (
+        "aws athena start-query-execution --query-string 'EXPLAIN SELECT 1'",
+        "(read-only)",
+    ),
+    (
+        "aws athena start-query-execution --query-string 'WITH x AS (SELECT 1) SELECT * FROM x'",
+        "(read-only)",
+    ),
+    # Write queries show (write)
+    (
+        "aws athena start-query-execution --query-string 'INSERT INTO foo VALUES (1)'",
+        "(write)",
+    ),
+    (
+        "aws athena start-query-execution --query-string 'CREATE TABLE foo (id INT)'",
+        "(write)",
+    ),
+    ("aws athena start-query-execution --query-string 'DROP TABLE foo'", "(write)"),
+    ("aws athena start-query-execution --query-string 'DELETE FROM foo'", "(write)"),
+    (
+        "aws athena start-query-execution --query-string 'WITH x AS (SELECT 1) INSERT INTO foo SELECT * FROM x'",
+        "(write)",
+    ),
+    # Unknown/missing query string shows no suffix
+    (
+        "aws athena start-query-execution --query-string 'CALL proc()'",
+        "start-query-execution",
+    ),
+    ("aws athena start-query-execution --work-group primary", "start-query-execution"),
+]
+
+
+@pytest.mark.parametrize("command,expected_suffix", ATHENA_DESCRIPTION_TESTS)
+def test_athena_descriptions(check, command: str, expected_suffix: str) -> None:
+    """Test that Athena query descriptions include SQL classification."""
+    result = check(command)
+    reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+    assert expected_suffix in reason, (
+        f"Expected '{expected_suffix}' in reason '{reason}' for: {command}"
+    )
