@@ -497,6 +497,43 @@ class TestParseConfig:
         assert cfg.rules[0].pattern == 'echo "hello"'
         assert cfg.rules[0].message is None
 
+    def test_exact_anchor_allow(self):
+        cfg = parse_config("allow git add|")
+        assert cfg.rules[0].pattern == "git add"
+        assert cfg.rules[0].exact is True
+
+    def test_exact_anchor_allow_with_space(self):
+        cfg = parse_config("allow git add |")
+        assert cfg.rules[0].pattern == "git add"
+        assert cfg.rules[0].exact is True
+
+    def test_exact_anchor_ask(self):
+        cfg = parse_config("ask git push|")
+        assert cfg.rules[0].pattern == "git push"
+        assert cfg.rules[0].exact is True
+
+    def test_exact_anchor_ask_with_message(self):
+        cfg = parse_config('ask git push| "confirm push"')
+        assert cfg.rules[0].pattern == "git push"
+        assert cfg.rules[0].exact is True
+        assert cfg.rules[0].message == "confirm push"
+
+    def test_exact_anchor_deny(self):
+        cfg = parse_config("deny rm|")
+        assert cfg.rules[0].pattern == "rm"
+        assert cfg.rules[0].exact is True
+
+    def test_exact_anchor_deny_with_message(self):
+        cfg = parse_config('deny rm| "use trash instead"')
+        assert cfg.rules[0].pattern == "rm"
+        assert cfg.rules[0].exact is True
+        assert cfg.rules[0].message == "use trash instead"
+
+    def test_no_exact_anchor_default(self):
+        cfg = parse_config("allow git add")
+        assert cfg.rules[0].pattern == "git add"
+        assert cfg.rules[0].exact is False
+
     def test_empty_pattern_before_message_skipped(self):
         cfg = parse_config('ask "just a message"')
         assert cfg.rules == []  # invalid line skipped
@@ -591,10 +628,18 @@ class TestMatchCommand:
         assert match_command(cmd("git commit -m 'msg'"), cfg, tmp_path) is not None
         assert match_command(cmd("gitk"), cfg, tmp_path) is None  # no space after git
 
-    def test_exact_match(self, tmp_path):
+    def test_prefix_match_default(self, tmp_path):
+        """Patterns without wildcards do prefix matching by default."""
         cfg = Config(rules=[Rule("allow", "git status")])
         assert match_command(cmd("git status"), cfg, tmp_path) is not None
         assert match_command(cmd("git statuses"), cfg, tmp_path) is None
+        # Prefix matching: "git status" matches "git status --short"
+        assert match_command(cmd("git status --short"), cfg, tmp_path) is not None
+
+    def test_exact_anchor(self, tmp_path):
+        """Pattern with exact=True only matches exactly, no prefix matching."""
+        cfg = Config(rules=[Rule("allow", "git status", exact=True)])
+        assert match_command(cmd("git status"), cfg, tmp_path) is not None
         assert match_command(cmd("git status --short"), cfg, tmp_path) is None
 
     def test_no_match_returns_none(self, tmp_path):
@@ -746,10 +791,18 @@ class TestMatchCommand:
         m = match_command(cmd("ls -la"), cfg, tmp_path)
         assert m.message is None
 
-    def test_pattern_no_wildcards_exact_only(self, tmp_path):
+    def test_pattern_no_wildcards_prefix_match(self, tmp_path):
+        """Pattern without wildcards does prefix matching by default."""
         cfg = Config(rules=[Rule("allow", "ls")])
         assert match_command(cmd("ls"), cfg, tmp_path) is not None
-        assert match_command(cmd("ls -la"), cfg, tmp_path) is None
+        assert match_command(cmd("ls -la"), cfg, tmp_path) is not None  # prefix match
+        assert match_command(cmd("lsof"), cfg, tmp_path) is None  # different command
+
+    def test_pattern_exact_anchor_no_prefix(self, tmp_path):
+        """Pattern with exact=True only matches exactly."""
+        cfg = Config(rules=[Rule("allow", "ls", exact=True)])
+        assert match_command(cmd("ls"), cfg, tmp_path) is not None
+        assert match_command(cmd("ls -la"), cfg, tmp_path) is None  # no prefix match
         assert match_command(cmd("lsof"), cfg, tmp_path) is None
 
     def test_commands_with_quotes(self, tmp_path):

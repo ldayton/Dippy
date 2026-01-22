@@ -37,6 +37,7 @@ class Rule:
     message: str | None = None
     source: str | None = None  # file path
     scope: str | None = None  # user/project/env
+    exact: bool = False  # True when pattern ends with | (exact match only)
 
 
 @dataclass
@@ -218,22 +219,37 @@ def parse_config(text: str, source: str | None = None) -> Config:
             if directive == "allow":
                 if not rest:
                     raise ValueError("requires a pattern")
-                rules.append(Rule("allow", _expand_pattern_tildes(rest)))
+                pattern, is_exact = _strip_exact_anchor(rest)
+                rules.append(
+                    Rule("allow", _expand_pattern_tildes(pattern), exact=is_exact)
+                )
 
             elif directive == "ask":
                 if not rest:
                     raise ValueError("requires a pattern")
                 pattern, message = _extract_message(rest)
+                pattern, is_exact = _strip_exact_anchor(pattern)
                 rules.append(
-                    Rule("ask", _expand_pattern_tildes(pattern), message=message)
+                    Rule(
+                        "ask",
+                        _expand_pattern_tildes(pattern),
+                        message=message,
+                        exact=is_exact,
+                    )
                 )
 
             elif directive == "deny":
                 if not rest:
                     raise ValueError("requires a pattern")
                 pattern, message = _extract_message(rest)
+                pattern, is_exact = _strip_exact_anchor(pattern)
                 rules.append(
-                    Rule("deny", _expand_pattern_tildes(pattern), message=message)
+                    Rule(
+                        "deny",
+                        _expand_pattern_tildes(pattern),
+                        message=message,
+                        exact=is_exact,
+                    )
                 )
 
             elif directive == "allow-redirect":
@@ -305,6 +321,13 @@ def parse_config(text: str, source: str | None = None) -> Config:
         log=settings.get("log"),
         log_full=settings.get("log_full", False),
     )
+
+
+def _strip_exact_anchor(pattern: str) -> tuple[str, bool]:
+    """Strip | anchor from pattern, return (pattern, is_exact)."""
+    if pattern.endswith("|"):
+        return pattern[:-1].rstrip(), True
+    return pattern, False
 
 
 def _unescape(s: str) -> str:
@@ -578,16 +601,33 @@ def _glob_match(text: str, pattern: str) -> bool:
         return False
 
 
+def _has_glob_chars(pattern: str) -> bool:
+    """Check if pattern contains any fnmatch glob characters."""
+    return any(c in pattern for c in "*?[")
+
+
 def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
     """Match command words against rules. Returns last matching rule."""
     normalized_cmd = _normalize_words(words, cwd)
     result: Match | None = None
     for rule in config.rules:
         normalized_pattern = _normalize_pattern(rule.pattern, cwd)
-        matched = fnmatch.fnmatch(normalized_cmd, normalized_pattern)
-        # Trailing ' *' also matches bare command (no args)
-        if not matched and normalized_pattern.endswith(" *"):
-            matched = normalized_cmd == normalized_pattern[:-2]
+        matched = False
+        # Prefix matching: implicit trailing * unless exact anchor used or has globs
+        if not rule.exact and not _has_glob_chars(normalized_pattern):
+            # Try prefix match first (command with any args)
+            prefix_pattern = normalized_pattern + " *"
+            if fnmatch.fnmatch(normalized_cmd, prefix_pattern):
+                matched = True
+            # Also match exact (bare command case)
+            elif normalized_cmd == normalized_pattern:
+                matched = True
+        else:
+            # Exact matching (has | anchor or glob characters)
+            matched = fnmatch.fnmatch(normalized_cmd, normalized_pattern)
+            # Trailing ' *' also matches bare command (no args)
+            if not matched and normalized_pattern.endswith(" *"):
+                matched = normalized_cmd == normalized_pattern[:-2]
         if matched:
             result = Match(
                 decision=rule.decision,
@@ -710,10 +750,22 @@ def match_after(words: list[str], config: Config, cwd: Path) -> str | None:
     result: str | None = None
     for rule in config.after_rules:
         normalized_pattern = _normalize_pattern(rule.pattern, cwd)
-        matched = fnmatch.fnmatch(normalized_cmd, normalized_pattern)
-        # Trailing ' *' also matches bare command (no args)
-        if not matched and normalized_pattern.endswith(" *"):
-            matched = normalized_cmd == normalized_pattern[:-2]
+        matched = False
+        # Prefix matching: implicit trailing * unless exact anchor used or has globs
+        if not rule.exact and not _has_glob_chars(normalized_pattern):
+            # Try prefix match first (command with any args)
+            prefix_pattern = normalized_pattern + " *"
+            if fnmatch.fnmatch(normalized_cmd, prefix_pattern):
+                matched = True
+            # Also match exact (bare command case)
+            elif normalized_cmd == normalized_pattern:
+                matched = True
+        else:
+            # Exact matching (has | anchor or glob characters)
+            matched = fnmatch.fnmatch(normalized_cmd, normalized_pattern)
+            # Trailing ' *' also matches bare command (no args)
+            if not matched and normalized_pattern.endswith(" *"):
+                matched = normalized_cmd == normalized_pattern[:-2]
         if matched:
             # message is None for pattern-only rules, "" for explicit empty
             result = rule.message if rule.message is not None else ""
