@@ -4,6 +4,8 @@ project := "dippy"
 _test-py version *ARGS:
     UV_PROJECT_ENVIRONMENT=.venv-{{version}} uv run --python {{version}} pytest {{ARGS}} 2>&1 | sed -u "s/^/[py{{version}}] /" | tee /tmp/{{project}}-test-py{{version}}.log
 
+# Run tests on Python 3.10
+test-py310 *ARGS: (_test-py "3.10" ARGS)
 # Run tests on Python 3.11
 test-py311 *ARGS: (_test-py "3.11" ARGS)
 # Run tests on Python 3.12
@@ -18,7 +20,7 @@ test *ARGS: (_test-py "3.14" ARGS)
 
 # Run tests on all supported Python versions (parallel)
 [parallel]
-test-all: test-py311 test-py312 test-py313 test-py314
+test-all: test-py310 test-py311 test-py312 test-py313 test-py314
 
 # Verify lock file is up to date
 lock-check:
