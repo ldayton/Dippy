@@ -11,7 +11,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 
-LOG_PATH = os.path.expanduser("~/.claude/statusline.log")
+LOG_PATH = os.path.expanduser("~/.claude/dippy-statusline.log")
 LOG_MAX_SIZE = 1024 * 1024  # 1MB
 
 
