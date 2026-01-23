@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import is_approved, needs_confirmation
+from dippy.core.config import Config, Rule
 
 # ==========================================================================
 # Curl
@@ -305,3 +306,32 @@ def test_command(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestCurlWithRedirectRules:
+    """curl -o should respect redirect rules for the output file."""
+
+    def test_curl_output_denied_by_rule(self, check, tmp_path):
+        """curl -o to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check("curl -o /etc/config https://example.com", config=cfg, cwd=tmp_path)
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
+
+    def test_curl_output_long_flag_denied(self, check, tmp_path):
+        """curl --output to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check(
+            "curl --output /etc/passwd https://example.com", config=cfg, cwd=tmp_path
+        )
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
+
+    def test_curl_output_equals_denied(self, check, tmp_path):
+        """curl --output=file to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check(
+            "curl --output=/etc/config https://example.com", config=cfg, cwd=tmp_path
+        )
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"

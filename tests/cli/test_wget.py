@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import is_approved, needs_confirmation
+from dippy.core.config import Config, Rule
 
 #
 # ==========================================================================
@@ -88,3 +89,31 @@ def test_wget(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestWgetWithRedirectRules:
+    """wget -O should respect redirect rules for the output file."""
+
+    def test_wget_output_allowed_by_rule(self, check, tmp_path):
+        """wget -O to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check("wget -O /tmp/out.txt https://example.com", config=cfg, cwd=tmp_path)
+        assert is_approved(result)
+
+    def test_wget_output_denied_by_rule(self, check, tmp_path):
+        """wget -O to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check("wget -O /etc/config https://example.com", config=cfg, cwd=tmp_path)
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
+
+    def test_wget_output_long_flag_denied(self, check, tmp_path):
+        """wget --output-document to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check(
+            "wget --output-document=/etc/passwd https://example.com",
+            config=cfg,
+            cwd=tmp_path,
+        )
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
