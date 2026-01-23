@@ -91,6 +91,25 @@ def test_wget(check, command: str, expected: bool) -> None:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
 
 
+class TestWgetSafeRedirectTargets:
+    """wget -O to safe targets should be auto-approved without config."""
+
+    def test_wget_output_to_dev_null(self, check):
+        """wget -O /dev/null should be approved without config."""
+        result = check("wget -O /dev/null https://example.com")
+        assert is_approved(result)
+
+    def test_wget_output_to_stdout(self, check):
+        """wget -O - (stdout) should be approved without config."""
+        result = check("wget -O - https://example.com")
+        assert is_approved(result)
+
+    def test_wget_output_to_dev_stdout(self, check):
+        """wget -O /dev/stdout should be approved without config."""
+        result = check("wget -O /dev/stdout https://example.com")
+        assert is_approved(result)
+
+
 class TestWgetWithRedirectRules:
     """wget -O should respect redirect rules for the output file."""
 

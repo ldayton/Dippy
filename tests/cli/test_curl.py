@@ -308,6 +308,15 @@ def test_command(check, command: str, expected: bool) -> None:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
 
 
+class TestCurlSafeRedirectTargets:
+    """curl -o to safe targets should be auto-approved without config."""
+
+    def test_curl_output_to_dev_stdout(self, check):
+        """curl -o /dev/stdout should be approved without config."""
+        result = check("curl -o /dev/stdout https://example.com")
+        assert is_approved(result)
+
+
 class TestCurlWithRedirectRules:
     """curl -o should respect redirect rules for the output file."""
 

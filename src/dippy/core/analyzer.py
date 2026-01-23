@@ -16,6 +16,9 @@ from dippy.core.allowlists import SIMPLE_SAFE, WRAPPER_COMMANDS
 from dippy.cli import get_handler, get_description
 from dippy.vendor.parable import parse, ParseError
 
+# Redirect targets that are always safe (no file write)
+SAFE_REDIRECT_TARGETS = frozenset({"/dev/null", "-", "/dev/stdout", "/dev/stdin"})
+
 
 @dataclass
 class Decision:

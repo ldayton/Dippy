@@ -152,6 +152,25 @@ def test_command(check, command: str, expected: bool) -> None:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
 
 
+class TestAwkSafeRedirectTargets:
+    """awk redirects to safe targets should be auto-approved without config."""
+
+    def test_awk_redirect_to_dev_null(self, check):
+        """awk redirect to /dev/null should be approved without config."""
+        result = check("awk '{print > \"/dev/null\"}' file.txt")
+        assert is_approved(result)
+
+    def test_awk_redirect_to_dev_stdout(self, check):
+        """awk redirect to /dev/stdout should be approved without config."""
+        result = check("awk '{print > \"/dev/stdout\"}' file.txt")
+        assert is_approved(result)
+
+    def test_awk_redirect_to_dev_stdin(self, check):
+        """awk redirect to /dev/stdin should be approved without config."""
+        result = check("awk '{print > \"/dev/stdin\"}' file.txt")
+        assert is_approved(result)
+
+
 class TestAwkWithRedirectRules:
     """awk with redirect rules in config."""
 
