@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import is_approved, needs_confirmation
+from dippy.core.config import Config, Rule
 
 
 TESTS = [
@@ -81,3 +82,38 @@ def test_command(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestSortWithRedirectRules:
+    """sort -o should respect redirect rules for the output file."""
+
+    def test_sort_output_allowed_by_rule(self, check, tmp_path):
+        """sort -o to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check("sort -o /tmp/out.txt input.txt", config=cfg, cwd=tmp_path)
+        assert is_approved(result)
+
+    def test_sort_output_denied_by_rule(self, check, tmp_path):
+        """sort -o to denied path should be denied."""
+        cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
+        result = check("sort -o /etc/passwd input.txt", config=cfg, cwd=tmp_path)
+        output = result.get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") == "deny"
+
+    def test_sort_output_long_flag_allowed(self, check, tmp_path):
+        """sort --output to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check("sort --output /tmp/out.txt input.txt", config=cfg, cwd=tmp_path)
+        assert is_approved(result)
+
+    def test_sort_output_equals_allowed(self, check, tmp_path):
+        """sort --output=file to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check("sort --output=/tmp/out.txt input.txt", config=cfg, cwd=tmp_path)
+        assert is_approved(result)
+
+    def test_sort_output_no_space_allowed(self, check, tmp_path):
+        """sort -ofile to allowed path should be approved."""
+        cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
+        result = check("sort -o/tmp/out.txt input.txt", config=cfg, cwd=tmp_path)
+        assert is_approved(result)
