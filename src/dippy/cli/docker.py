@@ -6,6 +6,8 @@ Handles docker, docker-compose, and podman commands.
 
 from __future__ import annotations
 
+import shlex
+
 from dippy.cli import Classification
 
 COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]
@@ -180,6 +182,41 @@ GLOBAL_FLAGS_WITH_ARG = frozenset(
     }
 )
 
+# Exec flags that take an argument
+EXEC_FLAGS_WITH_ARG = frozenset(
+    {"-e", "--env", "-w", "--workdir", "-u", "--user", "--env-file"}
+)
+
+# Exec flags that don't take an argument
+EXEC_FLAGS_NO_ARG = frozenset(
+    {"-d", "--detach", "-i", "--interactive", "-t", "--tty", "--privileged"}
+)
+
+
+def _extract_exec_inner_command(tokens: list[str]) -> list[str] | None:
+    """Extract command from docker exec args (after container name)."""
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--":
+            i += 1
+            break
+        if token in EXEC_FLAGS_WITH_ARG:
+            i += 2
+            continue
+        if token.startswith("-"):
+            # Check for --flag=value format
+            if "=" in token:
+                i += 1
+                continue
+            # Boolean flag or unknown flag with arg
+            i += 1
+            continue
+        # First non-flag is container name, skip it
+        i += 1
+        break
+    return tokens[i:] if i < len(tokens) else None
+
 
 def _get_description(tokens: list[str]) -> str:
     """Get description for docker command."""
@@ -250,6 +287,16 @@ def classify(tokens: list[str]) -> Classification:
         if action in {"export", "save"} and _has_output_flag(rest):
             return Classification("ask", description=desc)
         return Classification("approve", description=desc)
+
+    # Handle exec - delegate to inner command with remote mode
+    if action == "exec":
+        inner_tokens = _extract_exec_inner_command(rest)
+        if inner_tokens:
+            inner_cmd = shlex.join(inner_tokens)
+            return Classification(
+                "delegate", inner_command=inner_cmd, description=desc, remote=True
+            )
+        return Classification("ask", description=desc)
 
     # Unsafe actions or unknown
     return Classification("ask", description=desc)

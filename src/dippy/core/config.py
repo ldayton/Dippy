@@ -636,17 +636,27 @@ def _resolve_alias(word: str, config: Config, cwd: Path) -> str:
     return word
 
 
-def _match_words(words: list[str], config: Config, cwd: Path) -> Match | None:
+def _match_words(
+    words: list[str], config: Config, cwd: Path, *, remote: bool = False
+) -> Match | None:
     """Match command words against rules. Returns last matching rule."""
-    if words:
+    if words and not remote:
         resolved_first = _resolve_alias(words[0], config, cwd)
         resolved_words = [resolved_first] + words[1:]
     else:
         resolved_words = words
-    normalized_cmd = _normalize_words(resolved_words, cwd)
+    # In remote mode, skip path normalization (paths are container-local)
+    if remote:
+        normalized_cmd = " ".join(resolved_words)
+    else:
+        normalized_cmd = _normalize_words(resolved_words, cwd)
     result: Match | None = None
     for rule in config.rules:
-        normalized_pattern = _normalize_pattern(rule.pattern, cwd)
+        # In remote mode, use pattern as-is without path normalization
+        if remote:
+            normalized_pattern = rule.pattern
+        else:
+            normalized_pattern = _normalize_pattern(rule.pattern, cwd)
         matched = False
         # Prefix matching: implicit trailing * unless exact anchor used or has globs
         if not rule.exact and not _has_glob_chars(normalized_pattern):
@@ -710,13 +720,17 @@ def _match_redirect(target: str, config: Config, cwd: Path) -> Match | None:
     return result
 
 
-def match_command(cmd: SimpleCommand, config: Config, cwd: Path) -> Match | None:
+def match_command(
+    cmd: SimpleCommand, config: Config, cwd: Path, *, remote: bool = False
+) -> Match | None:
     """Match command and its redirects against config rules.
 
     Args:
         cmd: SimpleCommand with words and redirects from parsed bash.
         config: Loaded configuration.
         cwd: Current working directory for path resolution.
+        remote: If True, command runs in remote context (container, ssh).
+                Skips path expansion since paths are remote, not local.
 
     Returns:
         Match object for the deciding rule, or None if no rules matched.
@@ -726,15 +740,16 @@ def match_command(cmd: SimpleCommand, config: Config, cwd: Path) -> Match | None
     matches: list[Match] = []
 
     # Match command words
-    cmd_match = _match_words(cmd.words, config, cwd)
+    cmd_match = _match_words(cmd.words, config, cwd, remote=remote)
     if cmd_match:
         matches.append(cmd_match)
 
-    # Match each redirect
-    for target in cmd.redirects:
-        redirect_match = _match_redirect(target, config, cwd)
-        if redirect_match:
-            matches.append(redirect_match)
+    # Match each redirect (skip in remote mode - paths are container-local)
+    if not remote:
+        for target in cmd.redirects:
+            redirect_match = _match_redirect(target, config, cwd)
+            if redirect_match:
+                matches.append(redirect_match)
 
     if not matches:
         return None

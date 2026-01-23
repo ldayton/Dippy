@@ -31,6 +31,7 @@ class Classification:
     redirect_targets: tuple[str, ...] | None = (
         None  # File targets to check against redirect rules
     )
+    remote: bool = False  # Inner command runs in remote context (container, ssh, etc.)
 
 
 class CLIHandler(Protocol):

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from conftest import is_approved, needs_confirmation
+from dippy.core.config import Config, Rule
 
 #
 # ==========================================================================
@@ -154,10 +157,10 @@ TESTS = [
     ("kubectl scale deployment nginx --replicas=3", False),
     ("kubectl scale --replicas=5 -f deployment.yaml", False),
     ("kubectl autoscale deployment nginx --min=2 --max=10 --cpu-percent=80", False),
-    # kubectl - unsafe (exec/run/debug)
-    ("kubectl exec nginx -- ls /", False),
-    ("kubectl exec -it nginx -- bash", False),
-    ("kubectl exec -it nginx -c container -- sh", False),
+    # kubectl exec - delegates to inner command analysis
+    ("kubectl exec nginx -- ls /", True),  # ls is safe
+    ("kubectl exec -it nginx -- bash", False),  # bash is unknown, asks
+    ("kubectl exec -it nginx -c container -- sh", False),  # sh is unknown, asks
     ("kubectl run nginx --image=nginx", False),
     ("kubectl run nginx --image=nginx --restart=Never", False),
     ("kubectl run -it busybox --image=busybox -- sh", False),
@@ -201,6 +204,19 @@ TESTS = [
     # kubectl - unsafe (expose services)
     ("kubectl expose deployment nginx --port=80 --target-port=8080", False),
     ("kubectl expose pod nginx --port=80 --type=NodePort", False),
+    #
+    # kubectl exec - delegation to inner command
+    #
+    ("kubectl exec pod -- cat /etc/passwd", True),  # cat is safe
+    ("kubectl exec -it pod -c container -- ls /app", True),  # ls is safe
+    ("kubectl exec pod -- rm -rf /", False),  # rm is unsafe
+    ("kubectl exec pod -- sh -c 'rm -rf /'", False),  # shell with rm is unsafe
+    ("kubectl exec pod", False),  # no -- separator
+    ("kubectl exec pod --", False),  # no command after --
+    (
+        "kubectl exec -n mynamespace pod -- pwd",
+        True,
+    ),  # namespace flag with safe command
 ]
 
 
@@ -212,3 +228,38 @@ def test_kubectl(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestKubectlExecRemoteMode:
+    """Test that kubectl exec delegates to inner command with remote mode semantics."""
+
+    def test_command_rules_still_apply(self, check, tmp_path):
+        """Command-based deny rules should still apply inside pods."""
+        config = Config(rules=[Rule("deny", "rm -rf *")])
+        # rm -rf inside pod should still be denied by command rule
+        result = check("kubectl exec pod -- rm -rf /", config, tmp_path)
+        assert not is_approved(result)  # deny rules return deny, not ask
+
+    def test_redirect_rules_skipped_for_pod_paths(self, check, tmp_path):
+        """Redirect rules should NOT apply to pod paths."""
+        home = str(Path.home())
+        config = Config(redirect_rules=[Rule("deny", f"{home}/.ssh/*")])
+        # cat ~/.ssh/id_rsa inside pod - should be approved because
+        # the path is pod-local, not host-local
+        result = check("kubectl exec pod -- cat ~/.ssh/id_rsa", config, tmp_path)
+        assert is_approved(result)
+
+    def test_path_expansion_skipped_for_pod_paths(self, check, tmp_path):
+        """Relative paths should not expand to host cwd."""
+        config = Config(rules=[Rule("deny", f"cat {tmp_path}/*")])
+        # cat ./foo inside pod - should be approved because ./foo
+        # refers to pod's cwd, not host's tmp_path
+        result = check("kubectl exec pod -- cat ./foo", config, tmp_path)
+        assert is_approved(result)
+
+    def test_absolute_path_rules_skipped_for_pod(self, check, tmp_path):
+        """Absolute path rules should not apply to pod paths."""
+        config = Config(redirect_rules=[Rule("deny", "/etc/passwd")])
+        # Reading /etc/passwd in pod should be approved
+        result = check("kubectl exec pod -- cat /etc/passwd", config, tmp_path)
+        assert is_approved(result)
