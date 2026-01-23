@@ -46,9 +46,20 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 
 ## Installation
 
+### Homebrew (recommended)
+
+```bash
+brew tap ldayton/dippy
+brew install dippy
+```
+
+### Manual
+
 ```bash
 git clone https://github.com/ldayton/Dippy.git
 ```
+
+### Configure
 
 Add to `~/.claude/settings.json` (or use `/hooks` interactively):
 
@@ -58,12 +69,14 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively):
     "PreToolUse": [
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "/path/to/Dippy/bin/dippy-hook" }]
+        "hooks": [{ "type": "command", "command": "dippy" }]
       }
     ]
   }
 }
 ```
+
+If you installed manually, use the full path instead: `/path/to/Dippy/bin/dippy-hook`
 
 ---
 
@@ -91,4 +104,8 @@ Dippy can do more than filter shell commands. See the [wiki](https://github.com/
 
 ## Uninstall
 
-Remove the hook entry from `~/.claude/settings.json`.
+Remove the hook entry from `~/.claude/settings.json`, then:
+
+```bash
+brew uninstall dippy  # if installed via Homebrew
+```

@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Verify version matches pyproject.toml
+        run: |
+          toml_version=$(grep -oP 'version = "\K[^"]+' pyproject.toml)
+          if [ "$toml_version" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag version (${{ steps.version.outputs.version }}) does not match pyproject.toml ($toml_version)"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+      - name: Get tarball SHA256
+        id: sha
+        run: |
+          curl -sL "https://github.com/ldayton/Dippy/archive/refs/tags/v${{ steps.version.outputs.version }}.tar.gz" -o tarball.tar.gz
+          sha=$(sha256sum tarball.tar.gz | cut -d' ' -f1)
+          echo "sha256=$sha" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ldayton/homebrew-dippy.git tap
+          cd tap
+
+          sed -i 's|url "https://github.com/ldayton/Dippy/archive/refs/tags/v[^"]*\.tar\.gz"|url "https://github.com/ldayton/Dippy/archive/refs/tags/v${{ steps.version.outputs.version }}.tar.gz"|' Formula/dippy.rb
+          sed -i 's|sha256 "[^"]*"|sha256 "${{ steps.sha.outputs.sha256 }}"|' Formula/dippy.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/dippy.rb
+          git commit -m "dippy ${{ steps.version.outputs.version }}"
+          git push
