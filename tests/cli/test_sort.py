@@ -84,6 +84,25 @@ def test_command(check, command: str, expected: bool) -> None:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
 
 
+class TestSortSafeRedirectTargets:
+    """sort -o to safe targets should be auto-approved without config."""
+
+    def test_sort_output_to_dev_null(self, check):
+        """sort -o /dev/null should be approved without config."""
+        result = check("sort -o /dev/null input.txt")
+        assert is_approved(result)
+
+    def test_sort_output_to_stdout(self, check):
+        """sort -o - (stdout) should be approved without config."""
+        result = check("sort -o - input.txt")
+        assert is_approved(result)
+
+    def test_sort_output_to_dev_stdout(self, check):
+        """sort -o /dev/stdout should be approved without config."""
+        result = check("sort -o /dev/stdout input.txt")
+        assert is_approved(result)
+
+
 class TestSortWithRedirectRules:
     """sort -o should respect redirect rules for the output file."""
 

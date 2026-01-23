@@ -128,7 +128,7 @@ TESTS = [
     #
     # --- Print to stderr (special case, generally safe) ---
     ("awk '{print > \"/dev/stderr\"}' file.txt", False),  # Still detected as redirect
-    ("awk '{print > \"/dev/null\"}' file.txt", False),
+    ("awk '{print > \"/dev/null\"}' file.txt", True),
     #
     # --- Complex programs ---
     ('awk \'BEGIN {FS=":"; OFS=","} NR>1 {print $1,$2}\' file.txt', True),
@@ -150,6 +150,25 @@ def test_command(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestAwkSafeRedirectTargets:
+    """awk redirects to safe targets should be auto-approved without config."""
+
+    def test_awk_redirect_to_dev_null(self, check):
+        """awk redirect to /dev/null should be approved without config."""
+        result = check("awk '{print > \"/dev/null\"}' file.txt")
+        assert is_approved(result)
+
+    def test_awk_redirect_to_dev_stdout(self, check):
+        """awk redirect to /dev/stdout should be approved without config."""
+        result = check("awk '{print > \"/dev/stdout\"}' file.txt")
+        assert is_approved(result)
+
+    def test_awk_redirect_to_dev_stdin(self, check):
+        """awk redirect to /dev/stdin should be approved without config."""
+        result = check("awk '{print > \"/dev/stdin\"}' file.txt")
+        assert is_approved(result)
 
 
 class TestAwkWithRedirectRules:

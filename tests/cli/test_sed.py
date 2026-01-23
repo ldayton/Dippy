@@ -64,6 +64,20 @@ def test_command(check, command: str, expected: bool) -> None:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
 
 
+class TestSedSafeRedirectTargets:
+    """sed w command to safe targets should be auto-approved without config."""
+
+    def test_sed_write_to_dev_null(self, check):
+        """sed w to /dev/null should be approved without config."""
+        result = check("sed 's/foo/bar/w /dev/null' input.txt")
+        assert is_approved(result)
+
+    def test_sed_write_to_dev_stdout(self, check):
+        """sed w to /dev/stdout should be approved without config."""
+        result = check("sed 's/foo/bar/w /dev/stdout' input.txt")
+        assert is_approved(result)
+
+
 class TestSedInPlaceWithRedirectRules:
     """sed -i should respect redirect rules for the files being modified."""
 

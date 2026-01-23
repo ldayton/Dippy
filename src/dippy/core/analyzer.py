@@ -16,6 +16,9 @@ from dippy.core.allowlists import SIMPLE_SAFE, WRAPPER_COMMANDS
 from dippy.cli import get_handler, get_description
 from dippy.vendor.parable import parse, ParseError
 
+# Redirect targets that are always safe (no file write)
+SAFE_REDIRECT_TARGETS = frozenset({"/dev/null", "-", "/dev/stdout", "/dev/stdin"})
+
 
 @dataclass
 class Decision:
@@ -325,7 +328,7 @@ def _analyze_redirects(node, config: Config, cwd: Path) -> list[Decision]:
             decisions.extend(target_cmdsub_decisions)
 
         # Skip safe redirects
-        if target == "/dev/null" or target.startswith("&"):
+        if target in SAFE_REDIRECT_TARGETS or target.startswith("&"):
             continue
 
         # Check output redirects against config
@@ -417,6 +420,9 @@ def _analyze_simple_command(words: list[str], config: Config, cwd: Path) -> Deci
         # Check handler-provided redirect targets against config
         if result.redirect_targets:
             for target in result.redirect_targets:
+                # Skip safe redirect targets
+                if target in SAFE_REDIRECT_TARGETS:
+                    continue
                 redirect_match = match_redirect(target, config, cwd)
                 if redirect_match:
                     if redirect_match.decision == "deny":
