@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Claude Code statusline: model | directory | git branch | changes | context | MCP servers"""
+
 import json
 import os
 import subprocess
@@ -21,7 +22,10 @@ class Logger:
 
     def _rotate_if_needed(self):
         try:
-            if os.path.exists(self._path) and os.path.getsize(self._path) > self._max_size:
+            if (
+                os.path.exists(self._path)
+                and os.path.getsize(self._path) > self._max_size
+            ):
                 backup = f"{self._path}.1"
                 if os.path.exists(backup):
                     os.remove(backup)
@@ -139,6 +143,7 @@ def style(text: str, fg_color: str | None, bg_color: str | None = None) -> str:
                 prefix += f"\033[48;2;{r};{g};{b}m"
     return f"{prefix}{text}\033[0m"
 
+
 CACHE_DIR = os.path.join(
     os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
     "claude-statusline",
@@ -213,8 +218,7 @@ def get_mcp_servers() -> str | None:
     local_servers = get_local_mcp_servers()
     conn_r, conn_g, conn_b = hex_to_rgb(MOLOKAI[STYLES["mcp_connected"][0]])
     local_styled = [
-        f"\033[38;2;{conn_r};{conn_g};{conn_b}m{name}\033[0m"
-        for name in local_servers
+        f"\033[38;2;{conn_r};{conn_g};{conn_b}m{name}\033[0m" for name in local_servers
     ]
     try:
         mtime = os.path.getmtime(MCP_CACHE_PATH)
@@ -235,7 +239,7 @@ def get_mcp_servers() -> str | None:
             os.makedirs(CACHE_DIR, exist_ok=True)
             tmp = f"{MCP_CACHE_PATH}.tmp.{os.getpid()}"
             disc_r, disc_g, disc_b = hex_to_rgb(MOLOKAI[STYLES["mcp_disconnected"][0]])
-            cmd = f"timeout 10 claude mcp list 2>/dev/null | awk -F: 'NF>1 {{if (/Connected/) print \"\\033[38;2;{conn_r};{conn_g};{conn_b}m\" $1 \"\\033[0m\"; else print \"\\033[38;2;{disc_r};{disc_g};{disc_b}m!\" $1 \"\\033[0m\"}}' | paste -sd, | sed 's/,/, /g' > {tmp} && mv {tmp} {MCP_CACHE_PATH}"
+            cmd = f'timeout 10 claude mcp list 2>/dev/null | awk -F: \'NF>1 {{if (/Connected/) print "\\033[38;2;{conn_r};{conn_g};{conn_b}m" $1 "\\033[0m"; else print "\\033[38;2;{disc_r};{disc_g};{disc_b}m!" $1 "\\033[0m"}}\' | paste -sd, | sed \'s/,/, /g\' > {tmp} && mv {tmp} {MCP_CACHE_PATH}'
             subprocess.Popen(
                 cmd,
                 shell=True,
@@ -253,7 +257,9 @@ def get_mcp_servers() -> str | None:
     if not all_servers:
         log.debug("mcp_no_servers")
         return None
-    log.debug("mcp_servers_result", local_count=len(local_servers), has_cached=bool(cached))
+    log.debug(
+        "mcp_servers_result", local_count=len(local_servers), has_cached=bool(cached)
+    )
     fg_c, bg_c = STYLES["mcp_title"]
     title = style("MCP:", fg_c, bg_c)
     return f"{title} {', '.join(all_servers)}"
@@ -305,7 +311,9 @@ def get_context_from_transcript(transcript_path: str) -> int | None:
                         + usage.get("cache_read_input_tokens", 0)
                         + usage.get("cache_creation_input_tokens", 0)
                     )
-                    log.debug("transcript_tokens_found", tokens=total, path=transcript_path)
+                    log.debug(
+                        "transcript_tokens_found", tokens=total, path=transcript_path
+                    )
                     return total
             except json.JSONDecodeError:
                 continue
@@ -331,7 +339,13 @@ def get_context_remaining(data: dict) -> str | None:
             return style("ctx: 80% left", fg_c, bg_c)
         used_pct = used * 100 // size
         until_compact = max(0, 80 - used_pct)
-        log.debug("context_calculated", size=size, used=used, used_pct=used_pct, remaining_pct=until_compact)
+        log.debug(
+            "context_calculated",
+            size=size,
+            used=used,
+            used_pct=used_pct,
+            remaining_pct=until_compact,
+        )
         fg_c, bg_c = STYLES["context"]
         return style(f"ctx: {until_compact}% left", fg_c, bg_c)
     except Exception:
