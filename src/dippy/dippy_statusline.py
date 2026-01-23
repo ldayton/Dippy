@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Claude Code statusline: model | directory | git branch | changes | context | MCP servers"""
 
+from __future__ import annotations
+
 import json
 import os
 import subprocess
