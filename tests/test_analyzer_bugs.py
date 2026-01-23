@@ -76,6 +76,35 @@ class TestCmdsubInjectionWarning:
         assert result.action == "ask"
         assert "injection" in result.reason.lower()
 
+    def test_cmdsub_allowed_when_outer_readonly(self, config, cwd):
+        """Cmdsub in arg position should be allowed if outer command is read-only."""
+        # AWS describe with cmdsub - both are read-only
+        result = analyze(
+            "aws elbv2 describe-listeners --load-balancer-arn $(aws elbv2 describe-load-balancers --names foo --query 'LoadBalancers[0].LoadBalancerArn' --output text)",
+            config,
+            cwd,
+        )
+        assert result.action == "allow"
+
+    def test_cmdsub_still_asks_when_outer_mutates(self, config, cwd):
+        """Cmdsub should still ask if outer command is a mutation."""
+        # AWS modify with cmdsub - outer is mutation
+        result = analyze(
+            "aws elbv2 modify-listener --listener-arn $(aws elbv2 describe-listeners --query 'Listeners[0].ListenerArn' --output text)",
+            config,
+            cwd,
+        )
+        assert result.action == "ask"
+
+    def test_gh_cmdsub_allowed_when_outer_readonly(self, config, cwd):
+        """gh run view with cmdsub should be allowed."""
+        result = analyze(
+            "gh run view $(gh run list --limit 1 --json databaseId --jq '.[0].databaseId')",
+            config,
+            cwd,
+        )
+        assert result.action == "allow"
+
 
 class TestNegationAndArith:
     """Test negation (!) and arithmetic (( )) constructs."""
