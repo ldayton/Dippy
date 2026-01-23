@@ -253,7 +253,7 @@ TESTS = [
     #
     ("fzf --height=50% --bind='enter:execute(vim {})'", False),
     ("fzf --multi --bind='ctrl-o:execute-silent(open {})'", False),
-    ("fzf --preview='cat {}' --bind='enter:become(less {})'", False),
+    ("fzf --preview='cat {}' --bind='enter:become(rm {})'", False),
     #
     # ==========================================================================
     # Edge cases
@@ -294,3 +294,27 @@ def test_fzf_command(check, command: str, expected: bool):
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestFzfBindDelegation:
+    """fzf --bind execute should delegate to inner command for safety check."""
+
+    def test_bind_execute_with_safe_command(self, check):
+        """fzf --bind execute with safe command should be approved."""
+        result = check("fzf --bind='enter:execute(cat {})'")
+        assert is_approved(result)
+
+    def test_bind_execute_with_safe_command_colon_syntax(self, check):
+        """fzf --bind execute:cmd syntax with safe command should be approved."""
+        result = check("fzf --bind=enter:execute:cat")
+        assert is_approved(result)
+
+    def test_bind_execute_silent_with_safe_command(self, check):
+        """fzf --bind execute-silent with safe command should be approved."""
+        result = check("fzf --bind='enter:execute-silent(echo done)'")
+        assert is_approved(result)
+
+    def test_bind_become_with_safe_command(self, check):
+        """fzf --bind become with safe command should be approved."""
+        result = check("fzf --bind='enter:become(less {})'")
+        assert is_approved(result)
