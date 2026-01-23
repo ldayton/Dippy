@@ -128,7 +128,7 @@ TESTS = [
     #
     # --- Print to stderr (special case, generally safe) ---
     ("awk '{print > \"/dev/stderr\"}' file.txt", False),  # Still detected as redirect
-    ("awk '{print > \"/dev/null\"}' file.txt", False),
+    ("awk '{print > \"/dev/null\"}' file.txt", True),
     #
     # --- Complex programs ---
     ('awk \'BEGIN {FS=":"; OFS=","} NR>1 {print $1,$2}\' file.txt', True),

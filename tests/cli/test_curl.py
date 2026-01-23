@@ -50,8 +50,8 @@ TESTS = [
     #
     # --- Output flags (safe - just control where response goes) ---
     #
-    ("curl -o output.txt https://example.com", True),
-    ("curl --output output.txt https://example.com", True),
+    ("curl -o output.txt https://example.com", False),
+    ("curl --output output.txt https://example.com", False),
     ("curl -O https://example.com/file.zip", True),
     ("curl --remote-name https://example.com/file.zip", True),
     ("curl -J -O https://example.com/file.zip", True),
@@ -194,7 +194,7 @@ TESTS = [
     ("curl -f https://example.com", True),
     ("curl --fail https://example.com", True),
     ("curl --fail-with-body https://example.com", True),
-    ("curl --create-dirs -o /tmp/dir/file https://example.com", True),
+    ("curl --create-dirs -o /tmp/dir/file https://example.com", False),
     ("curl --xattr -O https://example.com/file", True),
     ("curl --etag-save etag.txt https://example.com", True),
     ("curl --etag-compare etag.txt https://example.com", True),
@@ -323,7 +323,9 @@ class TestCurlWithRedirectRules:
     def test_curl_output_denied_by_rule(self, check, tmp_path):
         """curl -o to denied path should be denied."""
         cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
-        result = check("curl -o /etc/config https://example.com", config=cfg, cwd=tmp_path)
+        result = check(
+            "curl -o /etc/config https://example.com", config=cfg, cwd=tmp_path
+        )
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
 

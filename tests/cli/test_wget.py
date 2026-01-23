@@ -35,7 +35,7 @@ TESTS = [
     # Unsafe - explicit output file
     ("wget -O file.txt https://example.com", False),
     ("wget --output-document=file.txt https://example.com", False),
-    ("wget -O - https://example.com", False),  # stdout is still a download
+    ("wget -O - https://example.com", True),  # stdout is a safe redirect target
     # Unsafe - directory prefix
     ("wget -P /tmp https://example.com", False),
     ("wget --directory-prefix=/tmp https://example.com", False),
@@ -116,13 +116,17 @@ class TestWgetWithRedirectRules:
     def test_wget_output_allowed_by_rule(self, check, tmp_path):
         """wget -O to allowed path should be approved."""
         cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
-        result = check("wget -O /tmp/out.txt https://example.com", config=cfg, cwd=tmp_path)
+        result = check(
+            "wget -O /tmp/out.txt https://example.com", config=cfg, cwd=tmp_path
+        )
         assert is_approved(result)
 
     def test_wget_output_denied_by_rule(self, check, tmp_path):
         """wget -O to denied path should be denied."""
         cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
-        result = check("wget -O /etc/config https://example.com", config=cfg, cwd=tmp_path)
+        result = check(
+            "wget -O /etc/config https://example.com", config=cfg, cwd=tmp_path
+        )
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
 
