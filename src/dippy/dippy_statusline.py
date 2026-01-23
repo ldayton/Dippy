@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -278,7 +279,10 @@ def is_dippy_configured() -> bool:
             if "Bash" in hook.get("matcher", ""):
                 for h in hook.get("hooks", []):
                     cmd = h.get("command", "")
-                    path = os.path.expanduser(cmd.split()[0]) if cmd else ""
+                    if not cmd:
+                        continue
+                    exe = cmd.split()[0]
+                    path = shutil.which(exe) or os.path.expanduser(exe)
                     if path and os.path.isfile(path) and os.access(path, os.X_OK):
                         log.debug("dippy_configured", path=path)
                         return True
