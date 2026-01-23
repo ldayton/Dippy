@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from conftest import is_approved, needs_confirmation
+from dippy.core.config import Config, Rule
 
 #
 # ==========================================================================
@@ -110,12 +113,12 @@ TESTS = [
     ("docker wait mycontainer", False),
     ("docker container wait mycontainer", False),
     #
-    # docker - unsafe (exec runs arbitrary commands)
+    # docker exec - delegates to inner command analysis
     #
-    ("docker exec mycontainer ls", False),
-    ("docker exec -it mycontainer bash", False),
-    ("docker exec -u root mycontainer whoami", False),
-    ("docker container exec mycontainer ls", False),
+    ("docker exec mycontainer ls", True),  # ls is safe
+    ("docker exec -it mycontainer bash", False),  # bash is unknown, asks
+    ("docker exec -u root mycontainer whoami", True),  # whoami is safe
+    ("docker container exec mycontainer ls", False),  # container exec not delegated
     #
     # docker - unsafe (image/container mutations)
     #
@@ -443,6 +446,21 @@ TESTS = [
     ("docker-compose rm", False),
     ("docker-compose create", False),
     #
+    # docker exec - delegation to inner command
+    #
+    ("docker exec nginx cat /etc/passwd", True),  # cat is safe
+    ("docker exec -it nginx ls /app", True),  # ls is safe
+    ("docker exec nginx grep pattern /var/log/app.log", True),  # grep is safe
+    ("docker exec nginx rm -rf /", False),  # rm is unsafe
+    ("docker exec nginx sh -c 'rm -rf /'", False),  # shell with rm is unsafe
+    ("docker exec nginx", False),  # no command after container
+    ("docker exec -e FOO=bar nginx echo hello", True),  # env flag with safe command
+    (
+        "docker exec -w /app -u root nginx pwd",
+        True,
+    ),  # workdir/user flags with safe command
+    ("docker exec --privileged nginx rm /tmp/foo", False),  # rm is unsafe
+    #
     # Podman
     #
     # podman - safe (inspection)
@@ -470,7 +488,7 @@ TESTS = [
     ("podman stop mycontainer", False),
     ("podman kill mycontainer", False),
     ("podman restart mycontainer", False),
-    ("podman exec mycontainer ls", False),
+    ("podman exec mycontainer ls", True),  # ls is safe (delegated)
     ("podman rm mycontainer", False),
     ("podman rmi myimage", False),
     ("podman build -t myimage .", False),
@@ -503,3 +521,52 @@ def test_docker(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestDockerExecRemoteMode:
+    """Test that docker exec delegates to inner command with remote mode semantics."""
+
+    def test_command_rules_still_apply(self, check, tmp_path):
+        """Command-based deny rules should still apply inside containers."""
+        config = Config(rules=[Rule("deny", "rm -rf *")])
+        # rm -rf inside container should still be denied by command rule
+        result = check("docker exec nginx rm -rf /", config, tmp_path)
+        assert not is_approved(result)  # deny rules return deny, not ask
+
+    def test_redirect_rules_skipped_for_container_paths(self, check, tmp_path):
+        """Redirect rules should NOT apply to container paths."""
+        home = str(Path.home())
+        config = Config(redirect_rules=[Rule("deny", f"{home}/.ssh/*")])
+        # cat ~/.ssh/id_rsa inside container - should be approved because
+        # the path is container-local, not host-local
+        result = check("docker exec nginx cat ~/.ssh/id_rsa", config, tmp_path)
+        assert is_approved(result)
+
+    def test_path_expansion_skipped_for_container_paths(self, check, tmp_path):
+        """Relative paths should not expand to host cwd."""
+        # Create a deny rule for files in tmp_path
+        config = Config(rules=[Rule("deny", f"cat {tmp_path}/*")])
+        # cat ./foo inside container - should be approved because ./foo
+        # refers to container's cwd, not host's tmp_path
+        result = check("docker exec nginx cat ./foo", config, tmp_path)
+        assert is_approved(result)
+
+    def test_absolute_path_rules_skipped_for_container(self, check, tmp_path):
+        """Absolute path rules should not apply to container paths."""
+        config = Config(redirect_rules=[Rule("deny", "/etc/passwd")])
+        # Reading /etc/passwd in container should be approved
+        result = check("docker exec nginx cat /etc/passwd", config, tmp_path)
+        assert is_approved(result)
+
+    def test_cd_path_not_resolved_against_host(self, check, tmp_path):
+        """cd inside container should not affect path resolution on host."""
+        # Create a deny rule for files in tmp_path/app
+        app_dir = tmp_path / "app"
+        config = Config(rules=[Rule("deny", f"cat {app_dir}/*")])
+        # cd /app && cat foo.txt inside container - should be approved because
+        # /app is container's path, not host's tmp_path/app
+        result = check(
+            "docker exec nginx sh -c 'cd /app && cat foo.txt'", config, tmp_path
+        )
+        # sh -c delegates, and the inner command should not resolve paths against host
+        assert is_approved(result)

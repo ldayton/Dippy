@@ -1390,13 +1390,6 @@ TESTS = [
     ("docker wait mycontainer", False),
     ("docker container wait mycontainer", False),
     #
-    # docker - unsafe (exec runs arbitrary commands)
-    #
-    ("docker exec mycontainer ls", False),
-    ("docker exec -it mycontainer bash", False),
-    ("docker exec -u root mycontainer whoami", False),
-    ("docker container exec mycontainer ls", False),
-    #
     # docker - unsafe (image/container mutations)
     #
     ("docker create ubuntu", False),
@@ -3236,10 +3229,7 @@ TESTS = [
     ("kubectl scale deployment nginx --replicas=3", False),
     ("kubectl scale --replicas=5 -f deployment.yaml", False),
     ("kubectl autoscale deployment nginx --min=2 --max=10 --cpu-percent=80", False),
-    # kubectl - unsafe (exec/run/debug)
-    ("kubectl exec nginx -- ls /", False),
-    ("kubectl exec -it nginx -- bash", False),
-    ("kubectl exec -it nginx -c container -- sh", False),
+    # kubectl - unsafe (run/debug)
     ("kubectl run nginx --image=nginx", False),
     ("kubectl run nginx --image=nginx --restart=Never", False),
     ("kubectl run -it busybox --image=busybox -- sh", False),
