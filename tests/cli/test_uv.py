@@ -133,8 +133,8 @@ TESTS = [
     ("uv run pip install requests", False),
     ("uv run python script.py", False),
     ("uv run --with requests python script.py", False),
-    ("uv run bash -c 'echo hello'", False),
-    ("uv run sh -c 'ls'", False),
+    ("uv run bash -c 'echo hello'", True),  # delegates to bash handler, echo is safe
+    ("uv run sh -c 'ls'", True),  # delegates to bash handler, ls is safe
     ("uv run node script.js", False),
     ("uv run make build", False),
     #
@@ -167,3 +167,48 @@ def test_command(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestUvRunDelegation:
+    """Test that uv run properly delegates to inner command analysis.
+
+    Currently failing: uv run has hardcoded blocklists that bypass delegation.
+    These tests document the desired behavior where uv run respects config
+    rules and handler logic for inner commands.
+    """
+
+    def test_config_allow_python_approves(self, check):
+        """Config allow rule for python should approve uv run python."""
+        from dippy.core.config import Config, Rule
+
+        config = Config(rules=[Rule("allow", "python")])
+        result = check("uv run python script.py", config=config)
+        assert is_approved(result), "uv run should delegate to inner command config"
+
+    def test_bash_handler_logic_applies(self, check):
+        """uv run bash should delegate to bash handler logic."""
+        # bash -c 'echo hello' is safe per the bash handler
+        # Currently blocked by UV_RUN_UNSAFE_INNER hardcoded list
+        result = check("uv run bash -c 'echo hello'")
+        assert is_approved(result), "uv run bash should use bash handler logic"
+
+    def test_node_version_allowed(self, check):
+        """uv run node --version should be allowed via delegation."""
+        result = check("uv run node --version")
+        assert is_approved(result), "uv run node --version should delegate and approve"
+
+    def test_config_allow_make_approves(self, check):
+        """Config allow rule for make should approve uv run make."""
+        from dippy.core.config import Config, Rule
+
+        config = Config(rules=[Rule("allow", "make")])
+        result = check("uv run make build", config=config)
+        assert is_approved(result), "uv run make should delegate to config rules"
+
+    def test_with_flag_delegates_python(self, check):
+        """uv run --with pkg python should delegate to python config."""
+        from dippy.core.config import Config, Rule
+
+        config = Config(rules=[Rule("allow", "python")])
+        result = check("uv run --with requests python script.py", config=config)
+        assert is_approved(result), "uv run with flags should still delegate"

@@ -36,24 +36,6 @@ UV_PIP_UNSAFE = frozenset(
     }
 )
 
-# Commands that can execute arbitrary code - always need confirmation in uv run
-UV_RUN_UNSAFE_INNER = frozenset(
-    {
-        "bash",
-        "sh",
-        "zsh",
-        "dash",
-        "ksh",
-        "fish",  # Shells with -c
-        "perl",
-        "ruby",
-        "node",
-        "deno",
-        "bun",  # Script interpreters
-        "make",
-        "cmake",  # Build systems
-    }
-)
 
 # Commands with subcommands
 SAFE_SUBCOMMANDS = {
@@ -170,20 +152,6 @@ def _classify_uv_run(tokens: list[str]) -> Classification:
             return Classification("ask", description="uv run")
 
         inner_cmd_name = inner_tokens[0]
-
-        # Block shells and script interpreters
-        if inner_cmd_name in UV_RUN_UNSAFE_INNER:
-            return Classification("ask", description=f"uv run {inner_cmd_name}")
-
-        # Block python running scripts (but allow python --version)
-        if inner_cmd_name in ("python", "python3"):
-            if len(inner_tokens) >= 2:
-                second = inner_tokens[1]
-                if second in ("--version", "-V", "--help", "-h"):
-                    return Classification(
-                        "approve", description=f"uv run {inner_cmd_name} {second}"
-                    )
-            return Classification("ask", description=f"uv run {inner_cmd_name}")
 
         # Delegate to inner command check
         inner_cmd = " ".join(inner_tokens)
