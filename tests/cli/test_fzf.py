@@ -253,7 +253,7 @@ TESTS = [
     #
     ("fzf --height=50% --bind='enter:execute(vim {})'", False),
     ("fzf --multi --bind='ctrl-o:execute-silent(open {})'", False),
-    ("fzf --preview='cat {}' --bind='enter:become(less {})'", False),
+    ("fzf --preview='cat {}' --bind='enter:become(rm {})'", False),
     #
     # ==========================================================================
     # Edge cases
