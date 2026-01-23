@@ -3,6 +3,7 @@ Tar command handler for Dippy.
 
 Tar can list, create, or extract archives.
 Only listing (-t/--list) is safe.
+--to-command delegates to inner command check.
 """
 
 from __future__ import annotations
@@ -52,9 +53,29 @@ def _detect_operation(tokens: list[str]) -> str | None:
     return None
 
 
+def _extract_to_command(tokens: list[str]) -> str | None:
+    """Extract the command from --to-command flag."""
+    for i, t in enumerate(tokens[1:], start=1):
+        if t.startswith("--to-command="):
+            return t[13:]
+        if t == "--to-command" and i + 1 < len(tokens):
+            return tokens[i + 1]
+    return None
+
+
 def classify(tokens: list[str]) -> Classification:
     """Classify tar command (list mode only is safe)."""
     base = tokens[0] if tokens else "tar"
+
+    # Check for --to-command first - delegates to inner command
+    to_command = _extract_to_command(tokens)
+    if to_command:
+        return Classification(
+            "delegate",
+            inner_command=to_command,
+            description=f"{base} --to-command",
+        )
+
     operation = _detect_operation(tokens)
     if operation == "list":
         return Classification("approve", description=f"{base} list")

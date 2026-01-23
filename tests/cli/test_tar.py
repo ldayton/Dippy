@@ -85,3 +85,17 @@ def test_command(check, command: str, expected: bool) -> None:
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestTarToCommand:
+    """tar --to-command delegates to inner command for safety check."""
+
+    def test_to_command_with_safe_command(self, check):
+        """tar --to-command with safe command should be approved."""
+        result = check("tar -xf archive.tar --to-command=cat")
+        assert is_approved(result)
+
+    def test_to_command_space_separated(self, check):
+        """tar --to-command CMD (space separated) with safe command."""
+        result = check("tar -xf archive.tar --to-command cat")
+        assert is_approved(result)
