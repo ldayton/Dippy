@@ -196,38 +196,46 @@ TESTS = [
     ("find . -name 'delete*'", True),  # 'delete' in filename is safe
     #
     # ==========================================================================
-    # UNSAFE OPERATIONS
+    # EXEC OPERATIONS - delegates to inner command
     # ==========================================================================
     #
-    # --- -exec (executes arbitrary commands) ---
+    # --- -exec with safe commands (approved) ---
+    #
+    ("find . -exec cat {} \\;", True),
+    ("find . -exec ls {} \\;", True),
+    ("find . -exec echo {} \\;", True),
+    ("find . -name '*.py' -exec wc -l {} \\;", True),
+    ("find . -name '*.py' -exec grep TODO {} \\;", True),
+    ("find . -type f -exec md5sum {} +", True),
+    ("find . -exec head {} \\;", True),
+    ("find . -exec file {} \\;", True),
+    #
+    # --- -exec with unsafe commands (blocked) ---
     #
     ("find . -exec rm {} \\;", False),
     ("find . -exec rm {} +", False),
-    ("find . -exec cat {} \\;", False),  # Even safe commands - exec is always unsafe
-    ("find . -exec ls {} \\;", False),
-    ("find . -exec echo {} \\;", False),
     ("find . -exec chmod 644 {} \\;", False),
     ("find . -exec chown user {} \\;", False),
-    ("find . -name '*.py' -exec wc -l {} \\;", False),
-    ("find . -name '*.py' -exec grep TODO {} \\;", False),
-    ("find . -type f -exec md5sum {} +", False),
-    ("find . -exec sh -c 'echo $0' {} \\;", False),
+    ("find . -exec sh -c 'rm $0' {} \\;", False),  # shell with unsafe inner cmd
     #
-    # --- -execdir (executes in file's directory) ---
+    # --- -execdir with safe commands (approved) ---
+    #
+    ("find . -execdir cat {} \\;", True),
+    ("find . -execdir ls {} \\;", True),
+    ("find . -name '*.py' -execdir wc -l {} \\;", True),
+    ("find . -type f -execdir md5sum {} +", True),
+    #
+    # --- -execdir with unsafe commands (blocked) ---
     #
     ("find . -execdir rm {} \\;", False),
-    ("find . -execdir cat {} \\;", False),
-    ("find . -execdir ls {} \\;", False),
-    ("find . -name '*.py' -execdir wc -l {} \\;", False),
-    ("find . -type f -execdir md5sum {} +", False),
     #
-    # --- -ok (interactive exec - requires user input) ---
+    # --- -ok (interactive - always ask) ---
     #
     ("find . -ok rm {} \\;", False),
     ("find . -ok cat {} \\;", False),
     ("find . -name '*.tmp' -ok rm {} \\;", False),
     #
-    # --- -okdir (interactive execdir) ---
+    # --- -okdir (interactive - always ask) ---
     #
     ("find . -okdir rm {} \\;", False),
     ("find . -okdir cat {} \\;", False),
@@ -243,9 +251,12 @@ TESTS = [
     ("find /tmp -name '*.cache' -delete", False),
     ("find . -mtime +30 -delete", False),
     #
+    # --- Combinations with safe exec ---
+    #
+    ("find . -name '*.py' -print -exec cat {} \\;", True),
+    #
     # --- Combinations with unsafe primaries ---
     #
-    ("find . -name '*.py' -print -exec cat {} \\;", False),
     ("find . -type f -delete -print", False),
     ("find . -name '*.tmp' -o -name '*.bak' -delete", False),
     ("find . \\( -name '*.tmp' -o -name '*.bak' \\) -exec rm {} \\;", False),
