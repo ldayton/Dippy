@@ -257,14 +257,18 @@ def _analyze_command(node, config: Config, cwd: Path) -> Decision:
                     )
                 decisions.append(inner_decision)
                 # Check for injection risk: pure cmdsub in arg position of handler CLI
+                # But allow if outer command is read-only (handler approves it)
                 if (
                     is_pure_cmdsub
                     and has_handler
                     and not is_simple_safe
                     and position > base_idx
                 ):
-                    inner_cmd = _get_word_value(word).strip("$()")
-                    return Decision("ask", f"cmdsub injection risk: {inner_cmd}")
+                    handler = get_handler(base)
+                    outer_result = handler.classify(words[base_idx:])
+                    if outer_result.action != "approve":
+                        inner_cmd = _get_word_value(word).strip("$()")
+                        return Decision("ask", f"cmdsub injection risk: {inner_cmd}")
             elif part_kind == "param":
                 # Parameter expansion - check for cmdsubs in arg (raw string)
                 arg = getattr(part, "arg", None)
