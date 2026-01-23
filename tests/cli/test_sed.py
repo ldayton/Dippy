@@ -83,21 +83,28 @@ class TestSedInPlaceWithRedirectRules:
     def test_sed_inplace_multiple_files_all_allowed(self, check, tmp_path):
         """sed -i on multiple files all matching rules should be approved."""
         cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
-        result = check("sed -i 's/foo/bar/' /tmp/a.txt /tmp/b.txt", config=cfg, cwd=tmp_path)
+        result = check(
+            "sed -i 's/foo/bar/' /tmp/a.txt /tmp/b.txt", config=cfg, cwd=tmp_path
+        )
         assert is_approved(result)
 
     def test_sed_inplace_multiple_files_one_denied(self, check, tmp_path):
         """sed -i on files where one is denied should be denied."""
         cfg = Config(redirect_rules=[Rule("allow", "/tmp/*"), Rule("deny", "/etc/*")])
-        result = check("sed -i 's/foo/bar/' /tmp/a.txt /etc/passwd", config=cfg, cwd=tmp_path)
+        result = check(
+            "sed -i 's/foo/bar/' /tmp/a.txt /etc/passwd", config=cfg, cwd=tmp_path
+        )
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
 
     def test_sed_inplace_with_backup_allowed(self, check, tmp_path):
         """sed -i.bak on allowed path should be approved."""
         cfg = Config(redirect_rules=[Rule("allow", "/tmp/*")])
-        result = check("sed -i.bak 's/foo/bar/' /tmp/file.txt", config=cfg, cwd=tmp_path)
+        result = check(
+            "sed -i.bak 's/foo/bar/' /tmp/file.txt", config=cfg, cwd=tmp_path
+        )
         assert is_approved(result)
+
 
 class TestSedWriteCommand:
     """sed w command writes to files and should be detected."""
@@ -115,7 +122,9 @@ class TestSedWriteCommand:
     def test_sed_write_command_denied_by_rule(self, check, tmp_path):
         """sed w to denied path should be denied."""
         cfg = Config(redirect_rules=[Rule("deny", "/etc/*")])
-        result = check("sed 's/foo/bar/w /etc/config' input.txt", config=cfg, cwd=tmp_path)
+        result = check(
+            "sed 's/foo/bar/w /etc/config' input.txt", config=cfg, cwd=tmp_path
+        )
         output = result.get("hookSpecificOutput", {})
         assert output.get("permissionDecision") == "deny"
 
