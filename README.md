@@ -13,7 +13,13 @@ Dippy is a shell command hook that auto-approves safe commands while still promp
 
 Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bash parser—no external dependencies, just pure Python. 9,500+ tests.
 
-![Screenshot](images/screenshot.png)
+***Example: rejecting unsafe operation in a chain***
+
+![Screenshot](images/terraform-apply.png)
+
+***Example: rejecting a command with advice, so Claude can keep going***
+
+![Deny with message](images/deny-with-message.png)
 
 ## ✅ What gets approved
 
@@ -24,6 +30,8 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 - **Safe redirects**: `grep -r "TODO" src/ 2>/dev/null`, `ls &>/dev/null`
 - **Command substitution**: `ls $(pwd)`, `git diff foo-$(date).txt`
 
+![Safe command substitution](images/safe-cmd-sub.png)
+
 ## 🚫 What gets blocked
 
 - **Subshell injection**: `git $(echo rm) foo.txt`, `echo $(rm -rf /)`
@@ -31,6 +39,8 @@ Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bas
 - **Hidden mutations**: `git stash drop`, `npm unpublish`, `brew unlink`
 - **Cloud danger**: `aws s3 rm s3://bucket --recursive`, `kubectl delete pod`
 - **Destructive chains**: `rm -rf node_modules && npm install` (blocks the whole thing)
+
+![Redirect blocked](images/redirect.png)
 
 ---
 
