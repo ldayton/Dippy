@@ -286,6 +286,11 @@ def _analyze_command(node, config: Config, cwd: Path) -> Decision:
     if not words:
         return Decision("allow", "empty command")
 
+    # Conditional test commands ([ and test) - read-only, safe after cmdsub check
+    if base in ("[", "test"):
+        decisions.append(Decision("allow", "conditional test"))
+        return _combine(decisions)
+
     cmd_decision = _analyze_simple_command(words, config, cwd)
     decisions.append(cmd_decision)
 

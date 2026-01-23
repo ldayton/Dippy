@@ -373,6 +373,104 @@ class TestHeredocCmdsub:
         assert analyze(cmd, config, cwd).action == expected
 
 
+class TestConditionalTestCommands:
+    """Test [ and test conditional commands (issue #61)."""
+
+    @pytest.fixture
+    def config(self):
+        return Config()
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    @pytest.mark.parametrize(
+        "cmd,expected_action,expected_reason",
+        [
+            ('[ -n "$x" ]', "allow", "conditional test"),
+            ("[ -f /etc/passwd ]", "allow", "conditional test"),
+            ("[ -z '' ]", "allow", "conditional test"),
+            ('test -n "$x"', "allow", "conditional test"),
+            ("test -f /etc/passwd", "allow", "conditional test"),
+            ("test -z ''", "allow", "conditional test"),
+        ],
+    )
+    def test_basic_conditionals(
+        self, cmd, expected_action, expected_reason, config, cwd
+    ):
+        """Basic [ and test commands should be allowed."""
+        result = analyze(cmd, config, cwd)
+        assert result.action == expected_action
+        assert result.reason == expected_reason
+
+    def test_conditional_in_while_loop(self, config, cwd):
+        """[ in while loop body should allow with proper context (issue #61)."""
+        cmd = 'while read -r data; do [ -n "$data" ] && echo "$data"; done'
+        result = analyze(cmd, config, cwd)
+        assert result.action == "allow"
+        assert "conditional test" in result.reason
+        assert "read" in result.reason
+        assert "echo" in result.reason
+
+    def test_kinesis_pipeline_from_issue(self, config, cwd):
+        """Full kinesis pipeline from issue #61 should allow."""
+        cmd = (
+            "SHARD_ITERATOR=$(aws kinesis get-shard-iterator --stream-name s --shard-id 0 --shard-iterator-type LATEST --query ShardIterator --output text) && "
+            'aws kinesis get-records --shard-iterator "$SHARD_ITERATOR" --query "Records[].Data" --output text | '
+            'while read -r data; do [ -n "$data" ] && echo "$data" | base64 -d; done | '
+            "sort"
+        )
+        result = analyze(cmd, config, cwd)
+        assert result.action == "allow"
+        # Should not contain the confusing truncated "[ -n" reason
+        assert "[ -n" not in result.reason
+        assert "conditional test" in result.reason
+
+    @pytest.mark.parametrize(
+        "cmd,expected_action",
+        [
+            ("[ -f $(rm -rf /) ]", "ask"),
+            ("[ -n $(rm foo) ]", "ask"),
+            ("test -f $(rm foo)", "ask"),
+            ("test -z $(dd if=/dev/zero of=/dev/sda)", "ask"),
+        ],
+    )
+    def test_dangerous_cmdsub_in_conditional(self, cmd, expected_action, config, cwd):
+        """Dangerous cmdsubs inside [ and test should still be caught."""
+        result = analyze(cmd, config, cwd)
+        assert result.action == expected_action
+
+    @pytest.mark.parametrize(
+        "cmd,expected_action",
+        [
+            ("[ -f $(ls) ]", "allow"),
+            ("[ -n $(echo hello) ]", "allow"),
+            ("test -f $(pwd)", "allow"),
+        ],
+    )
+    def test_safe_cmdsub_in_conditional(self, cmd, expected_action, config, cwd):
+        """Safe cmdsubs inside [ and test should be allowed."""
+        result = analyze(cmd, config, cwd)
+        assert result.action == expected_action
+
+    @pytest.mark.parametrize(
+        "cmd,expected_action,reason_contains",
+        [
+            ("[ -f <(rm foo) ]", "ask", "process substitution"),
+            ("[ -f x ] > /tmp/out", "ask", "redirect"),
+            ("FOO=$(rm bar) [ -f x ]", "ask", "command substitution"),
+            ("[ -f ${x:-$(rm foo)} ]", "ask", "cmdsub"),
+        ],
+    )
+    def test_conditional_edge_cases(
+        self, cmd, expected_action, reason_contains, config, cwd
+    ):
+        """Edge cases: procsubs, redirects, env var cmdsubs, param expansion cmdsubs."""
+        result = analyze(cmd, config, cwd)
+        assert result.action == expected_action
+        assert reason_contains in result.reason
+
+
 class TestCdPathResolution:
     """Test that `cd <literal> && ...` resolves paths against the cd target."""
 
