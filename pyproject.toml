@@ -62,6 +62,9 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
+[tool.ruff]
+exclude = ["src/dippy/vendor"]
+
 [dependency-groups]
 dev = [
     "pytest>=7.0",
