@@ -11,12 +11,44 @@ from dippy.cli import Classification
 COMMANDS = ["sort"]
 
 
+def _extract_output_file(tokens: list[str]) -> str | None:
+    """Extract the output file from -o/--output flag."""
+    i = 1
+    while i < len(tokens):
+        t = tokens[i]
+
+        # -o file or -ofile
+        if t == "-o":
+            if i + 1 < len(tokens):
+                return tokens[i + 1]
+            return None
+        if t.startswith("-o") and len(t) > 2:
+            return t[2:]
+
+        # --output file or --output=file
+        if t == "--output":
+            if i + 1 < len(tokens):
+                return tokens[i + 1]
+            return None
+        if t.startswith("--output="):
+            return t[9:]
+
+        i += 1
+
+    return None
+
+
 def classify(tokens: list[str]) -> Classification:
     """Classify sort command (no output to file is safe)."""
     base = tokens[0] if tokens else "sort"
-    for t in tokens[1:]:
-        if t == "-o" or t.startswith("-o"):
-            return Classification("ask", description=f"{base} -o (write to file)")
-        if t == "--output" or t.startswith("--output"):
-            return Classification("ask", description=f"{base} --output (write to file)")
+
+    output_file = _extract_output_file(tokens)
+
+    if output_file:
+        return Classification(
+            "approve",
+            description=f"{base} -o (write to file)",
+            redirect_targets=(output_file,),
+        )
+
     return Classification("approve", description=base)
