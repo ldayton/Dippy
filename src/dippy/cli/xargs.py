@@ -7,9 +7,8 @@ Delegates to inner command check.
 
 from __future__ import annotations
 
-import shlex
-
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_quote
 
 COMMANDS = ["xargs"]
 
@@ -115,7 +114,5 @@ def classify(ctx: HandlerContext) -> Classification:
         return Classification("ask", description="xargs (no command)")
 
     # Delegate to inner command check
-    inner_cmd = " ".join(
-        shlex.quote(t) if " " in t or not t else t for t in inner_tokens
-    )
+    inner_cmd = " ".join(bash_quote(t) for t in inner_tokens)
     return Classification("delegate", inner_command=inner_cmd)

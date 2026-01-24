@@ -6,9 +6,8 @@ Handles docker, docker-compose, and podman commands.
 
 from __future__ import annotations
 
-import shlex
-
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_join
 
 COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]
 
@@ -293,7 +292,7 @@ def classify(ctx: HandlerContext) -> Classification:
     if action == "exec":
         inner_tokens = _extract_exec_inner_command(rest)
         if inner_tokens:
-            inner_cmd = shlex.join(inner_tokens)
+            inner_cmd = bash_join(inner_tokens)
             return Classification(
                 "delegate", inner_command=inner_cmd, description=desc, remote=True
             )

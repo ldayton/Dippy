@@ -7,9 +7,8 @@ When running a command, delegates to inner command check.
 
 from __future__ import annotations
 
-import shlex
-
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_join
 
 COMMANDS = ["script"]
 
@@ -59,5 +58,5 @@ def classify(ctx: HandlerContext) -> Classification:
             return Classification("allow", description="script -p (playback)")
         return Classification("ask", description="script interactive")
 
-    # Delegate to inner command - shlex.join handles quoting for re-parse
-    return Classification("delegate", inner_command=shlex.join(command_tokens))
+    # Delegate to inner command
+    return Classification("delegate", inner_command=bash_join(command_tokens))

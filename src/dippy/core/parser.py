@@ -6,8 +6,6 @@ Provides safe tokenization for analyzing shell commands.
 
 from __future__ import annotations
 
-import shlex
-
 from dippy.vendor.parable import parse
 
 
@@ -24,11 +22,7 @@ def tokenize(command: str) -> list[str]:
     except Exception:
         pass
 
-    # Fallback to shlex
-    try:
-        return shlex.split(command)
-    except ValueError:
-        return command.split()
+    return []
 
 
 def _strip_quotes(value: str) -> str:
