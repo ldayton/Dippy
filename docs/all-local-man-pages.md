@@ -43,7 +43,7 @@ Families:
 | defaults         | subcommand | mac | read safe, write/delete unsafe            |
 | pbcopy           | ask        | mac | Always modifies clipboard                 |
 | pbpaste          | done       | mac | Already in SIMPLE_SAFE                    |
-| open             | delegate   | mac | Launches applications/URLs                |
+| open             | done       | mac | Has handler (flag-check: -R safe)         |
 | sw_vers          | done       | mac | Already in SIMPLE_SAFE                    |
 | xxd              | done       | mac | Has handler (flag-check: -r writes)       |
 | lipo             | done       | mac | Has handler (flag-check: -create writes)  |
