@@ -74,7 +74,7 @@ Families:
 | otool            | done       | mac | Already in SIMPLE_SAFE                    |
 | launchctl        | done       | mac | Has handler (subcommand)                  |
 | security         | done       | mac | Has handler (subcommand)                  |
-| tmutil           | subcommand | mac | listbackups safe, restore unsafe          |
+| tmutil           | done       | mac | Has handler (subcommand)                  |
 | osacompile       | done       | mac | Defaults to ask (creates output files)    |
 | pkgutil          | done       | mac | Has handler (subcommand: --forget unsafe) |
 | lsbom            | done       | mac | Already in SIMPLE_SAFE                    |
