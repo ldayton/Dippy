@@ -81,7 +81,7 @@ Families:
 | fuser            | done       | mac | Already in SIMPLE_SAFE                    |
 | bc               | done       | mac | Already in SIMPLE_SAFE                    |
 | asr              | ask        | mac | Always restores/copies                    |
-| sysctl           | arg-count  | mac | name reads, name=value writes             |
+| sysctl           | done       | mac | Has handler (arg-count)                   |
 | system_profiler  | done       | mac | Already in SIMPLE_SAFE                    |
 | mdfind           | done       | mac | Already in SIMPLE_SAFE                    |
 | mdls             | done       | mac | Already in SIMPLE_SAFE                    |
