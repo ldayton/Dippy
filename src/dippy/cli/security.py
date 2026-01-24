@@ -12,26 +12,28 @@ from dippy.cli import Classification, HandlerContext
 COMMANDS = ["security"]
 
 # Purely read-only subcommands (no flags that modify state)
-SAFE_SUBCOMMANDS = frozenset({
-    "help",
-    "show-keychain-info",
-    "dump-keychain",
-    "find-generic-password",
-    "find-internet-password",
-    "find-key",
-    "find-certificate",
-    "find-identity",
-    "get-identity-preference",
-    "dump-trust-settings",
-    "verify-cert",
-    "error",
-    "leaks",
-    "list-smartcards",
-    "translocate-policy-check",
-    "translocate-status-check",
-    "translocate-original-path",
-    "requirement-evaluate",
-})
+SAFE_SUBCOMMANDS = frozenset(
+    {
+        "help",
+        "show-keychain-info",
+        "dump-keychain",
+        "find-generic-password",
+        "find-internet-password",
+        "find-key",
+        "find-certificate",
+        "find-identity",
+        "get-identity-preference",
+        "dump-trust-settings",
+        "verify-cert",
+        "error",
+        "leaks",
+        "list-smartcards",
+        "translocate-policy-check",
+        "translocate-status-check",
+        "translocate-original-path",
+        "requirement-evaluate",
+    }
+)
 
 
 def classify(ctx: HandlerContext) -> Classification:

@@ -12,29 +12,31 @@ from dippy.cli import Classification, HandlerContext
 COMMANDS = ["launchctl"]
 
 # Read-only subcommands
-SAFE_SUBCOMMANDS = frozenset({
-    "list",
-    "print",
-    "print-cache",
-    "print-disabled",
-    "print-token",
-    "plist",
-    "procinfo",
-    "hostinfo",
-    "resolveport",
-    "blame",
-    "dumpstate",
-    "dump-xsc",
-    "dumpjpcategory",
-    "managerpid",
-    "manageruid",
-    "managername",
-    "error",
-    "variant",
-    "version",
-    "help",
-    "getenv",
-})
+SAFE_SUBCOMMANDS = frozenset(
+    {
+        "list",
+        "print",
+        "print-cache",
+        "print-disabled",
+        "print-token",
+        "plist",
+        "procinfo",
+        "hostinfo",
+        "resolveport",
+        "blame",
+        "dumpstate",
+        "dump-xsc",
+        "dumpjpcategory",
+        "managerpid",
+        "manageruid",
+        "managername",
+        "error",
+        "variant",
+        "version",
+        "help",
+        "getenv",
+    }
+)
 
 
 def classify(ctx: HandlerContext) -> Classification:

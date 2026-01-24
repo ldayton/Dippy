@@ -12,16 +12,18 @@ from dippy.cli import Classification, HandlerContext
 COMMANDS = ["hdiutil"]
 
 # Read-only verbs
-SAFE_VERBS = frozenset({
-    "help",
-    "info",
-    "verify",
-    "checksum",
-    "imageinfo",
-    "isencrypted",
-    "plugins",
-    "pmap",
-})
+SAFE_VERBS = frozenset(
+    {
+        "help",
+        "info",
+        "verify",
+        "checksum",
+        "imageinfo",
+        "isencrypted",
+        "plugins",
+        "pmap",
+    }
+)
 
 
 def classify(ctx: HandlerContext) -> Classification:

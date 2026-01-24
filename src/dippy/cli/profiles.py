@@ -12,14 +12,16 @@ from dippy.cli import Classification, HandlerContext
 COMMANDS = ["profiles"]
 
 # Read-only subcommands
-SAFE_SUBCOMMANDS = frozenset({
-    "help",
-    "status",
-    "list",
-    "show",
-    "validate",
-    "version",
-})
+SAFE_SUBCOMMANDS = frozenset(
+    {
+        "help",
+        "status",
+        "list",
+        "show",
+        "validate",
+        "version",
+    }
+)
 
 
 def classify(ctx: HandlerContext) -> Classification:

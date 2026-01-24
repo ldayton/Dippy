@@ -13,21 +13,23 @@ from dippy.cli import Classification, HandlerContext
 COMMANDS = ["tmutil"]
 
 # Read-only subcommands
-SAFE_SUBCOMMANDS = frozenset({
-    "help",
-    "version",
-    "destinationinfo",
-    "isexcluded",
-    "latestbackup",
-    "listbackups",
-    "listlocalsnapshotdates",
-    "listlocalsnapshots",
-    "machinedirectory",
-    "uniquesize",
-    "verifychecksums",
-    "compare",
-    "calculatedrift",
-})
+SAFE_SUBCOMMANDS = frozenset(
+    {
+        "help",
+        "version",
+        "destinationinfo",
+        "isexcluded",
+        "latestbackup",
+        "listbackups",
+        "listlocalsnapshotdates",
+        "listlocalsnapshots",
+        "machinedirectory",
+        "uniquesize",
+        "verifychecksums",
+        "compare",
+        "calculatedrift",
+    }
+)
 
 
 def classify(ctx: HandlerContext) -> Classification:

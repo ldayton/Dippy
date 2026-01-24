@@ -32,6 +32,8 @@ def classify(ctx: HandlerContext) -> Classification:
 
     for prefix in SAFE_PREFIXES:
         if option.startswith(prefix):
-            return Classification("allow", description=f"networksetup {option.lstrip('-')}")
+            return Classification(
+                "allow", description=f"networksetup {option.lstrip('-')}"
+            )
 
     return Classification("ask", description="networksetup")
