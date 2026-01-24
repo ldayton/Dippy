@@ -85,7 +85,7 @@ Families:
 | system_profiler  | done       | mac | Already in SIMPLE_SAFE                    |
 | mdfind           | done       | mac | Already in SIMPLE_SAFE                    |
 | mdls             | done       | mac | Already in SIMPLE_SAFE                    |
-| profiles         | subcommand | mac | show safe, remove/renew unsafe            |
+| profiles         | done       | mac | Has handler (subcommand)                  |
 | units            | done       | mac | Already in SIMPLE_SAFE                    |
 | column           | done       | mac | Already in SIMPLE_SAFE                    |
 | cal              | done       | mac | Already in SIMPLE_SAFE                    |
