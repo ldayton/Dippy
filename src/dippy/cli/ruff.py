@@ -7,7 +7,7 @@ but format/clean and --fix modify files.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["ruff"]
 
@@ -19,11 +19,12 @@ UNSAFE_ACTIONS = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify ruff command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "ruff"
     if len(tokens) < 2:
-        return Classification("approve", description=base)  # Just "ruff" shows help
+        return Classification("allow", description=base)  # Just "ruff" shows help
 
     action = tokens[1]
     desc = f"{base} {action}"
@@ -36,4 +37,4 @@ def classify(tokens: list[str]) -> Classification:
     if "--fix" in tokens or "--fix-only" in tokens:
         return Classification("ask", description=f"{desc} --fix")
 
-    return Classification("approve", description=desc)
+    return Classification("allow", description=desc)

@@ -7,7 +7,7 @@ and some modify files or do crypto operations.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["openssl"]
 
@@ -20,8 +20,9 @@ SAFE_COMMANDS = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify openssl command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "openssl"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -29,14 +30,14 @@ def classify(tokens: list[str]) -> Classification:
     subcommand = tokens[1]
 
     if subcommand in SAFE_COMMANDS:
-        return Classification("approve", description=f"{base} {subcommand}")
+        return Classification("allow", description=f"{base} {subcommand}")
 
     # x509 with -noout is just viewing
     if subcommand == "x509" and "-noout" in tokens:
-        return Classification("approve", description=f"{base} x509")
+        return Classification("allow", description=f"{base} x509")
 
     # s_client for connection testing
     if subcommand == "s_client":
-        return Classification("approve", description=f"{base} s_client")
+        return Classification("allow", description=f"{base} s_client")
 
     return Classification("ask", description=f"{base} {subcommand}")

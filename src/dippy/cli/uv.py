@@ -7,7 +7,7 @@ Some commands need special handling for inner command checking.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["uv", "uvx"]
 
@@ -75,36 +75,35 @@ RUN_FLAGS_WITH_ARG = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify uv command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
-        return Classification("approve")  # Just "uv" shows help
+        return Classification("allow")  # Just "uv" shows help
 
     action = tokens[1]
 
     # Version/help checks
     if action in {"--version", "-v", "--help", "-h", "version", "help"}:
-        return Classification("approve", description=f"uv {action}")
+        return Classification("allow", description=f"uv {action}")
 
     # Safe commands
     if action in SAFE_COMMANDS:
-        return Classification("approve", description=f"uv {action}")
+        return Classification("allow", description=f"uv {action}")
 
     # Check commands with subcommands
     if action in SAFE_SUBCOMMANDS or action in UNSAFE_SUBCOMMANDS:
         if len(tokens) > 2:
             subcommand = tokens[2]
             if action in SAFE_SUBCOMMANDS and subcommand in SAFE_SUBCOMMANDS[action]:
-                return Classification(
-                    "approve", description=f"uv {action} {subcommand}"
-                )
+                return Classification("allow", description=f"uv {action} {subcommand}")
             if (
                 action in UNSAFE_SUBCOMMANDS
                 and subcommand in UNSAFE_SUBCOMMANDS[action]
             ):
                 return Classification("ask", description=f"uv {action} {subcommand}")
         if action in SAFE_SUBCOMMANDS:
-            return Classification("approve", description=f"uv {action}")
+            return Classification("allow", description=f"uv {action}")
         return Classification("ask", description=f"uv {action}")
 
     # Handle "uv pip" - check subcommand
@@ -114,11 +113,9 @@ def classify(tokens: list[str]) -> Classification:
             if subcommand in UV_PIP_UNSAFE:
                 return Classification("ask", description=f"uv pip {subcommand}")
             if subcommand in UV_PIP_SAFE:
-                return Classification("approve", description=f"uv pip {subcommand}")
+                return Classification("allow", description=f"uv pip {subcommand}")
             return Classification("ask", description=f"uv pip {subcommand}")
-        return Classification(
-            "approve", description="uv pip"
-        )  # Just "uv pip" shows help
+        return Classification("allow", description="uv pip")  # Just "uv pip" shows help
 
     # Handle "uv run" - need to check the inner command
     if action == "run":

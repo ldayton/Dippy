@@ -16,33 +16,39 @@ from typing import Literal, Optional, Protocol
 
 
 @dataclass(frozen=True)
+class HandlerContext:
+    """Context passed to handlers."""
+
+    tokens: list[str]
+
+
+@dataclass(frozen=True)
 class Classification:
     """Result of classifying a command.
 
     Handlers return this to indicate:
-    - approve: command is safe, no further checking needed
+    - allow: command is safe, no further checking needed
     - ask: command needs user confirmation
     - delegate: check inner_command to determine safety
     """
 
-    action: Literal["approve", "ask", "delegate"]
+    action: Literal["allow", "ask", "delegate"]
     inner_command: str | None = None  # Required when action="delegate"
     description: str | None = None  # Optional, overrides default description
-    redirect_targets: tuple[str, ...] | None = (
-        None  # File targets to check against redirect rules
-    )
+    redirect_targets: tuple[
+        str, ...
+    ] = ()  # File targets to check against redirect rules
     remote: bool = False  # Inner command runs in remote context (container, ssh, etc.)
 
 
 class CLIHandler(Protocol):
     """Protocol for CLI handler modules."""
 
-    def classify(self, tokens: list[str], cwd: Path | None = None) -> Classification:
+    def classify(self, ctx: HandlerContext) -> Classification:
         """Classify command for approval.
 
         Args:
-            tokens: Command tokens (e.g., ["python", "script.py"])
-            cwd: Current working directory for path resolution (optional)
+            ctx: Handler context containing command tokens
 
         Returns Classification with action and optional description.
         """

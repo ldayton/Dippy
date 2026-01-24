@@ -7,13 +7,14 @@ Delegates to inner command check.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["bash", "sh", "zsh", "dash", "ksh", "fish"]
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify shell command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "shell"
     if len(tokens) < 2:
         return Classification("ask", description=f"{base} interactive")

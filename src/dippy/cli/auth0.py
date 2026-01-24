@@ -6,7 +6,7 @@ Auth0 commands for identity management.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["auth0"]
 
@@ -68,8 +68,9 @@ def _check_api(tokens: list[str]) -> bool:
     return True
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify auth0 command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "auth0"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -83,12 +84,12 @@ def classify(tokens: list[str]) -> Classification:
 
     if subcommand == "api":
         if _check_api(tokens):
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     for part in parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
 
     for part in parts:
         if part in UNSAFE_ACTION_KEYWORDS:

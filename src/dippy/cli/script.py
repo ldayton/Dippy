@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shlex
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["script"]
 
@@ -20,8 +20,9 @@ FLAGS_WITH_ARG = frozenset({"-t", "-T"})
 FLAGS_NO_ARG = frozenset({"-a", "-d", "-e", "-F", "-k", "-p", "-q", "-r"})
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify script command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
         return Classification("ask", description="script interactive")
 
@@ -55,7 +56,7 @@ def classify(tokens: list[str]) -> Classification:
             for t in tokens[1:i]
         )
         if is_playback:
-            return Classification("approve", description="script -p (playback)")
+            return Classification("allow", description="script -p (playback)")
         return Classification("ask", description="script interactive")
 
     # Delegate to inner command - shlex.join handles quoting for re-parse

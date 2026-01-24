@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["fzf"]
 
@@ -62,8 +62,9 @@ def _has_exec_bind_action(bind_value: str) -> bool:
     return False
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify fzf command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "fzf"
     for i, token in enumerate(tokens):
         # Check for --listen-unsafe flag
@@ -93,4 +94,4 @@ def classify(tokens: list[str]) -> Classification:
                 # Couldn't extract command, ask for confirmation
                 return Classification("ask", description=f"{base} --bind")
 
-    return Classification("approve", description=base)
+    return Classification("allow", description=base)

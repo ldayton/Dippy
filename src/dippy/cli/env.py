@@ -7,7 +7,7 @@ Delegates to inner command check.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["env"]
 
@@ -24,10 +24,11 @@ FLAGS_WITH_ARG = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify env command by extracting the inner command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
-        return Classification("approve")  # Just "env" prints environment
+        return Classification("allow")  # Just "env" prints environment
 
     # Find where the inner command starts
     i = 1
@@ -54,7 +55,7 @@ def classify(tokens: list[str]) -> Classification:
         break
 
     if i >= len(tokens):
-        return Classification("approve")  # Just env with no command
+        return Classification("allow")  # Just env with no command
 
     # Delegate to inner command check
     inner_tokens = tokens[i:]

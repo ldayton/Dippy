@@ -8,7 +8,7 @@ starts a service, binds ports, creates lockfiles, and writes data to storage.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["prometheus"]
 
@@ -24,12 +24,13 @@ SAFE_FLAGS = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify prometheus command.
 
     Only help/version flags are safe. Any other invocation starts the server
     which binds ports, creates lockfiles, and writes data - all unsafe operations.
     """
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "prometheus"
     if len(tokens) < 2:
         # Just "prometheus" with no args starts the server
@@ -39,7 +40,7 @@ def classify(tokens: list[str]) -> Classification:
     # Prometheus doesn't have subcommands - it's all flags
     for token in tokens[1:]:
         if token in SAFE_FLAGS:
-            return Classification("approve", description=f"{base} {token}")
+            return Classification("allow", description=f"{base} {token}")
 
     # Any other flags or arguments start the server
     return Classification("ask", description=f"{base} server")

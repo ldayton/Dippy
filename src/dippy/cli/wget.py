@@ -8,7 +8,7 @@ Output flags (-O, --output-document) return redirect_targets for config rule che
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["wget"]
 
@@ -28,18 +28,19 @@ def _extract_output_file(tokens: list[str]) -> str | None:
     return None
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify wget command (spider mode only is safe)."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "wget"
 
     if "--spider" in tokens:
-        return Classification("approve", description=f"{base} --spider")
+        return Classification("allow", description=f"{base} --spider")
 
     # Check for output file - return redirect_targets for config rule checking
     output_file = _extract_output_file(tokens)
     if output_file:
         return Classification(
-            "approve",
+            "allow",
             description=f"{base} download",
             redirect_targets=(output_file,),
         )

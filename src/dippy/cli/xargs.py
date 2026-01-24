@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shlex
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["xargs"]
 
@@ -84,8 +84,9 @@ def _skip_flags(
     return i
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify xargs command by extracting the inner command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
         return Classification("ask", description="xargs (no command)")
 

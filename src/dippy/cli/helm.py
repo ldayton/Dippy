@@ -8,7 +8,7 @@ mutate cluster state, local files, or remote registries.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["helm"]
 
@@ -80,8 +80,9 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify helm command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "helm"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -131,15 +132,15 @@ def classify(tokens: list[str]) -> Classification:
 
     # Help and version flags are always safe
     if action in {"-h", "--help", "--version"}:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Check for --help anywhere in the command
     if "-h" in tokens or "--help" in tokens:
-        return Classification("approve", description=f"{base} --help")
+        return Classification("allow", description=f"{base} --help")
 
     # Simple safe commands
     if action in SAFE_COMMANDS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Check for dry-run flag (makes install/upgrade/uninstall/rollback safe)
     if action in {"install", "upgrade", "uninstall", "delete", "del", "un", "rollback"}:
@@ -147,9 +148,7 @@ def classify(tokens: list[str]) -> Classification:
         display_desc = f"{base} {display_action}"
         for t in rest:
             if t == "--dry-run" or t.startswith("--dry-run="):
-                return Classification(
-                    "approve", description=f"{display_desc} --dry-run"
-                )
+                return Classification("allow", description=f"{display_desc} --dry-run")
         return Classification("ask", description=display_desc)
 
     # Nested commands - check subcommand
@@ -161,7 +160,7 @@ def classify(tokens: list[str]) -> Classification:
             # Found subcommand
             nested_desc = f"{desc} {t}"
             if action in SAFE_SUBCOMMANDS and t in SAFE_SUBCOMMANDS[action]:
-                return Classification("approve", description=nested_desc)
+                return Classification("allow", description=nested_desc)
             if action in UNSAFE_SUBCOMMANDS and t in UNSAFE_SUBCOMMANDS[action]:
                 return Classification("ask", description=nested_desc)
             # Unknown subcommand - be safe

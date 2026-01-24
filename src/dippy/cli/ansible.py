@@ -8,7 +8,7 @@ ansible-console, ansible-lint, and ansible-test commands.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = [
     "ansible",
@@ -33,8 +33,9 @@ SAFE_COMMANDS = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify ansible command."""
+    tokens = ctx.tokens
     if len(tokens) < 1:
         return Classification("ask", description="ansible")
 
@@ -42,11 +43,11 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check for help/version flags anywhere
     if "-h" in tokens or "--help" in tokens or "--version" in tokens:
-        return Classification("approve", description=cmd)
+        return Classification("allow", description=cmd)
 
     # Entirely safe commands
     if cmd in SAFE_COMMANDS:
-        return Classification("approve", description=cmd)
+        return Classification("allow", description=cmd)
 
     # Route to specific handlers - returns (safe, action) tuple
     if cmd == "ansible":
@@ -71,7 +72,7 @@ def classify(tokens: list[str]) -> Classification:
         safe, action = False, "run"
 
     if safe:
-        return Classification("approve", description=cmd)
+        return Classification("allow", description=cmd)
     return Classification("ask", description=f"{cmd} {action}")
 
 

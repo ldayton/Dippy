@@ -13,7 +13,7 @@ from typing import Literal
 
 from dippy.core.config import Config, match_redirect
 from dippy.core.allowlists import SIMPLE_SAFE, WRAPPER_COMMANDS
-from dippy.cli import get_handler, get_description
+from dippy.cli import get_handler, get_description, HandlerContext
 from dippy.vendor.parable import parse, ParseError
 
 # Redirect targets that are always safe (no file write)
@@ -287,8 +287,8 @@ def _analyze_command(
                     and position > base_idx
                 ):
                     handler = get_handler(base)
-                    outer_result = handler.classify(words[base_idx:])
-                    if outer_result.action != "approve":
+                    outer_result = handler.classify(HandlerContext(words[base_idx:]))
+                    if outer_result.action != "allow":
                         inner_cmd = _get_word_value(word).strip("$()")
                         return Decision("ask", f"cmdsub injection risk: {inner_cmd}")
             elif part_kind == "param":
@@ -448,7 +448,7 @@ def _analyze_simple_command(
     # 5. CLI-specific handlers
     handler = get_handler(base)
     if handler:
-        result = handler.classify(tokens)
+        result = handler.classify(HandlerContext(tokens))
         desc = result.description or get_description(tokens, base)
         # Check handler-provided redirect targets against config (skip in remote mode)
         if result.redirect_targets and not remote:
@@ -468,7 +468,7 @@ def _analyze_simple_command(
                 else:
                     # No matching rule - ask by default for file writes
                     return Decision("ask", desc)
-        if result.action == "approve":
+        if result.action == "allow":
             return Decision("allow", desc)
         elif result.action == "delegate" and result.inner_command:
             # Delegate to inner command (e.g., bash -c 'inner')

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import shlex
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["fd"]
 
@@ -24,10 +24,11 @@ FLAG_DISPLAY = {
 }
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify fd command by checking for execution flags."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
-        return Classification("approve", description="fd")
+        return Classification("allow", description="fd")
 
     # Check if any execution flag is present
     exec_flag_idx = None
@@ -40,7 +41,7 @@ def classify(tokens: list[str]) -> Classification:
 
     # No execution flag - just a search, safe to approve
     if exec_flag_idx is None:
-        return Classification("approve", description="fd")
+        return Classification("allow", description="fd")
 
     # Extract inner command after the execution flag
     inner_start = exec_flag_idx + 1

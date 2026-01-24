@@ -6,7 +6,7 @@ Handles terraform and tofu (OpenTofu) commands.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["terraform", "tf"]
 
@@ -62,15 +62,16 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify terraform command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "terraform"
     if len(tokens) < 2:
         return Classification("ask", description=base)
 
     # Check for -help flag anywhere (common pattern: terraform -help)
     if "-help" in tokens or "--help" in tokens or "-h" in tokens:
-        return Classification("approve", description=f"{base} --help")
+        return Classification("allow", description=f"{base} --help")
 
     # Find action (skip global flags)
     action = None
@@ -101,7 +102,7 @@ def classify(tokens: list[str]) -> Classification:
         if subcommand:
             sub_desc = f"{desc} {subcommand}"
             if subcommand in SAFE_SUBCOMMANDS[action]:
-                return Classification("approve", description=sub_desc)
+                return Classification("allow", description=sub_desc)
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
                 return Classification("ask", description=sub_desc)
 
@@ -112,7 +113,7 @@ def classify(tokens: list[str]) -> Classification:
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     return Classification("ask", description=desc)
 
