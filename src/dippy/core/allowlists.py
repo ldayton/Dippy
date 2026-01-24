@@ -39,9 +39,11 @@ SIMPLE_SAFE = frozenset(
         "dwarfdump",  # dump DWARF debug info
         "dyld_info",  # display dyld information
         "ldd",  # print shared library dependencies
+        "lsbom",  # list contents of BOM files
         "nm",  # list symbols from object files
         "objdump",  # display object file information
         "otool",  # display Mach-O file information
+        "pagestuff",  # Mach-O file page analysis
         "readelf",  # display ELF file information
         "size",  # display section sizes
         # === Directory Listing ===
@@ -62,6 +64,7 @@ SIMPLE_SAFE = frozenset(
         # === Path Utilities ===
         "basename",  # strip directory from path
         "dirname",  # strip filename from path
+        "pathchk",  # check pathname validity
         "pwd",  # print working directory
         "cd",  # change directory
         "readlink",  # resolve symbolic link
@@ -144,11 +147,13 @@ SIMPLE_SAFE = frozenset(
         # Date & time
         "date",  # print or set date/time
         "cal",  # display calendar
+        "ncal",  # display calendar (alternate layout)
         "uptime",  # system uptime and load
         # System configuration
         "getconf",  # get system configuration values
         "machine",  # print machine type
         "pagesize",  # print system page size
+        "uuidgen",  # generate UUID
         # === Process & Resource Monitoring ===
         "atos",  # convert addresses to symbols
         "btop",  # resource monitor
@@ -199,16 +204,20 @@ SIMPLE_SAFE = frozenset(
         "type",  # describe command type
         "command",  # run command ignoring functions
         "hash",  # remember command locations
+        "apropos",  # search man page database
         "man",  # display manual pages
         "help",  # display shell help
         "info",  # display info documentation
+        "osalang",  # list installed OSA languages
         "tldr",  # simplified man pages
+        "whatis",  # search man page database
         # === Code Quality & Linting ===
         "cloc",  # count lines of code
         "flake8",  # Python linter
         "mypy",  # Python type checker
         # === Media & Image Info ===
         "afinfo",  # audio file information
+        "afplay",  # play audio file
         "ffprobe",  # multimedia stream analyzer
         "heif-info",  # HEIF image information
         "identify",  # describe image format
@@ -221,12 +230,19 @@ SIMPLE_SAFE = frozenset(
         # === Shell Builtins & Utilities ===
         "true",  # return success
         "false",  # return failure
+        "getopt",  # parse command options
+        "getopts",  # parse command options (shell builtin)
         "shopt",  # set/unset shell options (session-local)
         "sleep",  # delay for specified time
         "read",  # read line from stdin
+        "test",  # evaluate conditional expression
+        "yes",  # output string repeatedly
         # === Terminal ===
+        "banner",  # print large ASCII art banner
         "clear",  # clear terminal screen
+        "pbpaste",  # paste from clipboard
         "reset",  # reset terminal state
+        "tabs",  # set terminal tab stops
         "tput",  # terminal capability interface
         "tty",  # print terminal name
     }
