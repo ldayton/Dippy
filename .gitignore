@@ -42,3 +42,7 @@ Thumbs.db
 *.vsix
 
 .ruff_cache/
+
+# Claude Code
+.claude/*
+!.claude/skills/
