@@ -68,7 +68,7 @@ Families:
 | diskutil         | done       | mac | Has handler (subcommand)                  |
 | hdiutil          | done       | mac | Has handler (subcommand)                  |
 | sips             | done       | mac | Has handler (flag-check: -s/-o modify)    |
-| networksetup     | subcommand | mac | -get* safe, -set* unsafe                  |
+| networksetup     | done       | mac | Has handler (subcommand)                  |
 | ifconfig         | done       | mac | Has handler (arg-count)                   |
 | openssl          | done       | mac | Has handler (subcommand)                  |
 | otool            | done       | mac | Already in SIMPLE_SAFE                    |
