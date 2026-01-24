@@ -1,4 +1,11 @@
-"""Parable - A recursive descent parser for bash."""
+"""
+Parable - A recursive descent parser for bash.
+
+MIT License - https://github.com/ldayton/Parable
+
+from parable import parse
+ast = parse("ps aux | grep python | awk '{print $2}'")
+"""
 
 from __future__ import annotations
 
@@ -14,12 +21,20 @@ class ParseError(Exception):
 
     def _format_message(self) -> str:
         if self.line is not None and self.pos is not None:
-            return (
-                f"Parse error at line {self.line}, position {self.pos}: {self.message}"
-            )
+            return f"Parse error at line {self.line}, position {self.pos}: {self.message}"
         elif self.pos is not None:
             return f"Parse error at position {self.pos}: {self.message}"
         return f"Parse error: {self.message}"
+
+
+class MatchedPairError(ParseError):
+    """Raised when a matched pair (like parentheses or braces) is unclosed at EOF.
+
+    This is distinct from returning None/"" which signals "try alternative parsing".
+    MatchedPairError means "this IS the construct, but it's unclosed at EOF".
+    """
+
+    pass
 
 
 def _is_hex_digit(c: str) -> bool:
@@ -70,6 +85,29 @@ def _starts_with_at(s: str, pos: int, prefix: str) -> bool:
     return s.startswith(prefix, pos)
 
 
+def _count_consecutive_dollars_before(s: str, pos: int) -> int:
+    """Count consecutive '$' characters immediately before pos.
+
+    Stops counting when hitting a '$' that is preceded by an unescaped backslash,
+    since escaped dollars don't participate in dollar sequences like $$.
+    """
+    count = 0
+    k = pos - 1
+    while k >= 0 and s[k] == "$":
+        # Check if this dollar is escaped by counting preceding backslashes
+        bs_count = 0
+        j = k - 1
+        while j >= 0 and s[j] == "\\":
+            bs_count += 1
+            j -= 1
+        if bs_count % 2 == 1:
+            # Odd number of backslashes means the dollar is escaped, stop counting
+            break
+        count += 1
+        k -= 1
+    return count
+
+
 def _sublist(lst: list, start: int, end: int) -> list:
     """Extract sublist from start to end (exclusive)."""
     return lst[start:end]
@@ -81,6 +119,1849 @@ def _repeat_str(s: str, n: int) -> str:
     i = 0
     while i < n:
         result.append(s)
+        i += 1
+    return "".join(result)
+
+
+class TokenType:
+    """Token type constants for the lexer."""
+
+    EOF = 0
+    WORD = 1
+    NEWLINE = 2
+
+    # Single-char operators
+    SEMI = 10
+    PIPE = 11
+    AMP = 12
+    LPAREN = 13
+    RPAREN = 14
+    LBRACE = 15
+    RBRACE = 16
+    LESS = 17
+    GREATER = 18
+
+    # Multi-char operators
+    AND_AND = 30
+    OR_OR = 31
+    SEMI_SEMI = 32
+    SEMI_AMP = 33
+    SEMI_SEMI_AMP = 34
+    LESS_LESS = 35
+    GREATER_GREATER = 36
+    LESS_AMP = 37
+    GREATER_AMP = 38
+    LESS_GREATER = 39
+    GREATER_PIPE = 40
+    LESS_LESS_MINUS = 41
+    LESS_LESS_LESS = 42
+    AMP_GREATER = 43
+    AMP_GREATER_GREATER = 44
+    PIPE_AMP = 45
+
+    # Reserved words
+    IF = 50
+    THEN = 51
+    ELSE = 52
+    ELIF = 53
+    FI = 54
+    CASE = 55
+    ESAC = 56
+    FOR = 57
+    WHILE = 58
+    UNTIL = 59
+    DO = 60
+    DONE = 61
+    IN = 62
+    FUNCTION = 63
+    SELECT = 64
+    COPROC = 65
+    TIME = 66
+    BANG = 67
+    LBRACKET_LBRACKET = 68
+    RBRACKET_RBRACKET = 69
+
+    # Special
+    ASSIGNMENT_WORD = 80
+    NUMBER = 81
+
+
+class Token:
+    """A token produced by the lexer.
+
+    For WORD tokens, `parts` contains expansion AST nodes (CommandSubstitution,
+    ParameterExpansion, etc.) found within the word. The `word` field contains
+    the fully parsed Word object.
+    """
+
+    def __init__(
+        self, type_: int, value: str, pos: int, parts: list = None, word: Word | None = None
+    ):
+        self.type = type_
+        self.value = value
+        self.pos = pos
+        self.parts = parts if parts is not None else []
+        self.word = word  # Parsed Word object for WORD tokens
+
+    def __repr__(self) -> str:
+        if self.word:
+            return f"Token({self.type}, {self.value!r}, {self.pos}, word={self.word!r})"
+        if self.parts:
+            return f"Token({self.type}, {self.value!r}, {self.pos}, parts={len(self.parts)})"
+        return f"Token({self.type}, {self.value!r}, {self.pos})"
+
+
+class ParserStateFlags:
+    """Parser state flags for context-sensitive parsing decisions."""
+
+    NONE = 0
+    PST_CASEPAT = 0x0001
+    PST_CMDSUBST = 0x0002
+    PST_CASESTMT = 0x0004
+    PST_CONDEXPR = 0x0008
+    PST_COMPASSIGN = 0x0010
+    PST_ARITH = 0x0020
+    PST_HEREDOC = 0x0040
+    PST_REGEXP = 0x0080
+    PST_EXTPAT = 0x0100
+    PST_SUBSHELL = 0x0200
+    PST_REDIRLIST = 0x0400
+    PST_COMMENT = 0x0800
+    PST_EOFTOKEN = 0x1000  # Check for EOF token at grammar level (like Bash)
+
+
+class DolbraceState:
+    """States for ${...} parameter expansion parsing.
+
+    These states determine how single quotes are handled inside parameter expansions.
+    Based on bash's DOLBRACE_* defines in parser.h.
+    """
+
+    NONE = 0
+    PARAM = 0x01  # Reading parameter name: ${foo
+    OP = 0x02  # Reading operator: ${foo%
+    WORD = 0x04  # Reading word after operator: ${foo%bar
+    QUOTE = 0x40  # Single quote is special (%, #, ^, ,)
+    QUOTE2 = 0x80  # Single quote semi-special (/)
+
+
+class MatchedPairFlags:
+    """Flags for _parse_matched_pair() to control parsing behavior.
+
+    Based on bash's P_* flags used in parse_matched_pair().
+    These flags control how the function handles quotes, escapes, and nested constructs.
+    """
+
+    NONE = 0
+    DQUOTE = 0x01  # Inside double quotes
+    DOLBRACE = 0x02  # Inside ${...}
+    COMMAND = 0x04  # Inside command substitution
+    ARITH = 0x08  # Inside arithmetic expression
+    ALLOWESC = 0x10  # Allow backslash escapes (for $'...')
+    EXTGLOB = 0x20  # Inside extglob pattern - don't parse ${ $( as constructs
+
+
+class SavedParserState:
+    """Saved parser state for nested parsing (e.g., command substitutions).
+
+    Based on bash's sh_parser_state_t and save_parser_state/restore_parser_state.
+    Used when parsing nested constructs to save and restore parser context.
+    """
+
+    def __init__(
+        self,
+        parser_state: int,
+        dolbrace_state: int,
+        pending_heredocs: list,
+        ctx_stack: list,
+        eof_token: str | None = None,
+    ):
+        self.parser_state = parser_state
+        self.dolbrace_state = dolbrace_state
+        self.pending_heredocs = pending_heredocs
+        self.ctx_stack = ctx_stack
+        self.eof_token = eof_token
+
+
+class QuoteState:
+    """Unified quote state tracker for parsing.
+
+    Tracks single and double quote state, with stack support for nested contexts
+    like command substitutions inside parameter expansions.
+    """
+
+    def __init__(self):
+        self.single = False
+        self.double = False
+        self._stack: list[tuple[bool, bool]] = []
+
+    def push(self) -> None:
+        """Push current state onto stack and reset for nested context."""
+        self._stack.append((self.single, self.double))
+        self.single = False
+        self.double = False
+
+    def pop(self) -> None:
+        """Restore quote state from stack."""
+        if self._stack:
+            self.single, self.double = self._stack.pop()
+
+    def in_quotes(self) -> bool:
+        """Return True if inside any quotes."""
+        return self.single or self.double
+
+    def copy(self) -> QuoteState:
+        """Create a copy of this quote state."""
+        qs = QuoteState()
+        qs.single = self.single
+        qs.double = self.double
+        qs._stack = list(self._stack)
+        return qs
+
+    def outer_double(self) -> bool:
+        """Return True if the outer (parent) context is in double quotes."""
+        if len(self._stack) == 0:
+            return False
+        return self._stack[len(self._stack) - 1][1]
+
+
+class ParseContext:
+    """Context for parsing state within a specific scope.
+
+    Tracks context type, nesting depths, and quote state for a single parsing scope.
+    Used with ContextStack to manage nested contexts like command substitutions,
+    arithmetic expressions, and case patterns.
+    """
+
+    # Context kind constants
+    NORMAL = 0
+    COMMAND_SUB = 1
+    ARITHMETIC = 2
+    CASE_PATTERN = 3
+    BRACE_EXPANSION = 4
+
+    def __init__(self, kind: int = 0):
+        self.kind = kind
+        self.paren_depth = 0
+        self.brace_depth = 0
+        self.bracket_depth = 0
+        self.case_depth = 0  # Nested case statements
+        self.arith_depth = 0  # Nested $((...)) expressions
+        self.arith_paren_depth = 0  # Grouping parens inside arithmetic
+        self.quote = QuoteState()
+
+    def copy(self) -> ParseContext:
+        """Create a deep copy of this context."""
+        ctx = ParseContext(self.kind)
+        ctx.paren_depth = self.paren_depth
+        ctx.brace_depth = self.brace_depth
+        ctx.bracket_depth = self.bracket_depth
+        ctx.case_depth = self.case_depth
+        ctx.arith_depth = self.arith_depth
+        ctx.arith_paren_depth = self.arith_paren_depth
+        ctx.quote = self.quote.copy()
+        return ctx
+
+
+class ContextStack:
+    """Stack of parsing contexts for tracking nested scopes.
+
+    Maintains a stack of ParseContext objects to handle nested structures like
+    command substitutions inside arithmetic expressions inside case patterns.
+    Always has at least one context (NORMAL) on the stack.
+    """
+
+    def __init__(self):
+        self._stack: list[ParseContext] = [ParseContext()]
+
+    def get_current(self) -> ParseContext:
+        """Return the current (topmost) context."""
+        return self._stack[len(self._stack) - 1]
+
+    def push(self, kind: int) -> None:
+        """Push a new context onto the stack."""
+        self._stack.append(ParseContext(kind))
+
+    def pop(self) -> ParseContext:
+        """Pop and return the top context. Never pops the base context."""
+        if len(self._stack) > 1:
+            return self._stack.pop()
+        return self._stack[0]
+
+    def copy_stack(self) -> list:
+        """Return a deep copy of the context stack for state saving."""
+        result = []
+        for ctx in self._stack:
+            result.append(ctx.copy())
+        return result
+
+    def restore_from(self, saved_stack: list) -> None:
+        """Restore the context stack from a saved copy."""
+        result = []
+        for ctx in saved_stack:
+            result.append(ctx.copy())
+        self._stack = result
+
+
+class Lexer:
+    """Lexer for tokenizing shell input."""
+
+    def __init__(self, source: str, extglob: bool = False):
+        self.source = source
+        self.pos = 0
+        self.length = len(source)
+        self.quote = QuoteState()
+        self._token_cache: Token | None = None
+        # Parser state flags for context-sensitive tokenization
+        self._parser_state = ParserStateFlags.NONE
+        self._dolbrace_state = DolbraceState.NONE
+        # Pending heredocs tracked during word parsing
+        self._pending_heredocs: list = []
+        # Extglob parsing enabled (bash shopt extglob)
+        self._extglob = extglob
+        # Reference to Parser for expansion parsing callbacks (set by Parser)
+        self._parser: Parser | None = None
+        # EOF token mechanism for command substitution parsing
+        self._eof_token: str | None = None
+        # Last token returned by next_token (for context-sensitive parsing)
+        self._last_read_token: Token | None = None
+        # Word parsing context (set by Parser before peeking)
+        self._word_context = WORD_CTX_NORMAL
+        self._at_command_start = False
+        self._in_array_literal = False
+        self._in_assign_builtin = False
+        # Position after reading a token (may differ from token.pos due to heredocs)
+        self._post_read_pos: int = 0
+        # Context used when token was cached (for cache invalidation)
+        self._cached_word_context: int = WORD_CTX_NORMAL
+        self._cached_at_command_start: bool = False
+        self._cached_in_array_literal: bool = False
+        self._cached_in_assign_builtin: bool = False
+
+    def peek(self) -> str | None:
+        """Return current character without consuming."""
+        if self.pos >= self.length:
+            return None
+        return self.source[self.pos]
+
+    def advance(self) -> str | None:
+        """Consume and return current character."""
+        if self.pos >= self.length:
+            return None
+        c = self.source[self.pos]
+        self.pos += 1
+        return c
+
+    def at_end(self) -> bool:
+        """Return True if at end of input."""
+        return self.pos >= self.length
+
+    def lookahead(self, n: int) -> str:
+        """Return next n characters without consuming."""
+        return self.source[self.pos : self.pos + n]
+
+    def is_metachar(self, c: str) -> bool:
+        """Return True if c is a shell metacharacter."""
+        return c in "|&;()<> \t\n"
+
+    def _read_operator(self) -> Token | None:
+        """Try to read an operator token. Returns None if not at operator."""
+        start = self.pos
+        c = self.peek()
+        if c is None:
+            return None
+        two = self.lookahead(2)
+        three = self.lookahead(3)
+        # Three-char operators
+        if three == ";;&":
+            self.pos += 3
+            return Token(TokenType.SEMI_SEMI_AMP, three, start)
+        if three == "<<-":
+            self.pos += 3
+            return Token(TokenType.LESS_LESS_MINUS, three, start)
+        if three == "<<<":
+            self.pos += 3
+            return Token(TokenType.LESS_LESS_LESS, three, start)
+        if three == "&>>":
+            self.pos += 3
+            return Token(TokenType.AMP_GREATER_GREATER, three, start)
+        # Two-char operators
+        if two == "&&":
+            self.pos += 2
+            return Token(TokenType.AND_AND, two, start)
+        if two == "||":
+            self.pos += 2
+            return Token(TokenType.OR_OR, two, start)
+        if two == ";;":
+            self.pos += 2
+            return Token(TokenType.SEMI_SEMI, two, start)
+        if two == ";&":
+            self.pos += 2
+            return Token(TokenType.SEMI_AMP, two, start)
+        if two == "<<":
+            self.pos += 2
+            return Token(TokenType.LESS_LESS, two, start)
+        if two == ">>":
+            self.pos += 2
+            return Token(TokenType.GREATER_GREATER, two, start)
+        if two == "<&":
+            self.pos += 2
+            return Token(TokenType.LESS_AMP, two, start)
+        if two == ">&":
+            self.pos += 2
+            return Token(TokenType.GREATER_AMP, two, start)
+        if two == "<>":
+            self.pos += 2
+            return Token(TokenType.LESS_GREATER, two, start)
+        if two == ">|":
+            self.pos += 2
+            return Token(TokenType.GREATER_PIPE, two, start)
+        if two == "&>":
+            self.pos += 2
+            return Token(TokenType.AMP_GREATER, two, start)
+        if two == "|&":
+            self.pos += 2
+            return Token(TokenType.PIPE_AMP, two, start)
+        # Single-char operators
+        if c == ";":
+            self.pos += 1
+            return Token(TokenType.SEMI, c, start)
+        if c == "|":
+            self.pos += 1
+            return Token(TokenType.PIPE, c, start)
+        if c == "&":
+            self.pos += 1
+            return Token(TokenType.AMP, c, start)
+        if c == "(":
+            # In REGEX context, ( is regex grouping, not operator
+            if self._word_context == WORD_CTX_REGEX:
+                return None
+            self.pos += 1
+            return Token(TokenType.LPAREN, c, start)
+        if c == ")":
+            # In REGEX context, ) is regex grouping, not operator
+            if self._word_context == WORD_CTX_REGEX:
+                return None
+            self.pos += 1
+            return Token(TokenType.RPAREN, c, start)
+        if c == "<":
+            # <( is process substitution, not operator
+            if self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                return None
+            self.pos += 1
+            return Token(TokenType.LESS, c, start)
+        if c == ">":
+            # >( is process substitution, not operator
+            if self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                return None
+            self.pos += 1
+            return Token(TokenType.GREATER, c, start)
+        if c == "\n":
+            self.pos += 1
+            return Token(TokenType.NEWLINE, c, start)
+        return None
+
+    def skip_blanks(self) -> None:
+        """Skip spaces and tabs (not newlines)."""
+        while self.pos < self.length:
+            c = self.source[self.pos]
+            if c != " " and c != "\t":
+                break
+            self.pos += 1
+
+    def _skip_comment(self) -> bool:
+        """Skip comment if at # in comment-allowed context. Returns True if skipped."""
+        if self.pos >= self.length:
+            return False
+        if self.source[self.pos] != "#":
+            return False
+        if self.quote.in_quotes():
+            return False
+        # Check if in comment-allowed position (start of line or after blank/meta)
+        if self.pos > 0:
+            prev = self.source[self.pos - 1]
+            if prev not in " \t\n;|&(){}":
+                return False
+        # Skip to end of line
+        while self.pos < self.length and self.source[self.pos] != "\n":
+            self.pos += 1
+        return True
+
+    def _read_single_quote(self, start: int) -> tuple[str, bool]:
+        """Read single-quoted string content for word parsing.
+
+        Assumes opening quote already consumed.
+        Returns (content_with_quotes, saw_newline).
+        Raises ParseError if unterminated.
+        """
+        chars = ["'"]
+        saw_newline = False
+        while self.pos < self.length:
+            c = self.source[self.pos]
+            if c == "\n":
+                saw_newline = True
+            chars.append(c)
+            self.pos += 1
+            if c == "'":
+                return "".join(chars), saw_newline
+        raise ParseError("Unterminated single quote", pos=start)
+
+    def _is_word_terminator(
+        self, ctx: int, ch: str, bracket_depth: int = 0, paren_depth: int = 0
+    ) -> bool:
+        """Check if character terminates word in given context."""
+        if ctx == WORD_CTX_REGEX:
+            if ch == "]" and self.pos + 1 < self.length and self.source[self.pos + 1] == "]":
+                return True
+            if ch == "&" and self.pos + 1 < self.length and self.source[self.pos + 1] == "&":
+                return True
+            if ch == ")" and paren_depth == 0:
+                return True
+            return _is_whitespace(ch) and paren_depth == 0
+        if ctx == WORD_CTX_COND:
+            if ch == "]" and self.pos + 1 < self.length and self.source[self.pos + 1] == "]":
+                return True
+            # ) always terminates, but ( is handled in the loop for extglob
+            if ch == ")":
+                return True
+            if ch == "&":
+                return True
+            if ch == "|":
+                return True
+            if ch == ";":
+                return True
+            # < and > terminate unless followed by ( (process sub)
+            if _is_redirect_char(ch) and not (
+                self.pos + 1 < self.length and self.source[self.pos + 1] == "("
+            ):
+                return True
+            return _is_whitespace(ch)
+        # WORD_CTX_NORMAL
+        # PST_EOFTOKEN: EOF token character terminates word at depth 0
+        if (
+            (self._parser_state & ParserStateFlags.PST_EOFTOKEN)
+            and self._eof_token is not None
+            and ch == self._eof_token
+            and bracket_depth == 0
+        ):
+            return True
+        # < and > don't terminate if followed by ( (process substitution)
+        if (
+            _is_redirect_char(ch)
+            and self.pos + 1 < self.length
+            and self.source[self.pos + 1] == "("
+        ):
+            return False
+        return _is_metachar(ch) and bracket_depth == 0
+
+    def _read_bracket_expression(
+        self, chars: list, parts: list, for_regex: bool = False, paren_depth: int = 0
+    ) -> bool:
+        """Scan [...] bracket expression. Returns True if consumed, False if [ is literal.
+
+        For regex mode, calls back to Parser._parse_dollar_expansion for $ expansions.
+        """
+        if for_regex:
+            # Regex mode: lookahead to check if bracket will close before terminators
+            scan = self.pos + 1
+            if scan < self.length and self.source[scan] == "^":
+                scan += 1
+            if scan < self.length and self.source[scan] == "]":
+                scan += 1
+            bracket_will_close = False
+            while scan < self.length:
+                sc = self.source[scan]
+                if sc == "]" and scan + 1 < self.length and self.source[scan + 1] == "]":
+                    break
+                if sc == ")" and paren_depth > 0:
+                    break
+                if sc == "&" and scan + 1 < self.length and self.source[scan + 1] == "&":
+                    break
+                if sc == "]":
+                    bracket_will_close = True
+                    break
+                if sc == "[" and scan + 1 < self.length and self.source[scan + 1] == ":":
+                    scan += 2
+                    while scan < self.length and not (
+                        self.source[scan] == ":"
+                        and scan + 1 < self.length
+                        and self.source[scan + 1] == "]"
+                    ):
+                        scan += 1
+                    if scan < self.length:
+                        scan += 2
+                    continue
+                scan += 1
+            if not bracket_will_close:
+                return False
+        else:
+            # Cond mode: check for [ followed by whitespace/operators
+            if self.pos + 1 >= self.length:
+                return False
+            next_ch = self.source[self.pos + 1]
+            if _is_whitespace_no_newline(next_ch) or next_ch == "&" or next_ch == "|":
+                return False
+        chars.append(self.advance())  # consume [
+        # Handle negation [^
+        if not self.at_end() and self.peek() == "^":
+            chars.append(self.advance())
+        # Handle ] as first char (literal ])
+        if not self.at_end() and self.peek() == "]":
+            chars.append(self.advance())
+        # Consume until closing ]
+        while not self.at_end():
+            c = self.peek()
+            if c == "]":
+                chars.append(self.advance())
+                break
+            if c == "[" and self.pos + 1 < self.length and self.source[self.pos + 1] == ":":
+                chars.append(self.advance())  # [
+                chars.append(self.advance())  # :
+                while not self.at_end() and not (
+                    self.peek() == ":"
+                    and self.pos + 1 < self.length
+                    and self.source[self.pos + 1] == "]"
+                ):
+                    chars.append(self.advance())
+                if not self.at_end():
+                    chars.append(self.advance())  # :
+                    chars.append(self.advance())  # ]
+            elif (
+                not for_regex
+                and c == "["
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == "="
+            ):
+                chars.append(self.advance())  # [
+                chars.append(self.advance())  # =
+                while not self.at_end() and not (
+                    self.peek() == "="
+                    and self.pos + 1 < self.length
+                    and self.source[self.pos + 1] == "]"
+                ):
+                    chars.append(self.advance())
+                if not self.at_end():
+                    chars.append(self.advance())  # =
+                    chars.append(self.advance())  # ]
+            elif (
+                not for_regex
+                and c == "["
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == "."
+            ):
+                chars.append(self.advance())  # [
+                chars.append(self.advance())  # .
+                while not self.at_end() and not (
+                    self.peek() == "."
+                    and self.pos + 1 < self.length
+                    and self.source[self.pos + 1] == "]"
+                ):
+                    chars.append(self.advance())
+                if not self.at_end():
+                    chars.append(self.advance())  # .
+                    chars.append(self.advance())  # ]
+            elif for_regex and c == "$":
+                # Callback to Parser for dollar expansion
+                self._sync_to_parser()
+                if not self._parser._parse_dollar_expansion(chars, parts):
+                    self._sync_from_parser()
+                    chars.append(self.advance())
+                else:
+                    self._sync_from_parser()
+            else:
+                chars.append(self.advance())
+        return True
+
+    def _parse_matched_pair(
+        self,
+        open_char: str,
+        close_char: str,
+        flags: int = 0,
+    ) -> str:
+        """Parse a matched pair construct, handling quotes via recursion.
+
+        This is the unified approach based on bash's parse_matched_pair().
+        Quotes are handled by recursive calls where the quote is both open and close.
+
+        Args:
+            open_char: Opening delimiter (e.g., '(', '{', '[', '"', "'")
+            close_char: Closing delimiter (e.g., ')', '}', ']', '"', "'")
+            flags: MatchedPairFlags controlling behavior
+
+        Returns:
+            The content between delimiters (not including the delimiters themselves).
+
+        Raises:
+            MatchedPairError: If EOF is reached before finding the closing delimiter.
+        """
+        start = self.pos
+        count = 1
+        chars: list[str] = []
+        pass_next = False
+
+        while count > 0:
+            if self.at_end():
+                raise MatchedPairError(
+                    f"unexpected EOF while looking for matching `{close_char}'",
+                    pos=start,
+                )
+
+            ch = self.advance()
+
+            # OP -> WORD transition in DOLBRACE mode
+            if (flags & MatchedPairFlags.DOLBRACE) and self._dolbrace_state == DolbraceState.OP:
+                if ch not in "#%^,~:-=?+/":
+                    self._dolbrace_state = DolbraceState.WORD
+
+            # Backslash escape handling - pass through next char
+            if pass_next:
+                pass_next = False
+                chars.append(ch)
+                continue
+
+            # Inside single quotes, almost everything is literal
+            if open_char == "'":
+                if ch == close_char:
+                    count -= 1
+                    if count == 0:
+                        break
+                # In $'...' mode, backslash escapes are processed
+                if ch == "\\" and (flags & MatchedPairFlags.ALLOWESC):
+                    pass_next = True
+                chars.append(ch)
+                continue
+
+            # Backslash - set pass_next flag
+            if ch == "\\":
+                # Line continuation - skip \n
+                if not self.at_end() and self.peek() == "\n":
+                    self.advance()
+                    continue
+                pass_next = True
+                chars.append(ch)
+                continue
+
+            # Closing delimiter
+            if ch == close_char:
+                count -= 1
+                if count == 0:
+                    break
+                chars.append(ch)
+                continue
+
+            # Opening delimiter (only when open != close)
+            # In DOLBRACE mode, don't track bare '{' - only ${...} nesting matters
+            # (handled by the $ block below via recursion)
+            if ch == open_char and open_char != close_char:
+                if not (flags & MatchedPairFlags.DOLBRACE and open_char == "{"):
+                    count += 1
+                chars.append(ch)
+                continue
+
+            # Quote characters trigger recursion (when not already in quote mode)
+            if ch in "'\"`" and open_char != close_char:
+                if ch == "'":
+                    # Single quote - recursively parse until matching '
+                    chars.append(ch)
+                    nested = self._parse_matched_pair("'", "'", flags)
+                    chars.append(nested)
+                    chars.append("'")
+                    continue
+                elif ch == '"':
+                    # Double quote - recursively parse until matching "
+                    chars.append(ch)
+                    nested = self._parse_matched_pair('"', '"', flags | MatchedPairFlags.DQUOTE)
+                    chars.append(nested)
+                    chars.append('"')
+                    continue
+                elif ch == "`":
+                    # Backtick - recursively parse until matching `
+                    chars.append(ch)
+                    nested = self._parse_matched_pair("`", "`", flags)
+                    chars.append(nested)
+                    chars.append("`")
+                    continue
+
+            # ${ $( $[ trigger nested parsing (unless in extglob where they're just pattern chars)
+            if ch == "$" and not self.at_end() and not (flags & MatchedPairFlags.EXTGLOB):
+                next_ch = self.peek()
+                if next_ch == "{":
+                    # In ARITH mode, only parse ${ if followed by funsub char (bash parse.y:4137-4145)
+                    # Otherwise treat $ as literal
+                    if flags & MatchedPairFlags.ARITH:
+                        after_brace_pos = self.pos + 1
+                        if after_brace_pos >= self.length or not _is_funsub_char(
+                            self.source[after_brace_pos]
+                        ):
+                            # Not funsub - treat $ as literal
+                            chars.append(ch)
+                            continue
+                    # ${ ... } parameter expansion - use full parsing
+                    self.pos -= 1  # back up to before $
+                    self._sync_to_parser()
+                    in_dquote = bool(flags & MatchedPairFlags.DQUOTE)
+                    param_node, param_text = self._parser._parse_param_expansion(in_dquote)
+                    self._sync_from_parser()
+                    if param_node:
+                        chars.append(param_text)
+                    else:
+                        # Parser failed - add $ as literal
+                        chars.append(self.advance())  # $
+                    continue
+                elif next_ch == "(":
+                    # Back up to before $ for Parser callback
+                    self.pos -= 1
+                    self._sync_to_parser()
+                    # Check if $(( arithmetic or $( command substitution
+                    if self.pos + 2 < self.length and self.source[self.pos + 2] == "(":
+                        # $(( ... )) arithmetic - use full parsing
+                        arith_node, arith_text = self._parser._parse_arithmetic_expansion()
+                        self._sync_from_parser()
+                        if arith_node:
+                            chars.append(arith_text)
+                        else:
+                            # Arithmetic failed - try as command substitution fallback
+                            self._sync_to_parser()
+                            cmd_node, cmd_text = self._parser._parse_command_substitution()
+                            self._sync_from_parser()
+                            if cmd_node:
+                                chars.append(cmd_text)
+                            else:
+                                # Both failed - add $( as literal
+                                chars.append(self.advance())  # $
+                                chars.append(self.advance())  # (
+                    else:
+                        # $( ... ) command substitution - use full parsing
+                        cmd_node, cmd_text = self._parser._parse_command_substitution()
+                        self._sync_from_parser()
+                        if cmd_node:
+                            chars.append(cmd_text)
+                        else:
+                            # Parser failed - add $( as literal
+                            chars.append(self.advance())  # $
+                            chars.append(self.advance())  # (
+                    continue
+                elif next_ch == "[":
+                    # Deprecated $[ ... ] arithmetic - use full parsing
+                    self.pos -= 1  # back up to before $
+                    self._sync_to_parser()
+                    arith_node, arith_text = self._parser._parse_deprecated_arithmetic()
+                    self._sync_from_parser()
+                    if arith_node:
+                        chars.append(arith_text)
+                    else:
+                        # Parser failed - add $ as literal
+                        chars.append(self.advance())  # $
+                    continue
+
+            chars.append(ch)
+
+        return "".join(chars)
+
+    def _collect_param_argument(self, flags: int = MatchedPairFlags.NONE) -> str:
+        """Collect argument portion of ${...} until closing brace.
+
+        Wraps _parse_matched_pair() with DOLBRACE flag for parameter expansion arguments.
+        """
+        return self._parse_matched_pair("{", "}", flags | MatchedPairFlags.DOLBRACE)
+
+    def _read_word_internal(
+        self,
+        ctx: int,
+        at_command_start: bool = False,
+        in_array_literal: bool = False,
+        in_assign_builtin: bool = False,
+    ) -> Word | None:
+        """Unified word parser with context-aware termination.
+
+        Uses callbacks to Parser for methods that need parse_list or other parsing.
+        """
+        start = self.pos
+        chars: list[str] = []
+        parts: list[Node] = []
+        bracket_depth = 0  # Track [...] for array subscripts (NORMAL only)
+        bracket_start_pos: int | None = None  # Position where bracket tracking started
+        seen_equals = False  # Track if we've seen = (NORMAL only)
+        paren_depth = 0  # Track regex grouping parens (REGEX only)
+        while not self.at_end():
+            ch = self.peek()
+            # REGEX: Backslash-newline continuation (check first)
+            if ctx == WORD_CTX_REGEX:
+                if ch == "\\" and self.pos + 1 < self.length and self.source[self.pos + 1] == "\n":
+                    self.advance()
+                    self.advance()
+                    continue
+            # Check termination for COND and REGEX contexts (NORMAL checks at end)
+            if ctx != WORD_CTX_NORMAL and self._is_word_terminator(
+                ctx, ch, bracket_depth, paren_depth
+            ):
+                break
+            # NORMAL: Array subscript tracking
+            if ctx == WORD_CTX_NORMAL and ch == "[":
+                if bracket_depth > 0:
+                    bracket_depth += 1
+                    chars.append(self.advance())
+                    continue
+                if (
+                    chars
+                    and at_command_start
+                    and not seen_equals
+                    and _is_array_assignment_prefix(chars)
+                ):
+                    prev_char = chars[len(chars) - 1]
+                    if prev_char.isalnum() or prev_char == "_":
+                        bracket_start_pos = self.pos
+                        bracket_depth += 1
+                        chars.append(self.advance())
+                        continue
+                if not chars and not seen_equals and in_array_literal:
+                    bracket_start_pos = self.pos
+                    bracket_depth += 1
+                    chars.append(self.advance())
+                    continue
+            if ctx == WORD_CTX_NORMAL and ch == "]" and bracket_depth > 0:
+                bracket_depth -= 1
+                chars.append(self.advance())
+                continue
+            if ctx == WORD_CTX_NORMAL and ch == "=" and bracket_depth == 0:
+                seen_equals = True
+            # REGEX: Track paren depth
+            if ctx == WORD_CTX_REGEX and ch == "(":
+                paren_depth += 1
+                chars.append(self.advance())
+                continue
+            if ctx == WORD_CTX_REGEX and ch == ")":
+                if paren_depth > 0:
+                    paren_depth -= 1
+                    chars.append(self.advance())
+                    continue
+                break
+            # COND/REGEX: Bracket expressions
+            if ctx in (WORD_CTX_COND, WORD_CTX_REGEX) and ch == "[":
+                for_regex = ctx == WORD_CTX_REGEX
+                if self._read_bracket_expression(
+                    chars, parts, for_regex=for_regex, paren_depth=paren_depth
+                ):
+                    continue
+                chars.append(self.advance())
+                continue
+            # COND: Extglob patterns or ( terminates
+            if ctx == WORD_CTX_COND and ch == "(":
+                if self._extglob and chars and _is_extglob_prefix(chars[len(chars) - 1]):
+                    chars.append(self.advance())  # (
+                    content = self._parse_matched_pair("(", ")", MatchedPairFlags.EXTGLOB)
+                    chars.append(content)
+                    chars.append(")")
+                    continue
+                else:
+                    # ( without extglob prefix terminates the word
+                    break
+            # REGEX: Space inside parens is part of pattern
+            if ctx == WORD_CTX_REGEX and _is_whitespace(ch) and paren_depth > 0:
+                chars.append(self.advance())
+                continue
+            # Single-quoted string
+            if ch == "'":
+                self.advance()
+                track_newline = ctx == WORD_CTX_NORMAL
+                content, saw_newline = self._read_single_quote(start)
+                chars.append(content)
+                if track_newline and saw_newline and self._parser is not None:
+                    self._parser._saw_newline_in_single_quote = True
+                continue
+            # Double-quoted string
+            if ch == '"':
+                self.advance()
+                if ctx == WORD_CTX_NORMAL:
+                    # NORMAL has special in_single_in_dquote and backtick handling
+                    chars.append('"')
+                    in_single_in_dquote = False
+                    while not self.at_end() and (in_single_in_dquote or self.peek() != '"'):
+                        c = self.peek()
+                        if in_single_in_dquote:
+                            chars.append(self.advance())
+                            if c == "'":
+                                in_single_in_dquote = False
+                            continue
+                        if c == "\\" and self.pos + 1 < self.length:
+                            next_c = self.source[self.pos + 1]
+                            if next_c == "\n":
+                                self.advance()
+                                self.advance()
+                            else:
+                                chars.append(self.advance())
+                                chars.append(self.advance())
+                        elif c == "$":
+                            # Callback to Parser for dollar expansion (inside dquote)
+                            self._sync_to_parser()
+                            if not self._parser._parse_dollar_expansion(
+                                chars, parts, in_dquote=True
+                            ):
+                                self._sync_from_parser()
+                                chars.append(self.advance())
+                            else:
+                                self._sync_from_parser()
+                        elif c == "`":
+                            # Callback to Parser for backtick substitution
+                            self._sync_to_parser()
+                            cmdsub_result = self._parser._parse_backtick_substitution()
+                            self._sync_from_parser()
+                            if cmdsub_result[0]:
+                                parts.append(cmdsub_result[0])
+                                chars.append(cmdsub_result[1])
+                            else:
+                                chars.append(self.advance())
+                        else:
+                            chars.append(self.advance())
+                    if self.at_end():
+                        raise ParseError("Unterminated double quote", pos=start)
+                    chars.append(self.advance())
+                else:
+                    # COND/REGEX modes - callback to Parser's _scan_double_quote
+                    handle_line_continuation = ctx == WORD_CTX_COND
+                    self._sync_to_parser()
+                    self._parser._scan_double_quote(chars, parts, start, handle_line_continuation)
+                    self._sync_from_parser()
+                continue
+            # Escape
+            if ch == "\\" and self.pos + 1 < self.length:
+                next_ch = self.source[self.pos + 1]
+                if ctx != WORD_CTX_REGEX and next_ch == "\n":
+                    self.advance()
+                    self.advance()
+                else:
+                    chars.append(self.advance())
+                    chars.append(self.advance())
+                continue
+            # NORMAL/COND: ANSI-C quoting $'...'
+            if (
+                ctx != WORD_CTX_REGEX
+                and ch == "$"
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == "'"
+            ):
+                ansi_result = self._read_ansi_c_quote()
+                if ansi_result[0]:
+                    parts.append(ansi_result[0])
+                    chars.append(ansi_result[1])
+                else:
+                    chars.append(self.advance())
+                continue
+            # NORMAL/COND: Locale translation $"..."
+            if (
+                ctx != WORD_CTX_REGEX
+                and ch == "$"
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == '"'
+            ):
+                locale_result = self._read_locale_string()
+                if locale_result[0]:
+                    parts.append(locale_result[0])
+                    parts.extend(locale_result[2])
+                    chars.append(locale_result[1])
+                else:
+                    chars.append(self.advance())
+                continue
+            # Dollar expansions - callback to Parser
+            if ch == "$":
+                self._sync_to_parser()
+                if not self._parser._parse_dollar_expansion(chars, parts):
+                    self._sync_from_parser()
+                    chars.append(self.advance())
+                else:
+                    self._sync_from_parser()
+                    # Special params $? $* $@ can be followed by () as extglob pattern
+                    if (
+                        self._extglob
+                        and ctx == WORD_CTX_NORMAL
+                        and chars
+                        and len(chars[len(chars) - 1]) == 2
+                        and chars[len(chars) - 1][0] == "$"
+                        and chars[len(chars) - 1][1] in "?*@"
+                        and not self.at_end()
+                        and self.peek() == "("
+                    ):
+                        chars.append(self.advance())  # (
+                        content = self._parse_matched_pair("(", ")", MatchedPairFlags.EXTGLOB)
+                        chars.append(content)
+                        chars.append(")")
+                continue
+            # NORMAL/COND: Backtick command substitution - callback to Parser
+            if ctx != WORD_CTX_REGEX and ch == "`":
+                self._sync_to_parser()
+                cmdsub_result = self._parser._parse_backtick_substitution()
+                self._sync_from_parser()
+                if cmdsub_result[0]:
+                    parts.append(cmdsub_result[0])
+                    chars.append(cmdsub_result[1])
+                else:
+                    chars.append(self.advance())
+                continue
+            # NORMAL/COND: Process substitution <(...) or >(...) - callback to Parser
+            if (
+                ctx != WORD_CTX_REGEX
+                and _is_redirect_char(ch)
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == "("
+            ):
+                self._sync_to_parser()
+                procsub_result = self._parser._parse_process_substitution()
+                self._sync_from_parser()
+                if procsub_result[0]:
+                    parts.append(procsub_result[0])
+                    chars.append(procsub_result[1])
+                elif procsub_result[1]:
+                    chars.append(procsub_result[1])
+                else:
+                    chars.append(self.advance())
+                    if ctx == WORD_CTX_NORMAL:
+                        chars.append(self.advance())
+                continue
+            # NORMAL: Array literal - callback to Parser
+            # Only if there's a valid variable name before = or +=
+            if ctx == WORD_CTX_NORMAL and ch == "(" and chars and bracket_depth == 0:
+                is_array_assign = False
+                # Check += first (before =) since += ends with =
+                if (
+                    len(chars) >= 3
+                    and chars[len(chars) - 2] == "+"
+                    and chars[len(chars) - 1] == "="
+                ):
+                    # Check chars before += form valid name
+                    is_array_assign = _is_array_assignment_prefix(chars[:-2])
+                elif chars[len(chars) - 1] == "=" and len(chars) >= 2:
+                    # Check chars before = form valid name
+                    is_array_assign = _is_array_assignment_prefix(chars[:-1])
+                if is_array_assign and (at_command_start or in_assign_builtin):
+                    self._sync_to_parser()
+                    array_result = self._parser._parse_array_literal()
+                    self._sync_from_parser()
+                    if array_result[0]:
+                        parts.append(array_result[0])
+                        chars.append(array_result[1])
+                    else:
+                        break
+                    continue
+            # NORMAL: Extglob pattern @(), ?(), *(), +(), !()
+            if (
+                self._extglob
+                and ctx == WORD_CTX_NORMAL
+                and _is_extglob_prefix(ch)
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == "("
+            ):
+                chars.append(self.advance())  # @, ?, *, +, or !
+                chars.append(self.advance())  # (
+                content = self._parse_matched_pair("(", ")", MatchedPairFlags.EXTGLOB)
+                chars.append(content)
+                chars.append(")")
+                continue
+            # NORMAL: PST_EOFTOKEN - EOF token character terminates word at depth 0
+            # But if we haven't read anything yet, read it as a single-char word
+            if (
+                ctx == WORD_CTX_NORMAL
+                and (self._parser_state & ParserStateFlags.PST_EOFTOKEN)
+                and self._eof_token is not None
+                and ch == self._eof_token
+                and bracket_depth == 0
+            ):
+                if not chars:
+                    chars.append(self.advance())
+                break
+            # NORMAL: Metacharacter terminates word (unless inside brackets)
+            if ctx == WORD_CTX_NORMAL and _is_metachar(ch) and bracket_depth == 0:
+                break
+            # Regular character
+            chars.append(self.advance())
+        # Check for unclosed bracket at EOF
+        if bracket_depth > 0 and bracket_start_pos is not None and self.at_end():
+            raise MatchedPairError("unexpected EOF looking for `]'", pos=bracket_start_pos)
+        if not chars:
+            return None
+        if parts:
+            return Word("".join(chars), parts)
+        return Word("".join(chars), None)
+
+    def _read_word(self) -> Token | None:
+        """Read a word token using _read_word_internal with current context."""
+        start = self.pos
+        if self.pos >= self.length:
+            return None
+        c = self.peek()
+        if c is None:
+            return None
+        # Allow process substitution <( and >( even though < and > are metachars
+        is_procsub = (
+            (c == "<" or c == ">")
+            and self.pos + 1 < self.length
+            and self.source[self.pos + 1] == "("
+        )
+        # In REGEX context, ( and ) are regex grouping, not metachars
+        is_regex_paren = self._word_context == WORD_CTX_REGEX and (c == "(" or c == ")")
+        if self.is_metachar(c) and not is_procsub and not is_regex_paren:
+            return None
+        word = self._read_word_internal(
+            self._word_context,
+            self._at_command_start,
+            self._in_array_literal,
+            self._in_assign_builtin,
+        )
+        if word is None:
+            return None
+        return Token(TokenType.WORD, word.value, start, None, word)
+
+    def next_token(self) -> Token:
+        """Return the next token from the input."""
+        if self._token_cache is not None:
+            tok = self._token_cache
+            self._token_cache = None
+            self._last_read_token = tok
+            return tok
+        self.skip_blanks()
+        if self.at_end():
+            tok = Token(TokenType.EOF, "", self.pos)
+            self._last_read_token = tok
+            return tok
+        # EOF token mechanism: return EOF when we hit the closing delimiter at depth 0
+        # PST_EOFTOKEN: let normal tokenization proceed, grammar will handle it
+        if (
+            self._eof_token is not None
+            and self.peek() == self._eof_token
+            and not (self._parser_state & ParserStateFlags.PST_CASEPAT)
+            and not (self._parser_state & ParserStateFlags.PST_EOFTOKEN)
+        ):
+            tok = Token(TokenType.EOF, "", self.pos)
+            self._last_read_token = tok
+            return tok
+        while self._skip_comment():
+            self.skip_blanks()
+            if self.at_end():
+                tok = Token(TokenType.EOF, "", self.pos)
+                self._last_read_token = tok
+                return tok
+            # Check EOF token again after comment
+            if (
+                self._eof_token is not None
+                and self.peek() == self._eof_token
+                and not (self._parser_state & ParserStateFlags.PST_CASEPAT)
+                and not (self._parser_state & ParserStateFlags.PST_EOFTOKEN)
+            ):
+                tok = Token(TokenType.EOF, "", self.pos)
+                self._last_read_token = tok
+                return tok
+        tok = self._read_operator()
+        if tok is not None:
+            self._last_read_token = tok
+            return tok
+        tok = self._read_word()
+        if tok is not None:
+            self._last_read_token = tok
+            return tok
+        tok = Token(TokenType.EOF, "", self.pos)
+        self._last_read_token = tok
+        return tok
+
+    def peek_token(self) -> Token:
+        """Peek at next token without consuming."""
+        if self._token_cache is None:
+            saved_last = self._last_read_token
+            self._token_cache = self.next_token()
+            self._last_read_token = saved_last  # Peeking shouldn't advance history
+        return self._token_cache
+
+    def _read_ansi_c_quote(self) -> tuple[Node | None, str]:
+        """Read ANSI-C quoting $'...'.
+
+        Returns (node, text) where node is the AST node and text is the raw text.
+        Returns (None, "") if not a valid ANSI-C quote.
+        """
+        if self.at_end() or self.peek() != "$":
+            return None, ""
+        if self.pos + 1 >= self.length or self.source[self.pos + 1] != "'":
+            return None, ""
+        start = self.pos
+        self.advance()  # consume $
+        self.advance()  # consume opening '
+        content_chars: list[str] = []
+        found_close = False
+        while not self.at_end():
+            ch = self.peek()
+            if ch == "'":
+                self.advance()  # consume closing '
+                found_close = True
+                break
+            elif ch == "\\":
+                # Escape sequence - include both backslash and following char
+                content_chars.append(self.advance())  # backslash
+                if not self.at_end():
+                    content_chars.append(self.advance())  # escaped char
+            else:
+                content_chars.append(self.advance())
+        if not found_close:
+            # Unterminated ANSI-C quote - this is an error, not a fallback
+            raise MatchedPairError("unexpected EOF while looking for matching `''", pos=start)
+        text = _substring(self.source, start, self.pos)
+        content = "".join(content_chars)
+        node = AnsiCQuote(content)
+        return node, text
+
+    def _sync_to_parser(self) -> None:
+        """Sync Parser position to Lexer position before calling Parser methods."""
+        if self._parser is not None:
+            self._parser.pos = self.pos
+
+    def _sync_from_parser(self) -> None:
+        """Sync Lexer position from Parser position after calling Parser methods."""
+        if self._parser is not None:
+            self.pos = self._parser.pos
+
+    def _read_locale_string(self) -> tuple[Node | None, str, list[Node]]:
+        """Read locale translation $"...".
+
+        Returns (node, text, inner_parts) where:
+        - node is the LocaleString AST node
+        - text is the raw text including $"..."
+        - inner_parts is a list of expansion nodes found inside
+        Returns (None, "", []) if not a valid locale string.
+        """
+        if self.at_end() or self.peek() != "$":
+            return None, "", []
+        if self.pos + 1 >= self.length or self.source[self.pos + 1] != '"':
+            return None, "", []
+        start = self.pos
+        self.advance()  # consume $
+        self.advance()  # consume opening "
+        content_chars: list[str] = []
+        inner_parts: list[Node] = []
+        found_close = False
+        while not self.at_end():
+            ch = self.peek()
+            if ch == '"':
+                self.advance()  # consume closing "
+                found_close = True
+                break
+            elif ch == "\\" and self.pos + 1 < self.length:
+                # Escape sequence (line continuation removes both)
+                next_ch = self.source[self.pos + 1]
+                if next_ch == "\n":
+                    # Line continuation - skip both backslash and newline
+                    self.advance()
+                    self.advance()
+                else:
+                    content_chars.append(self.advance())  # backslash
+                    content_chars.append(self.advance())  # escaped char
+            # Handle arithmetic expansion $((...))
+            elif (
+                ch == "$"
+                and self.pos + 2 < self.length
+                and self.source[self.pos + 1] == "("
+                and self.source[self.pos + 2] == "("
+            ):
+                # Delegate to Parser (sync positions for callback)
+                self._sync_to_parser()
+                arith_node, arith_text = self._parser._parse_arithmetic_expansion()
+                self._sync_from_parser()
+                if arith_node:
+                    inner_parts.append(arith_node)
+                    content_chars.append(arith_text)
+                else:
+                    # Not arithmetic - try command substitution
+                    self._sync_to_parser()
+                    cmdsub_node, cmdsub_text = self._parser._parse_command_substitution()
+                    self._sync_from_parser()
+                    if cmdsub_node:
+                        inner_parts.append(cmdsub_node)
+                        content_chars.append(cmdsub_text)
+                    else:
+                        content_chars.append(self.advance())
+            # Handle command substitution $(...)
+            elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                self._sync_to_parser()
+                cmdsub_node, cmdsub_text = self._parser._parse_command_substitution()
+                self._sync_from_parser()
+                if cmdsub_node:
+                    inner_parts.append(cmdsub_node)
+                    content_chars.append(cmdsub_text)
+                else:
+                    content_chars.append(self.advance())
+            # Handle parameter expansion
+            elif ch == "$":
+                self._sync_to_parser()
+                param_node, param_text = self._parser._parse_param_expansion()
+                self._sync_from_parser()
+                if param_node:
+                    inner_parts.append(param_node)
+                    content_chars.append(param_text)
+                else:
+                    content_chars.append(self.advance())
+            # Handle backtick command substitution
+            elif ch == "`":
+                self._sync_to_parser()
+                cmdsub_node, cmdsub_text = self._parser._parse_backtick_substitution()
+                self._sync_from_parser()
+                if cmdsub_node:
+                    inner_parts.append(cmdsub_node)
+                    content_chars.append(cmdsub_text)
+                else:
+                    content_chars.append(self.advance())
+            else:
+                content_chars.append(self.advance())
+        if not found_close:
+            # Unterminated - reset and return None
+            self.pos = start
+            return None, "", []
+        content = "".join(content_chars)
+        # Reconstruct text from parsed content (handles line continuation removal)
+        text = '$"' + content + '"'
+        return LocaleString(content), text, inner_parts
+
+    def _update_dolbrace_for_op(self, op: str | None, has_param: bool) -> None:
+        """Update dolbrace state based on operator seen."""
+        if self._dolbrace_state == DolbraceState.NONE:
+            return
+        if op is None or len(op) == 0:
+            return
+        first_char = op[0]
+        if self._dolbrace_state == DolbraceState.PARAM and has_param:
+            if first_char in "%#^,":
+                self._dolbrace_state = DolbraceState.QUOTE
+                return
+            if first_char == "/":
+                self._dolbrace_state = DolbraceState.QUOTE2
+                return
+        if self._dolbrace_state == DolbraceState.PARAM:
+            if first_char in "#%^,~:-=?+/":
+                self._dolbrace_state = DolbraceState.OP
+
+    def _consume_param_operator(self) -> str | None:
+        """Consume a parameter expansion operator."""
+        if self.at_end():
+            return None
+        ch = self.peek()
+        # Operators with optional colon prefix: :- := :? :+
+        if ch == ":":
+            self.advance()
+            if self.at_end():
+                return ":"
+            next_ch = self.peek()
+            if _is_simple_param_op(next_ch):
+                self.advance()
+                return ":" + next_ch
+            return ":"
+        # Operators without colon: - = ? +
+        if _is_simple_param_op(ch):
+            self.advance()
+            return ch
+        # Pattern removal: # ## % %%
+        if ch == "#":
+            self.advance()
+            if not self.at_end() and self.peek() == "#":
+                self.advance()
+                return "##"
+            return "#"
+        if ch == "%":
+            self.advance()
+            if not self.at_end() and self.peek() == "%":
+                self.advance()
+                return "%%"
+            return "%"
+        # Substitution: / // /# /%
+        if ch == "/":
+            self.advance()
+            if not self.at_end():
+                next_ch = self.peek()
+                if next_ch == "/":
+                    self.advance()
+                    return "//"
+                elif next_ch == "#":
+                    self.advance()
+                    return "/#"
+                elif next_ch == "%":
+                    self.advance()
+                    return "/%"
+            return "/"
+        # Case modification: ^ ^^ , ,,
+        if ch == "^":
+            self.advance()
+            if not self.at_end() and self.peek() == "^":
+                self.advance()
+                return "^^"
+            return "^"
+        if ch == ",":
+            self.advance()
+            if not self.at_end() and self.peek() == ",":
+                self.advance()
+                return ",,"
+            return ","
+        # Transformation: @
+        if ch == "@":
+            self.advance()
+            return "@"
+        return None
+
+    def _param_subscript_has_close(self, start_pos: int) -> bool:
+        """Check for a matching ] in a parameter subscript before closing }."""
+        depth = 1
+        i = start_pos + 1
+        quote = QuoteState()
+        while i < self.length:
+            c = self.source[i]
+            if quote.single:
+                if c == "'":
+                    quote.single = False
+                i += 1
+                continue
+            if quote.double:
+                if c == "\\" and i + 1 < self.length:
+                    i += 2
+                    continue
+                if c == '"':
+                    quote.double = False
+                i += 1
+                continue
+            if c == "'":
+                quote.single = True
+                i += 1
+                continue
+            if c == '"':
+                quote.double = True
+                i += 1
+                continue
+            if c == "\\":
+                i += 2
+                continue
+            if c == "}":
+                return False
+            if c == "[":
+                depth += 1
+            elif c == "]":
+                depth -= 1
+                if depth == 0:
+                    return True
+            i += 1
+        return False
+
+    def _consume_param_name(self) -> str | None:
+        """Consume a parameter name (variable name, special char, or array subscript)."""
+        if self.at_end():
+            return None
+        ch = self.peek()
+        # Special parameters (but NOT $ followed by { ' or " - those are special expansions)
+        if _is_special_param(ch):
+            if ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] in "{'\"":
+                return None
+            self.advance()
+            return ch
+        # Digits (positional params)
+        if ch.isdigit():
+            name_chars: list[str] = []
+            while not self.at_end() and self.peek().isdigit():
+                name_chars.append(self.advance())
+            return "".join(name_chars)
+        # Variable name
+        if ch.isalpha() or ch == "_":
+            name_chars = []
+            while not self.at_end():
+                c = self.peek()
+                if c.isalnum() or c == "_":
+                    name_chars.append(self.advance())
+                elif c == "[":
+                    if not self._param_subscript_has_close(self.pos):
+                        break
+                    # Array subscript - use _parse_matched_pair for bracket/quote handling
+                    name_chars.append(self.advance())  # [
+                    content = self._parse_matched_pair("[", "]")
+                    name_chars.append(content)
+                    name_chars.append("]")
+                    break
+                else:
+                    break
+            if name_chars:
+                return "".join(name_chars)
+            else:
+                return None
+        return None
+
+    def _read_param_expansion(self, in_dquote: bool = False) -> tuple[Node | None, str]:
+        """Read a parameter expansion starting at $.
+
+        Returns (node, text) where node is the AST node and text is the raw text.
+        in_dquote is True if this expansion is inside double quotes.
+        Returns (None, "") if not a valid parameter expansion.
+        """
+        if self.at_end() or self.peek() != "$":
+            return None, ""
+        start = self.pos
+        self.advance()  # consume $
+        if self.at_end():
+            self.pos = start
+            return None, ""
+        ch = self.peek()
+        # Braced expansion ${...}
+        if ch == "{":
+            self.advance()  # consume {
+            return self._read_braced_param(start, in_dquote)
+        # Simple expansion $var or $special
+        if _is_special_param_unbraced(ch) or _is_digit(ch) or ch == "#":
+            self.advance()
+            text = _substring(self.source, start, self.pos)
+            return ParamExpansion(ch), text
+        # Variable name [a-zA-Z_][a-zA-Z0-9_]*
+        if ch.isalpha() or ch == "_":
+            name_start = self.pos
+            while not self.at_end():
+                c = self.peek()
+                if c.isalnum() or c == "_":
+                    self.advance()
+                else:
+                    break
+            name = _substring(self.source, name_start, self.pos)
+            text = _substring(self.source, start, self.pos)
+            return ParamExpansion(name), text
+        # Not a valid expansion, restore position
+        self.pos = start
+        return None, ""
+
+    def _read_braced_param(self, start: int, in_dquote: bool = False) -> tuple[Node | None, str]:
+        """Read contents of ${...} after the opening brace.
+
+        start is the position of the $.
+        in_dquote is True if this expansion is inside double quotes.
+        Returns (node, text).
+        """
+        if self.at_end():
+            raise MatchedPairError("unexpected EOF looking for `}'", pos=start)
+        # Save and initialize dolbrace state
+        saved_dolbrace = self._dolbrace_state
+        self._dolbrace_state = DolbraceState.PARAM
+        ch = self.peek()
+        # Brace command substitution ${ cmd; } or ${| cmd; }
+        if _is_funsub_char(ch):
+            self._dolbrace_state = saved_dolbrace
+            return self._read_funsub(start)
+        # ${#param} - length
+        if ch == "#":
+            self.advance()
+            param = self._consume_param_name()
+            if param and not self.at_end() and self.peek() == "}":
+                self.advance()
+                text = _substring(self.source, start, self.pos)
+                self._dolbrace_state = saved_dolbrace
+                return ParamLength(param), text
+            # Not a simple length expansion - fall through to parse as regular expansion
+            self.pos = start + 2  # reset to just after ${
+        # ${!param} or ${!param<op><arg>} - indirect
+        if ch == "!":
+            self.advance()
+            while not self.at_end() and _is_whitespace_no_newline(self.peek()):
+                self.advance()
+            param = self._consume_param_name()
+            if param:
+                # Skip optional whitespace before closing brace
+                while not self.at_end() and _is_whitespace_no_newline(self.peek()):
+                    self.advance()
+                if not self.at_end() and self.peek() == "}":
+                    self.advance()
+                    text = _substring(self.source, start, self.pos)
+                    self._dolbrace_state = saved_dolbrace
+                    return ParamIndirect(param), text
+                # ${!prefix@} and ${!prefix*} are prefix matching
+                if not self.at_end() and _is_at_or_star(self.peek()):
+                    suffix = self.advance()
+                    trailing = self._parse_matched_pair("{", "}", MatchedPairFlags.DOLBRACE)
+                    text = _substring(self.source, start, self.pos)
+                    self._dolbrace_state = saved_dolbrace
+                    return ParamIndirect(param + suffix + trailing), text
+                # Check for operator (e.g., ${!##} = indirect of # with # op)
+                op = self._consume_param_operator()
+                if op is None and not self.at_end() and self.peek() not in "}\"'`":
+                    op = self.advance()
+                if op is not None and op not in "\"'`":
+                    arg = self._parse_matched_pair("{", "}", MatchedPairFlags.DOLBRACE)
+                    text = _substring(self.source, start, self.pos)
+                    self._dolbrace_state = saved_dolbrace
+                    return ParamIndirect(param, op, arg), text
+                # Fell through - continue to general parsing
+                if self.at_end():
+                    self._dolbrace_state = saved_dolbrace
+                    raise MatchedPairError("unexpected EOF looking for `}'", pos=start)
+                self.pos = start + 2  # reset to just after ${
+            else:
+                # ${! followed by non-param char like | - fall through to regular parsing
+                self.pos = start + 2  # reset to just after ${
+        # ${param} or ${param<op><arg>}
+        param = self._consume_param_name()
+        if not param:
+            # Allow empty parameter for simple operators like ${:-word}
+            if not self.at_end() and (
+                self.peek() in "-=+?"
+                or (
+                    self.peek() == ":"
+                    and self.pos + 1 < self.length
+                    and _is_simple_param_op(self.source[self.pos + 1])
+                )
+            ):
+                param = ""
+            else:
+                # Unknown syntax - consume until matching }
+                content = self._parse_matched_pair("{", "}", MatchedPairFlags.DOLBRACE)
+                text = "${" + content + "}"
+                self._dolbrace_state = saved_dolbrace
+                return ParamExpansion(content), text
+        if self.at_end():
+            self._dolbrace_state = saved_dolbrace
+            raise MatchedPairError("unexpected EOF looking for `}'", pos=start)
+        # Check for closing brace (simple expansion)
+        if self.peek() == "}":
+            self.advance()
+            text = _substring(self.source, start, self.pos)
+            self._dolbrace_state = saved_dolbrace
+            return ParamExpansion(param), text
+        # Parse operator
+        op = self._consume_param_operator()
+        if op is None:
+            # Check for $" or $' which should have $ stripped
+            if (
+                not self.at_end()
+                and self.peek() == "$"
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] in ('"', "'")
+            ):
+                dollar_count = 1 + _count_consecutive_dollars_before(self.source, self.pos)
+                if dollar_count % 2 == 1:
+                    op = ""
+                else:
+                    op = self.advance()
+            elif not self.at_end() and self.peek() == "`":
+                backtick_pos = self.pos
+                self.advance()
+                while not self.at_end() and self.peek() != "`":
+                    bc = self.peek()
+                    if bc == "\\" and self.pos + 1 < self.length:
+                        next_c = self.source[self.pos + 1]
+                        if _is_escape_char_in_backtick(next_c):
+                            self.advance()
+                    self.advance()
+                if self.at_end():
+                    self._dolbrace_state = saved_dolbrace
+                    raise ParseError("Unterminated backtick", pos=backtick_pos)
+                self.advance()
+                op = "`"
+            elif (
+                not self.at_end()
+                and self.peek() == "$"
+                and self.pos + 1 < self.length
+                and self.source[self.pos + 1] == "{"
+            ):
+                op = ""
+            elif not self.at_end() and self.peek() in ("'", '"'):
+                # Quotes start the argument, not the operator
+                op = ""
+            elif not self.at_end() and self.peek() == "\\":
+                # Backslash escapes the following character
+                op = self.advance()
+                if not self.at_end():
+                    op += self.advance()
+            else:
+                op = self.advance()
+        # Update dolbrace state based on operator
+        self._update_dolbrace_for_op(op, len(param) > 0)
+        # Parse argument (everything until closing brace)
+        try:
+            flags = MatchedPairFlags.DQUOTE if in_dquote else MatchedPairFlags.NONE
+            arg = self._collect_param_argument(flags)
+        except MatchedPairError as e:
+            self._dolbrace_state = saved_dolbrace
+            raise e
+        # Format process substitution content within param expansion
+        if op in ("<", ">") and arg.startswith("(") and arg.endswith(")"):
+            inner = arg[1:-1]
+            try:
+                # Use Parser for formatting (calls back via _parser reference)
+                sub_parser = Parser(inner, in_process_sub=True, extglob=self._parser._extglob)
+                parsed = sub_parser.parse_list()
+                if parsed and sub_parser.at_end():
+                    formatted = _format_cmdsub_node(parsed, 0, True, False, True)
+                    arg = "(" + formatted + ")"
+            except Exception:
+                pass
+        text = "${" + param + op + arg + "}"
+        self._dolbrace_state = saved_dolbrace
+        return ParamExpansion(param, op, arg), text
+
+    def _read_funsub(self, start: int) -> tuple[Node | None, str]:
+        """Read brace command substitution ${ cmd; } or ${| cmd; }."""
+        return self._parser._parse_funsub(start)
+
+    # Reserved words mapping
+    RESERVED_WORDS: dict[str, int] = {
+        "if": TokenType.IF,
+        "then": TokenType.THEN,
+        "else": TokenType.ELSE,
+        "elif": TokenType.ELIF,
+        "fi": TokenType.FI,
+        "case": TokenType.CASE,
+        "esac": TokenType.ESAC,
+        "for": TokenType.FOR,
+        "while": TokenType.WHILE,
+        "until": TokenType.UNTIL,
+        "do": TokenType.DO,
+        "done": TokenType.DONE,
+        "in": TokenType.IN,
+        "function": TokenType.FUNCTION,
+        "select": TokenType.SELECT,
+        "coproc": TokenType.COPROC,
+        "time": TokenType.TIME,
+        "!": TokenType.BANG,
+        "[[": TokenType.LBRACKET_LBRACKET,
+        "]]": TokenType.RBRACKET_RBRACKET,
+        "{": TokenType.LBRACE,
+        "}": TokenType.RBRACE,
+    }
+
+
+def _strip_line_continuations_comment_aware(text: str) -> str:
+    """Strip backslash-newline line continuations, preserving newlines in comments.
+
+    In comments, backslash-newline is replaced with just newline (to keep the comment
+    terminator). Outside comments, backslash-newline is fully removed.
+    """
+    result = []
+    i = 0
+    in_comment = False
+    quote = QuoteState()
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and i + 1 < len(text) and text[i + 1] == "\n":
+            # Count preceding backslashes to determine if this backslash is escaped
+            num_preceding_backslashes = 0
+            j = i - 1
+            while j >= 0 and text[j] == "\\":
+                num_preceding_backslashes += 1
+                j -= 1
+            # If there's an even number of preceding backslashes (including 0),
+            # this backslash escapes the newline (line continuation)
+            # If odd, this backslash is itself escaped
+            if num_preceding_backslashes % 2 == 0:
+                # Line continuation
+                if in_comment:
+                    result.append("\n")
+                i += 2
+                in_comment = False
+                continue
+            # else: backslash is escaped, don't treat as line continuation, fall through
+        if c == "\n":
+            in_comment = False
+            result.append(c)
+            i += 1
+            continue
+        if c == "'" and not quote.double and not in_comment:
+            quote.single = not quote.single
+        elif c == '"' and not quote.single and not in_comment:
+            quote.double = not quote.double
+        elif c == "#" and not quote.single and not in_comment:
+            in_comment = True
+        result.append(c)
         i += 1
     return "".join(result)
 
@@ -128,6 +2009,8 @@ class Word(Node):
         value = self._normalize_array_whitespace(value)
         # Format command substitutions with bash-oracle pretty-printing (before escaping)
         value = self._format_command_substitutions(value)
+        # Convert newlines at param expansion boundaries to spaces (bash behavior)
+        value = self._normalize_param_expansion_newlines(value)
         # Strip line continuations (backslash-newline) from arithmetic expressions
         value = self._strip_arith_line_continuations(value)
         # Double CTLESC (0x01) bytes - bash-oracle uses this for quoting control chars
@@ -137,6 +2020,9 @@ class Word(Node):
         value = value.replace("\x7f", "\x01\x7f")
         # Escape backslashes for s-expression output
         value = value.replace("\\", "\\\\")
+        # Double trailing escaped backslash (bash-oracle outputs \\\\ for trailing \)
+        if value.endswith("\\\\") and not value.endswith("\\\\\\\\"):
+            value = value + "\\\\"
         # Escape double quotes, newlines, and tabs
         escaped = value.replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
         return '(word "' + escaped + '")'
@@ -148,19 +2034,18 @@ class Word(Node):
     def _double_ctlesc_smart(self, value: str) -> str:
         """Double CTLESC bytes unless escaped by backslash inside double quotes."""
         result = []
-        in_single = False
-        in_double = False
+        quote = QuoteState()
         for c in value:
             # Track quote state
-            if c == "'" and not in_double:
-                in_single = not in_single
-            elif c == '"' and not in_single:
-                in_double = not in_double
+            if c == "'" and not quote.double:
+                quote.single = not quote.single
+            elif c == '"' and not quote.single:
+                quote.double = not quote.double
             result.append(c)
             if c == "\x01":
                 # Only count backslashes in double-quoted context (where they escape)
                 # In single quotes, backslashes are literal, so always double CTLESC
-                if in_double:
+                if quote.double:
                     bs_count = 0
                     for j in range(len(result) - 2, -1, -1):
                         if result[j] == "\\":
@@ -172,6 +2057,71 @@ class Word(Node):
                 else:
                     # Outside double quotes (including single quotes): always double
                     result.append("\x01")
+        return "".join(result)
+
+    def _normalize_param_expansion_newlines(self, value: str) -> str:
+        """Normalize newlines at param expansion boundaries.
+
+        When there's a newline immediately after ${, bash converts it to a space
+        and adds a trailing space before the closing }.
+        """
+        result = []
+        i = 0
+        quote = QuoteState()
+        while i < len(value):
+            c = value[i]
+            # Track quote state
+            if c == "'" and not quote.double:
+                quote.single = not quote.single
+                result.append(c)
+                i += 1
+            elif c == '"' and not quote.single:
+                quote.double = not quote.double
+                result.append(c)
+                i += 1
+            # Check for ${ param expansion
+            elif c == "$" and i + 1 < len(value) and value[i + 1] == "{" and not quote.single:
+                result.append("$")
+                result.append("{")
+                i += 2
+                # Check for leading newline and convert to space
+                had_leading_newline = i < len(value) and value[i] == "\n"
+                if had_leading_newline:
+                    result.append(" ")
+                    i += 1
+                # Find matching close brace and process content
+                depth = 1
+                while i < len(value) and depth > 0:
+                    ch = value[i]
+                    if ch == "\\" and i + 1 < len(value) and not quote.single:
+                        if value[i + 1] == "\n":
+                            i += 2
+                            continue
+                        result.append(ch)
+                        result.append(value[i + 1])
+                        i += 2
+                        continue
+                    if ch == "'" and not quote.double:
+                        quote.single = not quote.single
+                    elif ch == '"' and not quote.single:
+                        quote.double = not quote.double
+                    elif not quote.in_quotes():
+                        if ch == "{":
+                            depth += 1
+                        elif ch == "}":
+                            depth -= 1
+                            if depth == 0:
+                                # Add trailing space if we had leading newline
+                                if had_leading_newline:
+                                    result.append(" ")
+                                result.append(ch)
+                                i += 1
+                                break
+                    result.append(ch)
+                    i += 1
+            else:
+                result.append(c)
+                i += 1
         return "".join(result)
 
     def _expand_ansi_c_escapes(self, value: str) -> str:
@@ -224,9 +2174,7 @@ class Word(Node):
                             byte_val = int(_substring(inner, i + 2, j), 16)
                             if byte_val == 0:
                                 # NUL truncates string
-                                return (
-                                    "'" + result.decode("utf-8", errors="replace") + "'"
-                                )
+                                return "'" + result.decode("utf-8", errors="replace") + "'"
                             self._append_with_ctlesc(result, byte_val)
                             i = j
                         else:
@@ -266,22 +2214,26 @@ class Word(Node):
                     # Control character \cX - mask with 0x1f
                     if i + 3 <= len(inner):
                         ctrl_char = inner[i + 2]
+                        # POSIX: $'\c\\' consumes both backslashes
+                        skip_extra = 0
+                        if ctrl_char == "\\" and i + 4 <= len(inner) and inner[i + 3] == "\\":
+                            skip_extra = 1
                         ctrl_val = ord(ctrl_char) & 0x1F
                         if ctrl_val == 0:
                             # NUL truncates string
                             return "'" + result.decode("utf-8", errors="replace") + "'"
                         self._append_with_ctlesc(result, ctrl_val)
-                        i += 3
+                        i += 3 + skip_extra
                     else:
                         result.append(ord(inner[i]))
                         i += 1
                 elif c == "0":
-                    # Nul or octal \0 or \0NNN
+                    # Nul or octal \0 or \0NN (up to 3 digits total)
                     j = i + 2
-                    while j < len(inner) and j < i + 5 and _is_octal_digit(inner[j]):
+                    while j < len(inner) and j < i + 4 and _is_octal_digit(inner[j]):
                         j += 1
                     if j > i + 2:
-                        byte_val = int(_substring(inner, i + 1, j), 8)
+                        byte_val = int(_substring(inner, i + 1, j), 8) & 0xFF
                         if byte_val == 0:
                             # NUL truncates string
                             return "'" + result.decode("utf-8", errors="replace") + "'"
@@ -291,11 +2243,11 @@ class Word(Node):
                         # Just \0 - NUL truncates string
                         return "'" + result.decode("utf-8", errors="replace") + "'"
                 elif c >= "1" and c <= "7":
-                    # Octal escape \NNN (1-3 digits) - raw byte
+                    # Octal escape \NNN (1-3 digits) - raw byte, wraps at 256
                     j = i + 1
                     while j < len(inner) and j < i + 4 and _is_octal_digit(inner[j]):
                         j += 1
-                    byte_val = int(_substring(inner, i + 1, j), 8)
+                    byte_val = int(_substring(inner, i + 1, j), 8) & 0xFF
                     if byte_val == 0:
                         # NUL truncates string
                         return "'" + result.decode("utf-8", errors="replace") + "'"
@@ -316,14 +2268,13 @@ class Word(Node):
         """Find and expand ALL $'...' ANSI-C quoted strings in value."""
         result = []
         i = 0
-        in_single_quote = False
-        in_double_quote = False
+        quote = QuoteState()
         in_backtick = False  # Track backtick substitutions - don't expand inside
         brace_depth = 0  # Track ${...} nesting - inside braces, $'...' is expanded
         while i < len(value):
             ch = value[i]
             # Track backtick context - don't expand $'...' inside backticks
-            if ch == "`" and not in_single_quote:
+            if ch == "`" and not quote.single:
                 in_backtick = not in_backtick
                 result.append(ch)
                 i += 1
@@ -339,39 +2290,48 @@ class Word(Node):
                     i += 1
                 continue
             # Track brace depth for parameter expansions
-            if not in_single_quote:
+            if not quote.single:
                 if _starts_with_at(value, i, "${"):
                     brace_depth += 1
+                    quote.push()
                     result.append("${")
                     i += 2
                     continue
-                elif ch == "}" and brace_depth > 0:
+                elif ch == "}" and brace_depth > 0 and not quote.double:
                     brace_depth -= 1
                     result.append(ch)
+                    quote.pop()
                     i += 1
                     continue
-            # Inside ${...}, we can expand $'...' even if originally in double quotes
-            effective_in_dquote = in_double_quote and brace_depth == 0
+            # Double quotes inside ${...} still protect $'...' from expansion
+            effective_in_dquote = quote.double
             # Track quote state to avoid matching $' inside regular quotes
             if ch == "'" and not effective_in_dquote:
-                # Toggle quote state unless this is $' (handled below)
-                if not (not in_single_quote and i > 0 and value[i - 1] == "$"):
-                    in_single_quote = not in_single_quote
+                # Toggle quote state unless this is $' that will be expanded as ANSI-C
+                is_ansi_c = (
+                    not quote.single
+                    and i > 0
+                    and value[i - 1] == "$"
+                    and _count_consecutive_dollars_before(value, i - 1) % 2 == 0
+                )
+                if not is_ansi_c:
+                    quote.single = not quote.single
                 result.append(ch)
                 i += 1
-            elif ch == '"' and not in_single_quote:
-                in_double_quote = not in_double_quote
+            elif ch == '"' and not quote.single:
+                quote.double = not quote.double
                 result.append(ch)
                 i += 1
-            elif ch == "\\" and i + 1 < len(value) and not in_single_quote:
+            elif ch == "\\" and i + 1 < len(value) and not quote.single:
                 # Backslash escape - skip both chars to avoid misinterpreting \" or \'
                 result.append(ch)
                 result.append(value[i + 1])
                 i += 2
             elif (
                 _starts_with_at(value, i, "$'")
-                and not in_single_quote
+                and not quote.single
                 and not effective_in_dquote
+                and _count_consecutive_dollars_before(value, i) % 2 == 0
             ):
                 # ANSI-C quoted string - find matching closing quote
                 j = i + 2
@@ -389,25 +2349,96 @@ class Word(Node):
                 expanded = self._expand_ansi_c_escapes(
                     _substring(ansi_str, 1, len(ansi_str))
                 )  # Pass 'hello\nworld'
-                # Inside ${...}, strip quotes for default/alternate value operators
-                # but keep them for pattern replacement operators
+                # Inside ${...} that's itself in double quotes, check if quotes should be stripped
+                outer_in_dquote = quote.outer_double()
                 if (
                     brace_depth > 0
+                    and outer_in_dquote
                     and expanded.startswith("'")
                     and expanded.endswith("'")
                 ):
                     inner = _substring(expanded, 1, len(expanded) - 1)
-                    # Only strip if non-empty and no CTLESC
-                    if inner and inner.find("\x01") == -1:
-                        # Check if we're in a pattern context (/, //, %, %%, #, ##)
-                        # by scanning backward for pattern operators
+                    # Only strip if no CTLESC (empty inner is OK for $'')
+                    if inner.find("\x01") == -1:
+                        # Check if we're in a pattern context (%, %%, #, ##, /, //)
+                        # For pattern operators, keep quotes; for others (like ~), strip them
                         result_str = "".join(result)
                         in_pattern = False
-                        # Look for pattern operators after ${
-                        for op in ["//", "/", "%%", "%", "##", "#"]:
-                            if op in result_str:
-                                in_pattern = True
-                                break
+                        # Find the last ${
+                        last_brace_idx = result_str.rfind("${")
+                        if last_brace_idx >= 0:
+                            # Get the content after ${
+                            after_brace = result_str[last_brace_idx + 2 :]
+                            # Parse variable name to find where operator starts
+                            var_name_len = 0
+                            if after_brace:
+                                # Special parameters like $, @, *, etc.
+                                if after_brace[0] in "@*#?-$!0123456789_":
+                                    var_name_len = 1
+                                # Regular variable names
+                                elif after_brace[0].isalpha() or after_brace[0] == "_":
+                                    while var_name_len < len(after_brace):
+                                        c = after_brace[var_name_len]
+                                        if not (c.isalnum() or c == "_"):
+                                            break
+                                        var_name_len += 1
+                            # Check if operator immediately after variable name is a pattern operator
+                            if (
+                                var_name_len > 0
+                                and var_name_len < len(after_brace)
+                                and after_brace[0] not in "#?-"
+                            ):
+                                op_start = after_brace[var_name_len:]
+                                # Skip @ prefix if present (handles @%, @#, @/ etc.)
+                                if op_start.startswith("@") and len(op_start) > 1:
+                                    op_start = op_start[1:]
+                                # Check if it starts with a pattern operator
+                                for op in ["//", "%%", "##", "/", "%", "#", "^", "^^", ",", ",,"]:
+                                    if op_start.startswith(op):
+                                        in_pattern = True
+                                        break
+                                # If no operator at start and the first char is NOT a known
+                                # bash operator character, also check if any operator exists
+                                # later (handles cases like ${x{%...} where { precedes the operator)
+                                # Known operator start chars: % # / ^ , ~ : + - = ?
+                                if not in_pattern and op_start and op_start[0] not in "%#/^,~:+-=?":
+                                    for op in [
+                                        "//",
+                                        "%%",
+                                        "##",
+                                        "/",
+                                        "%",
+                                        "#",
+                                        "^",
+                                        "^^",
+                                        ",",
+                                        ",,",
+                                    ]:
+                                        if op in op_start:
+                                            in_pattern = True
+                                            break
+                            # Handle invalid variable names (var_name_len = 0) where first char is not a pattern operator
+                            # but there's a pattern operator later (e.g., ${>%$'b'})
+                            elif var_name_len == 0 and len(after_brace) > 1:
+                                first_char = after_brace[0]
+                                # If first char is not itself a pattern operator, check for pattern ops after it
+                                if first_char not in "%#/^,":
+                                    rest = after_brace[1:]
+                                    for op in [
+                                        "//",
+                                        "%%",
+                                        "##",
+                                        "/",
+                                        "%",
+                                        "#",
+                                        "^",
+                                        "^^",
+                                        ",",
+                                        ",,",
+                                    ]:
+                                        if op in rest:
+                                            in_pattern = True
+                                            break
                         if not in_pattern:
                             expanded = inner
                 result.append(expanded)
@@ -421,32 +2452,101 @@ class Word(Node):
         """Strip $ from locale strings $"..." while tracking quote context."""
         result = []
         i = 0
-        in_single_quote = False
-        in_double_quote = False
+        brace_depth = 0
+        bracket_depth = 0
+        quote = QuoteState()  # Top-level quote state
+        brace_quote = QuoteState()  # Quote state inside ${...}
+        bracket_in_double_quote = False  # Quote state inside [...] (only double tracked)
         while i < len(value):
             ch = value[i]
-            if ch == "'" and not in_double_quote:
-                in_single_quote = not in_single_quote
-                result.append(ch)
-                i += 1
-            elif ch == '"' and not in_single_quote:
-                in_double_quote = not in_double_quote
-                result.append(ch)
-                i += 1
-            elif ch == "\\" and i + 1 < len(value):
-                # Escape - copy both chars
+            if ch == "\\" and i + 1 < len(value) and not quote.single and not brace_quote.single:
+                # Escape - copy both chars (but NOT inside single quotes where \ is literal)
                 result.append(ch)
                 result.append(value[i + 1])
                 i += 2
             elif (
-                _starts_with_at(value, i, '$"')
-                and not in_single_quote
-                and not in_double_quote
+                _starts_with_at(value, i, "${")
+                and not quote.single
+                and not brace_quote.single
+                # Don't treat ${ as brace expansion if preceded by $ (it's $$ + literal {)
+                and (i == 0 or value[i - 1] != "$")
             ):
-                # Locale string $"..." outside quotes - strip the $ and enter double quote
-                result.append('"')
-                in_double_quote = True
+                brace_depth += 1
+                brace_quote.double = False
+                brace_quote.single = False
+                result.append("$")
+                result.append("{")
                 i += 2
+            elif (
+                ch == "}"
+                and brace_depth > 0
+                and not quote.single
+                and not brace_quote.double
+                and not brace_quote.single
+            ):
+                brace_depth -= 1
+                result.append(ch)
+                i += 1
+            elif ch == "[" and brace_depth > 0 and not quote.single and not brace_quote.double:
+                # Start of subscript inside brace expansion
+                bracket_depth += 1
+                bracket_in_double_quote = False
+                result.append(ch)
+                i += 1
+            elif (
+                ch == "]" and bracket_depth > 0 and not quote.single and not bracket_in_double_quote
+            ):
+                # End of subscript
+                bracket_depth -= 1
+                result.append(ch)
+                i += 1
+            elif ch == "'" and not quote.double and brace_depth == 0:
+                quote.single = not quote.single
+                result.append(ch)
+                i += 1
+            elif ch == '"' and not quote.single and brace_depth == 0:
+                quote.double = not quote.double
+                result.append(ch)
+                i += 1
+            elif ch == '"' and not quote.single and bracket_depth > 0:
+                # Toggle quote state inside bracket (subscript)
+                bracket_in_double_quote = not bracket_in_double_quote
+                result.append(ch)
+                i += 1
+            elif ch == '"' and not quote.single and not brace_quote.single and brace_depth > 0:
+                # Toggle quote state inside brace expansion
+                brace_quote.double = not brace_quote.double
+                result.append(ch)
+                i += 1
+            elif ch == "'" and not quote.double and not brace_quote.double and brace_depth > 0:
+                # Toggle single quote state inside brace expansion
+                brace_quote.single = not brace_quote.single
+                result.append(ch)
+                i += 1
+            elif (
+                _starts_with_at(value, i, '$"')
+                and not quote.single
+                and not brace_quote.single
+                and (brace_depth > 0 or bracket_depth > 0 or not quote.double)
+                and not brace_quote.double
+                and not bracket_in_double_quote
+            ):
+                # Count consecutive $ chars ending at i to check for $$ (PID param)
+                dollar_count = 1 + _count_consecutive_dollars_before(value, i)
+                if dollar_count % 2 == 1:
+                    # Odd count: locale string $"..." - strip the $ and enter double quote
+                    result.append('"')
+                    if bracket_depth > 0:
+                        bracket_in_double_quote = True
+                    elif brace_depth > 0:
+                        brace_quote.double = True
+                    else:
+                        quote.double = True
+                    i += 2
+                else:
+                    # Even count: this $ is part of $$ (PID), just append it
+                    result.append(ch)
+                    i += 1
             else:
                 result.append(ch)
                 i += 1
@@ -454,9 +2554,7 @@ class Word(Node):
 
     def _normalize_array_whitespace(self, value: str) -> str:
         """Normalize whitespace inside array assignments: arr=(a  b\tc) -> arr=(a b c)."""
-        # Match array assignment pattern: name=( or name+=(
-        if not value.endswith(")"):
-            return value
+        # Match array assignment pattern: name=( or name+=( or name[sub]=( or name[sub]+=(
         # Parse identifier: starts with letter/underscore, then alnum/underscore
         i = 0
         if not (i < len(value) and (value[i].isalpha() or value[i] == "_")):
@@ -464,6 +2562,18 @@ class Word(Node):
         i += 1
         while i < len(value) and (value[i].isalnum() or value[i] == "_"):
             i += 1
+        # Optional subscript(s): [...]
+        while i < len(value) and value[i] == "[":
+            depth = 1
+            i += 1
+            while i < len(value) and depth > 0:
+                if value[i] == "[":
+                    depth += 1
+                elif value[i] == "]":
+                    depth -= 1
+                i += 1
+            if depth != 0:
+                return value
         # Optional + for +=
         if i < len(value) and value[i] == "+":
             i += 1
@@ -471,10 +2581,60 @@ class Word(Node):
         if not (i + 1 < len(value) and value[i] == "=" and value[i + 1] == "("):
             return value
         prefix = _substring(value, 0, i + 1)  # e.g., "arr=" or "arr+="
+        open_paren_pos = i + 1
+        # Find matching closing paren
+        if value.endswith(")"):
+            close_paren_pos = len(value) - 1
+        else:
+            close_paren_pos = self._find_matching_paren(value, open_paren_pos)
+            if close_paren_pos < 0:
+                return value
         # Extract content inside parentheses
-        inner = _substring(value, len(prefix) + 1, len(value) - 1)
+        inner = _substring(value, open_paren_pos + 1, close_paren_pos)
+        suffix = _substring(value, close_paren_pos + 1, len(value))
         result = self._normalize_array_inner(inner)
-        return prefix + "(" + result + ")"
+        return prefix + "(" + result + ")" + suffix
+
+    def _find_matching_paren(self, value: str, open_pos: int) -> int:
+        """Find position of matching ) for ( at open_pos, handling quotes and comments."""
+        if open_pos >= len(value) or value[open_pos] != "(":
+            return -1
+        i = open_pos + 1
+        depth = 1
+        quote = QuoteState()
+        while i < len(value) and depth > 0:
+            ch = value[i]
+            # Handle escapes (only meaningful outside single quotes)
+            if ch == "\\" and i + 1 < len(value) and not quote.single:
+                i += 2
+                continue
+            # Track quote state
+            if ch == "'" and not quote.double:
+                quote.single = not quote.single
+                i += 1
+                continue
+            if ch == '"' and not quote.single:
+                quote.double = not quote.double
+                i += 1
+                continue
+            # Skip content inside quotes
+            if quote.single or quote.double:
+                i += 1
+                continue
+            # Handle comments (only outside quotes)
+            if ch == "#":
+                while i < len(value) and value[i] != "\n":
+                    i += 1
+                continue
+            # Track paren depth
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return i
+            i += 1
+        return -1
 
     def _normalize_array_inner(self, inner: str) -> str:
         """Normalize whitespace inside array content, handling nested constructs."""
@@ -482,13 +2642,14 @@ class Word(Node):
         i = 0
         in_whitespace = True  # Start true to skip leading whitespace
         brace_depth = 0  # Track ${...} nesting
+        bracket_depth = 0  # Track [...] subscript nesting
         while i < len(inner):
             ch = inner[i]
             if _is_whitespace(ch):
-                if not in_whitespace and normalized and brace_depth == 0:
+                if not in_whitespace and normalized and brace_depth == 0 and bracket_depth == 0:
                     normalized.append(" ")
                     in_whitespace = True
-                if brace_depth > 0:
+                if brace_depth > 0 or bracket_depth > 0:
                     normalized.append(ch)
                 i += 1
             elif ch == "'":
@@ -501,9 +2662,11 @@ class Word(Node):
                 i = j + 1
             elif ch == '"':
                 # Double-quoted string - strip line continuations
+                # Track ${...} nesting since quotes inside expansions don't end the string
                 in_whitespace = False
                 j = i + 1
                 dq_content = ['"']
+                dq_brace_depth = 0
                 while j < len(inner):
                     if inner[j] == "\\" and j + 1 < len(inner):
                         if inner[j + 1] == "\n":
@@ -513,7 +2676,17 @@ class Word(Node):
                             dq_content.append(inner[j])
                             dq_content.append(inner[j + 1])
                             j += 2
-                    elif inner[j] == '"':
+                    elif inner[j] == "$" and j + 1 < len(inner) and inner[j + 1] == "{":
+                        # Start of ${...} expansion
+                        dq_content.append("${")
+                        dq_brace_depth += 1
+                        j += 2
+                    elif inner[j] == "}" and dq_brace_depth > 0:
+                        # End of ${...} expansion
+                        dq_content.append("}")
+                        dq_brace_depth -= 1
+                        j += 1
+                    elif inner[j] == '"' and dq_brace_depth == 0:
                         dq_content.append('"')
                         j += 1
                         break
@@ -531,12 +2704,7 @@ class Word(Node):
                     in_whitespace = False
                     normalized.append(_substring(inner, i, i + 2))
                     i += 2
-            elif (
-                ch == "$"
-                and i + 2 < len(inner)
-                and inner[i + 1] == "("
-                and inner[i + 2] == "("
-            ):
+            elif ch == "$" and i + 2 < len(inner) and inner[i + 1] == "(" and inner[i + 2] == "(":
                 # Arithmetic expansion $(( - find matching )) and preserve as-is
                 in_whitespace = False
                 j = i + 3
@@ -580,6 +2748,34 @@ class Word(Node):
                 # Preserve command substitution as-is
                 normalized.append(_substring(inner, i, j))
                 i = j
+            elif (ch == "<" or ch == ">") and i + 1 < len(inner) and inner[i + 1] == "(":
+                # Process substitution <(...) or >(...) - find matching ) and preserve as-is
+                # (formatting is handled later by _format_command_substitutions)
+                in_whitespace = False
+                j = i + 2
+                depth = 1
+                while j < len(inner) and depth > 0:
+                    if inner[j] == "(":
+                        depth += 1
+                    elif inner[j] == ")":
+                        depth -= 1
+                    elif inner[j] == "'":
+                        j += 1
+                        while j < len(inner) and inner[j] != "'":
+                            j += 1
+                    elif inner[j] == '"':
+                        j += 1
+                        while j < len(inner):
+                            if inner[j] == "\\" and j + 1 < len(inner):
+                                j += 2
+                                continue
+                            if inner[j] == '"':
+                                break
+                            j += 1
+                    j += 1
+                # Preserve process substitution as-is
+                normalized.append(_substring(inner, i, j))
+                i = j
             elif ch == "$" and i + 1 < len(inner) and inner[i + 1] == "{":
                 # Start of ${...} expansion
                 in_whitespace = False
@@ -596,10 +2792,24 @@ class Word(Node):
                 normalized.append(ch)
                 brace_depth -= 1
                 i += 1
-            elif ch == "#" and brace_depth == 0:
-                # Comment - skip to end of line (only at top level)
+            elif ch == "#" and brace_depth == 0 and in_whitespace:
+                # Comment - skip to end of line (only at top level, start of word)
                 while i < len(inner) and inner[i] != "\n":
                     i += 1
+            elif ch == "[":
+                # Only start subscript tracking if at word start (for [key]=val patterns)
+                # Mid-word [ like a[ is literal, not a subscript
+                # But if already inside brackets, track nested brackets
+                if in_whitespace or bracket_depth > 0:
+                    bracket_depth += 1
+                in_whitespace = False
+                normalized.append(ch)
+                i += 1
+            elif ch == "]" and bracket_depth > 0:
+                # End of subscript
+                normalized.append(ch)
+                bracket_depth -= 1
+                i += 1
             else:
                 in_whitespace = False
                 normalized.append(ch)
@@ -614,34 +2824,65 @@ class Word(Node):
         while i < len(value):
             # Check for $(( arithmetic expression
             if _starts_with_at(value, i, "$(("):
-                # Find matching ))
                 start = i
                 i += 3
-                depth = 1
+                depth = 2  # Track single parens: $(( starts at depth 2
                 arith_content = []
+                # Track position of first ) that brings depth 2→1
+                first_close_idx: int | None = None
                 while i < len(value) and depth > 0:
-                    if _starts_with_at(value, i, "(("):
-                        arith_content.append("((")
+                    if value[i] == "(":
+                        arith_content.append("(")
                         depth += 1
-                        i += 2
-                    elif _starts_with_at(value, i, "))"):
+                        i += 1
+                        if depth > 1:
+                            first_close_idx = None  # Content after first close
+                    elif value[i] == ")":
+                        if depth == 2:
+                            first_close_idx = len(arith_content)
                         depth -= 1
                         if depth > 0:
-                            arith_content.append("))")
-                        i += 2
-                    elif (
-                        value[i] == "\\" and i + 1 < len(value) and value[i + 1] == "\n"
-                    ):
-                        # Skip backslash-newline (line continuation)
-                        i += 2
+                            arith_content.append(")")
+                        i += 1
+                    elif value[i] == "\\" and i + 1 < len(value) and value[i + 1] == "\n":
+                        # Count preceding backslashes in arith_content
+                        num_backslashes = 0
+                        j = len(arith_content) - 1
+                        # Skip trailing newlines before counting backslashes
+                        while j >= 0 and arith_content[j] == "\n":
+                            j -= 1
+                        while j >= 0 and arith_content[j] == "\\":
+                            num_backslashes += 1
+                            j -= 1
+                        # If odd number of preceding backslashes, this backslash is escaped
+                        if num_backslashes % 2 == 1:
+                            arith_content.append("\\")
+                            arith_content.append("\n")
+                            i += 2
+                        else:
+                            # Skip backslash-newline (line continuation)
+                            i += 2
+                        if depth == 1:
+                            first_close_idx = None  # Content after first close
                     else:
                         arith_content.append(value[i])
                         i += 1
-                if depth == 0:
-                    # Found proper )) closing - this is arithmetic
-                    result.append("$((" + "".join(arith_content) + "))")
+                        if depth == 1:
+                            first_close_idx = None  # Content after first close
+                if depth == 0 or (depth == 1 and first_close_idx is not None):
+                    content = "".join(arith_content)
+                    if first_close_idx is not None:
+                        # Standard close: trim content, add ))
+                        content = content[:first_close_idx]
+                        # If depth==1, we only found one closing paren, add )
+                        # If depth==0, we found both closing parens, add ))
+                        closing = "))" if depth == 0 else ")"
+                        result.append("$((" + content + closing)
+                    else:
+                        # Content after first close: content has intermediate ), add single )
+                        result.append("$((" + content + ")")
                 else:
-                    # Didn't find )) - not arithmetic (likely $( + ( subshell), pass through
+                    # Didn't close properly - pass through original
                     result.append(_substring(value, start, i))
             else:
                 result.append(value[i])
@@ -689,29 +2930,56 @@ class Word(Node):
             result.extend(self._collect_cmdsubs(false_value))
         return result
 
-    def _format_command_substitutions(self, value: str) -> str:
+    def _collect_procsubs(self, node) -> list:
+        """Recursively collect ProcessSubstitution nodes from an AST node."""
+        result = []
+        node_kind = getattr(node, "kind", None)
+        if node_kind == "procsub":
+            result.append(node)
+        elif node_kind == "array":
+            elements = getattr(node, "elements", [])
+            for elem in elements:
+                parts = getattr(elem, "parts", [])
+                for p in parts:
+                    if getattr(p, "kind", None) == "procsub":
+                        result.append(p)
+                    else:
+                        result.extend(self._collect_procsubs(p))
+        return result
+
+    def _format_command_substitutions(self, value: str, in_arith: bool = False) -> str:
         """Replace $(...) and >(...) / <(...) with bash-oracle-formatted AST output."""
         # Collect command substitutions from all parts, including nested ones
         cmdsub_parts = []
         procsub_parts = []
+        has_arith = False  # Track if we have any arithmetic expansion nodes
         for p in self.parts:
             if p.kind == "cmdsub":
                 cmdsub_parts.append(p)
             elif p.kind == "procsub":
                 procsub_parts.append(p)
+            elif p.kind == "arith":
+                has_arith = True
             else:
                 cmdsub_parts.extend(self._collect_cmdsubs(p))
+                procsub_parts.extend(self._collect_procsubs(p))
         # Check if we have ${ or ${| brace command substitutions to format
-        has_brace_cmdsub = value.find("${ ") != -1 or value.find("${|") != -1
+        has_brace_cmdsub = (
+            value.find("${ ") != -1
+            or value.find("${\t") != -1
+            or value.find("${\n") != -1
+            or value.find("${|") != -1
+        )
         # Check if there's an untracked $( that isn't $((, skipping over quotes only
         has_untracked_cmdsub = False
+        has_untracked_procsub = False
         idx = 0
-        in_double = False
+        scan_quote = QuoteState()
         while idx < len(value):
             if value[idx] == '"':
-                in_double = not in_double
+                scan_quote.double = not scan_quote.double
                 idx += 1
-            elif value[idx] == "'" and not in_double:
+            elif value[idx] == "'" and not scan_quote.double:
                 # Skip over single-quoted string (contents are literal)
                 # But only when not inside double quotes
                 idx += 1
@@ -719,46 +2987,146 @@ class Word(Node):
                     idx += 1
                 if idx < len(value):
                     idx += 1  # skip closing quote
-            elif _starts_with_at(value, idx, "$(") and not _starts_with_at(
-                value, idx, "$(("
+            elif (
+                _starts_with_at(value, idx, "$(")
+                and not _starts_with_at(value, idx, "$((")
+                and not _is_backslash_escaped(value, idx)
+                and not _is_dollar_dollar_paren(value, idx)
             ):
                 has_untracked_cmdsub = True
                 break
+            elif (
+                _starts_with_at(value, idx, "<(") or _starts_with_at(value, idx, ">(")
+            ) and not scan_quote.double:
+                # Only treat as process substitution if not preceded by alphanumeric or quote
+                # (e.g., "i<(3)" is arithmetic comparison, not process substitution)
+                # Also don't treat as process substitution inside double quotes or after quotes
+                if idx == 0 or (not value[idx - 1].isalnum() and value[idx - 1] not in "\"'"):
+                    has_untracked_procsub = True
+                    break
+                idx += 1
             else:
                 idx += 1
+        # Check if ${...} contains <( or >( patterns that need normalization
+        has_param_with_procsub_pattern = "${" in value and ("<(" in value or ">(" in value)
         if (
             not cmdsub_parts
             and not procsub_parts
             and not has_brace_cmdsub
             and not has_untracked_cmdsub
+            and not has_untracked_procsub
+            and not has_param_with_procsub_pattern
         ):
             return value
         result = []
         i = 0
         cmdsub_idx = 0
         procsub_idx = 0
-        in_double_quote = False
+        main_quote = QuoteState()
+        extglob_depth = 0
+        deprecated_arith_depth = 0  # Track $[...] depth
+        arith_depth = 0  # Track $((...)) depth
+        arith_paren_depth = 0  # Track paren depth inside arithmetic
         while i < len(value):
+            # Check for extglob start: @( ?( *( +( !(
+            if (
+                i > 0
+                and _is_extglob_prefix(value[i - 1])
+                and value[i] == "("
+                and not _is_backslash_escaped(value, i - 1)
+            ):
+                extglob_depth += 1
+                result.append(value[i])
+                i += 1
+                continue
+            # Track ) that closes extglob (but not inside cmdsub/procsub)
+            if value[i] == ")" and extglob_depth > 0:
+                extglob_depth -= 1
+                result.append(value[i])
+                i += 1
+                continue
+            # Track deprecated arithmetic $[...] - inside it, >( and <( are not procsub
+            if _starts_with_at(value, i, "$[") and not _is_backslash_escaped(value, i):
+                deprecated_arith_depth += 1
+                result.append(value[i])
+                i += 1
+                continue
+            if value[i] == "]" and deprecated_arith_depth > 0:
+                deprecated_arith_depth -= 1
+                result.append(value[i])
+                i += 1
+                continue
+            # Track $((...)) arithmetic - inside it, >( and <( are not process subs
+            # But skip if this is actually $( ( (command substitution with subshell)
+            if (
+                _starts_with_at(value, i, "$((")
+                and not _is_backslash_escaped(value, i)
+                and has_arith
+            ):
+                arith_depth += 1
+                arith_paren_depth += 2  # For the two opening parens
+                result.append("$((")
+                i += 3
+                continue
+            # Track )) that closes arithmetic (only when no inner parens open)
+            if arith_depth > 0 and arith_paren_depth == 2 and _starts_with_at(value, i, "))"):
+                arith_depth -= 1
+                arith_paren_depth -= 2
+                result.append("))")
+                i += 2
+                continue
+            # Track ( and ) inside arithmetic
+            if arith_depth > 0:
+                if value[i] == "(":
+                    arith_paren_depth += 1
+                    result.append(value[i])
+                    i += 1
+                    continue
+                elif value[i] == ")":
+                    arith_paren_depth -= 1
+                    result.append(value[i])
+                    i += 1
+                    continue
             # Check for $( command substitution (but not $(( arithmetic or escaped \$()
+            # Special case: $(( without arithmetic nodes - preserve as-is
+            if _starts_with_at(value, i, "$((") and not has_arith:
+                # This looks like $(( but wasn't parsed as arithmetic
+                # It's actually $( ( ... ) ) - preserve original text
+                j = _find_cmdsub_end(value, i + 2)
+                result.append(_substring(value, i, j))
+                if cmdsub_idx < len(cmdsub_parts):
+                    cmdsub_idx += 1
+                i = j
+                continue
+            # Regular command substitution
             if (
                 _starts_with_at(value, i, "$(")
                 and not _starts_with_at(value, i, "$((")
-                and (i == 0 or value[i - 1] != "\\")
+                and not _is_backslash_escaped(value, i)
+                and not _is_dollar_dollar_paren(value, i)
             ):
                 # Find matching close paren using bash-aware matching
                 j = _find_cmdsub_end(value, i + 2)
+                # Inside extglob: don't format, just copy raw content
+                if extglob_depth > 0:
+                    result.append(_substring(value, i, j))
+                    if cmdsub_idx < len(cmdsub_parts):
+                        cmdsub_idx += 1
+                    i = j
+                    continue
                 # Format this command substitution
+                inner = _substring(value, i + 2, j - 1)
                 if cmdsub_idx < len(cmdsub_parts):
+                    # Have parsed AST node - use it (} is preserved in AST)
                     node = cmdsub_parts[cmdsub_idx]
                     formatted = _format_cmdsub_node(node.command)
                     cmdsub_idx += 1
                 else:
                     # No AST node (e.g., inside arithmetic) - parse content on the fly
-                    inner = _substring(value, i + 2, j - 1)
                     try:
                         parser = Parser(inner)
                         parsed = parser.parse_list()
-                        formatted = _format_cmdsub_node(parsed) if parsed else inner
+                        formatted = _format_cmdsub_node(parsed) if parsed else ""
                     except Exception:
                         formatted = inner
                 # Add space after $( if content starts with ( to avoid $((
@@ -783,25 +3151,164 @@ class Word(Node):
                 result.append(_substring(value, i, j))
                 cmdsub_idx += 1
                 i = j
-            # Check for >( or <( process substitution
+            # Check for ${ brace command substitution (funsub)
             elif (
-                _starts_with_at(value, i, ">(") or _starts_with_at(value, i, "<(")
-            ) and procsub_idx < len(procsub_parts):
-                direction = value[i]
-                # Find matching close paren
-                j = _find_cmdsub_end(value, i + 2)
-                # Format this process substitution (with in_procsub=True for no-space subshells)
-                node = procsub_parts[procsub_idx]
-                formatted = _format_cmdsub_node(node.command, in_procsub=True)
-                result.append(direction + "(" + formatted + ")")
-                procsub_idx += 1
+                _starts_with_at(value, i, "${")
+                and i + 2 < len(value)
+                and _is_funsub_char(value[i + 2])
+                and not _is_backslash_escaped(value, i)
+            ):
+                # Find matching close brace
+                j = _find_funsub_end(value, i + 2)
+                # Check if we have a parsed node with brace=True
+                if cmdsub_idx < len(cmdsub_parts) and getattr(
+                    cmdsub_parts[cmdsub_idx], "brace", False
+                ):
+                    node = cmdsub_parts[cmdsub_idx]
+                    formatted = _format_cmdsub_node(node.command)
+                    # Determine prefix: ${ or ${|
+                    has_pipe = value[i + 2] == "|"
+                    prefix = "${|" if has_pipe else "${ "
+                    # Check if original content ends with newline
+                    orig_inner = _substring(value, i + 2, j - 1)
+                    ends_with_newline = orig_inner.endswith("\n")
+                    # Add terminator before closing brace
+                    if not formatted or formatted.isspace():
+                        # Empty funsub: ${ }
+                        suffix = "}"
+                    elif formatted.endswith("&") or formatted.endswith("& "):
+                        # Background: ${ cmd & }
+                        suffix = " }" if formatted.endswith("&") else "}"
+                    elif ends_with_newline:
+                        # Preserve trailing newline: ${ cmd\n }
+                        suffix = "\n }"
+                    else:
+                        # Normal: ${ cmd; }
+                        suffix = "; }"
+                    result.append(prefix + formatted + suffix)
+                    cmdsub_idx += 1
+                else:
+                    # No parsed node, keep as-is
+                    result.append(_substring(value, i, j))
                 i = j
-            # Check for ${ (space) or ${| brace command substitution
+            # Check for >( or <( process substitution (not inside double quotes, $[...], or $((...)))
+            elif (
+                (_starts_with_at(value, i, ">(") or _starts_with_at(value, i, "<("))
+                and not main_quote.double
+                and deprecated_arith_depth == 0
+                and arith_depth == 0
+            ):
+                # Check if this is actually a process substitution or just comparison + parens
+                # Process substitution: not preceded by alphanumeric or quote
+                is_procsub = i == 0 or (not value[i - 1].isalnum() and value[i - 1] not in "\"'")
+                # Inside extglob: don't format, just copy raw content
+                if extglob_depth > 0:
+                    j = _find_cmdsub_end(value, i + 2)
+                    result.append(_substring(value, i, j))
+                    if procsub_idx < len(procsub_parts):
+                        procsub_idx += 1
+                    i = j
+                    continue
+                if procsub_idx < len(procsub_parts):
+                    # Have parsed AST node - use it
+                    direction = value[i]
+                    j = _find_cmdsub_end(value, i + 2)
+                    node = procsub_parts[procsub_idx]
+                    compact = _starts_with_subshell(node.command)
+                    formatted = _format_cmdsub_node(node.command, 0, True, compact, True)
+                    raw_content = _substring(value, i + 2, j - 1)
+                    if node.command.kind == "subshell":
+                        # Extract leading whitespace
+                        leading_ws_end = 0
+                        while (
+                            leading_ws_end < len(raw_content)
+                            and raw_content[leading_ws_end] in " \t\n"
+                        ):
+                            leading_ws_end += 1
+                        leading_ws = raw_content[:leading_ws_end]
+                        stripped = raw_content[leading_ws_end:]
+                        if stripped.startswith("("):
+                            if leading_ws:
+                                # Leading whitespace before subshell: normalize ws + format subshell with spaces
+                                normalized_ws = leading_ws.replace("\n", " ").replace("\t", " ")
+                                spaced = _format_cmdsub_node(node.command, in_procsub=False)
+                                result.append(direction + "(" + normalized_ws + spaced + ")")
+                            else:
+                                # No leading whitespace - preserve original raw content
+                                raw_content = raw_content.replace("\\\n", "")
+                                result.append(direction + "(" + raw_content + ")")
+                            procsub_idx += 1
+                            i = j
+                            continue
+                    # Extract raw content for further checks
+                    raw_content = _substring(value, i + 2, j - 1)
+                    raw_stripped = raw_content.replace("\\\n", "")
+                    # Check for pattern: subshell followed by operator with no space (e.g., "(0)&+")
+                    # In this case, preserve original to match bash-oracle behavior
+                    if _starts_with_subshell(node.command) and formatted != raw_stripped:
+                        # Starts with subshell and formatting would change it - preserve original
+                        result.append(direction + "(" + raw_stripped + ")")
+                    else:
+                        final_output = direction + "(" + formatted + ")"
+                        result.append(final_output)
+                    procsub_idx += 1
+                    i = j
+                elif is_procsub and len(self.parts):
+                    # No AST node but valid procsub context - parse content on the fly
+                    direction = value[i]
+                    j = _find_cmdsub_end(value, i + 2)
+                    # Check if we found a valid closing ) - if not, treat as literal characters
+                    if j > len(value) or (j > 0 and j <= len(value) and value[j - 1] != ")"):
+                        result.append(value[i])
+                        i += 1
+                        continue
+                    inner = _substring(value, i + 2, j - 1)
+                    try:
+                        parser = Parser(inner)
+                        parsed = parser.parse_list()
+                        # Only use parsed result if parser consumed all input and no newlines in content
+                        # (newlines would be lost during formatting)
+                        if parsed and parser.pos == len(inner) and "\n" not in inner:
+                            compact = _starts_with_subshell(parsed)
+                            formatted = _format_cmdsub_node(parsed, 0, True, compact, True)
+                        else:
+                            formatted = inner
+                    except Exception:
+                        formatted = inner
+                    result.append(direction + "(" + formatted + ")")
+                    i = j
+                elif is_procsub:
+                    # Process substitution but no parts (failed to parse or in arithmetic context)
+                    direction = value[i]
+                    j = _find_cmdsub_end(value, i + 2)
+                    if j > len(value) or (j > 0 and j <= len(value) and value[j - 1] != ")"):
+                        # Couldn't find closing paren, treat as literal
+                        result.append(value[i])
+                        i += 1
+                        continue
+                    inner = _substring(value, i + 2, j - 1)
+                    # In arithmetic context, preserve whitespace; otherwise strip leading whitespace
+                    if in_arith:
+                        result.append(direction + "(" + inner + ")")
+                    elif inner.strip():
+                        stripped = inner.lstrip(" \t")
+                        result.append(direction + "(" + stripped + ")")
+                    else:
+                        result.append(direction + "(" + inner + ")")
+                    i = j
+                else:
+                    # Not a process substitution (e.g., arithmetic comparison)
+                    result.append(value[i])
+                    i += 1
+            # Check for ${ (space/tab/newline) or ${| brace command substitution
             # But not if the $ is escaped by a backslash
             elif (
-                _starts_with_at(value, i, "${ ") or _starts_with_at(value, i, "${|")
-            ) and (i == 0 or value[i - 1] != "\\"):
-                prefix = _substring(value, i, i + 3)
+                _starts_with_at(value, i, "${ ")
+                or _starts_with_at(value, i, "${\t")
+                or _starts_with_at(value, i, "${\n")
+                or _starts_with_at(value, i, "${|")
+            ) and not _is_backslash_escaped(value, i):
+                prefix = _substring(value, i, i + 3).replace("\t", " ").replace("\n", " ")
                 # Find matching close brace
                 j = i + 3
                 depth = 1
@@ -818,11 +3325,19 @@ class Word(Node):
                     result.append("${ }")
                 else:
                     try:
-                        parser = Parser(inner.lstrip(" |"))
+                        parser = Parser(inner.lstrip(" \t\n|"))
                         parsed = parser.parse_list()
                         if parsed:
                             formatted = _format_cmdsub_node(parsed)
-                            result.append(prefix + formatted + "; }")
+                            formatted = formatted.rstrip(";")
+                            # Preserve trailing newline from original if present
+                            if inner.rstrip(" \t").endswith("\n"):
+                                terminator = "\n }"
+                            elif formatted.endswith(" &"):
+                                terminator = " }"
+                            else:
+                                terminator = "; }"
+                            result.append(prefix + formatted + terminator)
                         else:
                             result.append("${ }")
                     except Exception:
@@ -830,40 +3345,54 @@ class Word(Node):
                 i = j
             # Process regular ${...} parameter expansions (recursively format cmdsubs inside)
             # But not if the $ is escaped by a backslash
-            elif _starts_with_at(value, i, "${") and (i == 0 or value[i - 1] != "\\"):
-                # Find matching close brace, respecting nesting and quotes
+            elif _starts_with_at(value, i, "${") and not _is_backslash_escaped(value, i):
+                # Find matching close brace, respecting nesting, quotes, and cmdsubs
                 j = i + 2
                 depth = 1
-                in_single = False
-                in_double = False
+                brace_quote = QuoteState()
                 while j < len(value) and depth > 0:
                     c = value[j]
-                    if c == "\\" and j + 1 < len(value) and not in_single:
+                    if c == "\\" and j + 1 < len(value) and not brace_quote.single:
                         j += 2
                         continue
-                    if c == "'" and not in_double:
-                        in_single = not in_single
-                    elif c == '"' and not in_single:
-                        in_double = not in_double
-                    elif not in_single and not in_double:
+                    if c == "'" and not brace_quote.double:
+                        brace_quote.single = not brace_quote.single
+                    elif c == '"' and not brace_quote.single:
+                        brace_quote.double = not brace_quote.double
+                    elif not brace_quote.in_quotes():
+                        # Skip over $(...) command substitutions
+                        if _starts_with_at(value, j, "$(") and not _starts_with_at(value, j, "$(("):
+                            j = _find_cmdsub_end(value, j + 2)
+                            continue
                         if c == "{":
                             depth += 1
                         elif c == "}":
                             depth -= 1
                     j += 1
                 # Recursively format any cmdsubs inside the param expansion
-                inner = _substring(value, i + 2, j - 1)
+                # When depth > 0 (unclosed ${), include all remaining chars
+                if depth > 0:
+                    inner = _substring(value, i + 2, j)
+                else:
+                    inner = _substring(value, i + 2, j - 1)
                 formatted_inner = self._format_command_substitutions(inner)
-                result.append("${" + formatted_inner + "}")
+                # Normalize <( and >( patterns in param expansion (for pipe alternation)
+                formatted_inner = self._normalize_extglob_whitespace(formatted_inner)
+                # Only append closing } if we found one in the input
+                if depth == 0:
+                    result.append("${" + formatted_inner + "}")
+                else:
+                    # Unclosed ${...} - output without closing brace
+                    result.append("${" + formatted_inner)
                 i = j
             # Track double-quote state (single quotes inside double quotes are literal)
             elif value[i] == '"':
-                in_double_quote = not in_double_quote
+                main_quote.double = not main_quote.double
                 result.append(value[i])
                 i += 1
             # Skip single-quoted strings (contents are literal, don't look for cmdsubs)
             # But only when NOT inside double quotes (where single quotes are literal)
-            elif value[i] == "'" and not in_double_quote:
+            elif value[i] == "'" and not main_quote.double:
                 j = i + 1
                 while j < len(value) and value[j] != "'":
                     j += 1
@@ -876,6 +3405,99 @@ class Word(Node):
                 i += 1
         return "".join(result)
 
+    def _normalize_extglob_whitespace(self, value: str) -> str:
+        """Normalize whitespace around | in >() and <() patterns for regex contexts."""
+        result = []
+        i = 0
+        extglob_quote = QuoteState()
+        deprecated_arith_depth = 0  # Track $[...] depth
+        while i < len(value):
+            # Track double-quote state
+            if value[i] == '"':
+                extglob_quote.double = not extglob_quote.double
+                result.append(value[i])
+                i += 1
+                continue
+            # Track deprecated arithmetic $[...] - inside it, >( and <( are not procsub
+            if _starts_with_at(value, i, "$[") and not _is_backslash_escaped(value, i):
+                deprecated_arith_depth += 1
+                result.append(value[i])
+                i += 1
+                continue
+            if value[i] == "]" and deprecated_arith_depth > 0:
+                deprecated_arith_depth -= 1
+                result.append(value[i])
+                i += 1
+                continue
+            # Check for >( or <( pattern (process substitution-like in regex)
+            # Only process these patterns when NOT inside double quotes or $[...]
+            if i + 1 < len(value) and value[i + 1] == "(":
+                prefix_char = value[i]
+                if prefix_char in "><" and not extglob_quote.double and deprecated_arith_depth == 0:
+                    # Found pattern start
+                    result.append(prefix_char)
+                    result.append("(")
+                    i += 2
+                    # Process content until matching )
+                    depth = 1
+                    pattern_parts = []
+                    current_part = []
+                    has_pipe = False
+                    while i < len(value) and depth > 0:
+                        if value[i] == "\\" and i + 1 < len(value):
+                            # Escaped character, keep as-is
+                            current_part.append(value[i : i + 2])
+                            i += 2
+                            continue
+                        elif value[i] == "(":
+                            depth += 1
+                            current_part.append(value[i])
+                            i += 1
+                        elif value[i] == ")":
+                            depth -= 1
+                            if depth == 0:
+                                # End of pattern
+                                part_content = "".join(current_part)
+                                # Only strip if this is an alternation pattern (has |) or contains heredoc
+                                if "<<" in part_content:
+                                    pattern_parts.append(part_content)
+                                elif has_pipe:
+                                    pattern_parts.append(part_content.strip())
+                                else:
+                                    pattern_parts.append(part_content)
+                                break
+                            current_part.append(value[i])
+                            i += 1
+                        elif value[i] == "|" and depth == 1:
+                            # Check for || (OR operator) - keep as single token
+                            if i + 1 < len(value) and value[i + 1] == "|":
+                                current_part.append("||")
+                                i += 2
+                            else:
+                                # Top-level pipe separator
+                                has_pipe = True
+                                part_content = "".join(current_part)
+                                # Don't strip if this looks like a process substitution with heredoc
+                                if "<<" in part_content:
+                                    pattern_parts.append(part_content)
+                                else:
+                                    pattern_parts.append(part_content.strip())
+                                current_part = []
+                                i += 1
+                        else:
+                            current_part.append(value[i])
+                            i += 1
+                    # Join parts with " | "
+                    result.append(" | ".join(pattern_parts))
+                    # Only append closing ) if we found one (depth == 0)
+                    if depth == 0:
+                        result.append(")")
+                        i += 1
+                    continue
+            result.append(value[i])
+            i += 1
+        return "".join(result)
+
     def get_cond_formatted_value(self) -> str:
         """Return value with command substitutions formatted for cond-term output."""
         # Expand ANSI-C quotes
@@ -884,6 +3506,8 @@ class Word(Node):
         value = self._strip_locale_string_dollars(value)
         # Format command substitutions
         value = self._format_command_substitutions(value)
+        # Normalize whitespace in extglob-like patterns
+        value = self._normalize_extglob_whitespace(value)
         # Bash doubles CTLESC (\x01) characters in output
         value = value.replace("\x01", "\x01\x01")
         return value.rstrip("\n")
@@ -935,9 +3559,7 @@ class Pipeline(Node):
                 i += 1
                 continue
             # Check if next element is PipeBoth
-            needs_redirect = (
-                i + 1 < len(self.commands) and self.commands[i + 1].kind == "pipe-both"
-            )
+            needs_redirect = i + 1 < len(self.commands) and self.commands[i + 1].kind == "pipe-both"
             cmds.append((cmd, needs_redirect))
             i += 1
         if len(cmds) == 1:
@@ -993,13 +3615,7 @@ class List(Node):
         # parts = [cmd, op, cmd, op, cmd, ...]
         # Bash precedence: && and || bind tighter than ; and &
         parts = list(self.parts)
-        op_names = {
-            "&&": "and",
-            "||": "or",
-            ";": "semi",
-            "\n": "semi",
-            "&": "background",
-        }
+        op_names = {"&&": "and", "||": "or", ";": "semi", "\n": "semi", "&": "background"}
         # Strip trailing ; or \n (bash ignores it)
         while (
             len(parts) > 1
@@ -1014,9 +3630,7 @@ class List(Node):
         if parts[len(parts) - 1].kind == "operator" and parts[len(parts) - 1].op == "&":
             # Find rightmost ; or \n to split there
             for i in range(len(parts) - 3, 0, -2):
-                if parts[i].kind == "operator" and (
-                    parts[i].op == ";" or parts[i].op == "\n"
-                ):
+                if parts[i].kind == "operator" and (parts[i].op == ";" or parts[i].op == "\n"):
                     left = _sublist(parts, 0, i)
                     right = _sublist(parts, i + 1, len(parts) - 1)  # exclude trailing &
                     if len(left) > 1:
@@ -1039,37 +3653,75 @@ class List(Node):
 
     def _to_sexp_with_precedence(self, parts: list, op_names: dict) -> str:
         # Process operators by precedence: ; (lowest), then &, then && and ||
-        # Split on ; or \n first (rightmost for left-associativity)
-        for i in range(len(parts) - 2, 0, -2):
-            if parts[i].kind == "operator" and (
-                parts[i].op == ";" or parts[i].op == "\n"
-            ):
-                left = _sublist(parts, 0, i)
-                right = _sublist(parts, i + 1, len(parts))
-                if len(left) > 1:
-                    left_sexp = List(left).to_sexp()
-                else:
-                    left_sexp = left[0].to_sexp()
-                if len(right) > 1:
-                    right_sexp = List(right).to_sexp()
-                else:
-                    right_sexp = right[0].to_sexp()
-                return "(semi " + left_sexp + " " + right_sexp + ")"
-        # Then split on & (rightmost for left-associativity)
-        for i in range(len(parts) - 2, 0, -2):
+        # Use iterative approach to avoid stack overflow on large lists
+        # Find all ; or \n positions (may not be at regular intervals due to consecutive ops)
+        semi_positions = []
+        for i in range(len(parts)):
+            if parts[i].kind == "operator" and (parts[i].op == ";" or parts[i].op == "\n"):
+                semi_positions.append(i)
+        if semi_positions:
+            # Split into segments at ; and \n positions, filtering empty/operator-only segments
+            segments = []
+            start = 0
+            for pos in semi_positions:
+                seg = _sublist(parts, start, pos)
+                if seg and seg[0].kind != "operator":
+                    segments.append(seg)
+                start = pos + 1
+            # Final segment
+            seg = _sublist(parts, start, len(parts))
+            if seg and seg[0].kind != "operator":
+                segments.append(seg)
+            if not segments:
+                return "()"
+            # Build left-associative result iteratively
+            result = self._to_sexp_amp_and_higher(segments[0], op_names)
+            for i in range(1, len(segments)):
+                result = (
+                    "(semi "
+                    + result
+                    + " "
+                    + self._to_sexp_amp_and_higher(segments[i], op_names)
+                    + ")"
+                )
+            return result
+        # No ; or \n, handle & and higher
+        return self._to_sexp_amp_and_higher(parts, op_names)
+
+    def _to_sexp_amp_and_higher(self, parts: list, op_names: dict) -> str:
+        # Handle & operator iteratively
+        if len(parts) == 1:
+            return parts[0].to_sexp()
+        amp_positions = []
+        for i in range(1, len(parts) - 1, 2):
             if parts[i].kind == "operator" and parts[i].op == "&":
-                left = _sublist(parts, 0, i)
-                right = _sublist(parts, i + 1, len(parts))
-                if len(left) > 1:
-                    left_sexp = List(left).to_sexp()
-                else:
-                    left_sexp = left[0].to_sexp()
-                if len(right) > 1:
-                    right_sexp = List(right).to_sexp()
-                else:
-                    right_sexp = right[0].to_sexp()
-                return "(background " + left_sexp + " " + right_sexp + ")"
-        # No ; or &, process high-prec ops (&&, ||) left-associatively
+                amp_positions.append(i)
+        if amp_positions:
+            # Split into segments at & positions
+            segments = []
+            start = 0
+            for pos in amp_positions:
+                segments.append(_sublist(parts, start, pos))
+                start = pos + 1
+            segments.append(_sublist(parts, start, len(parts)))
+            # Build left-associative result iteratively
+            result = self._to_sexp_and_or(segments[0], op_names)
+            for i in range(1, len(segments)):
+                result = (
+                    "(background "
+                    + result
+                    + " "
+                    + self._to_sexp_and_or(segments[i], op_names)
+                    + ")"
+                )
+            return result
+        # No &, handle && and ||
+        return self._to_sexp_and_or(parts, op_names)
+
+    def _to_sexp_and_or(self, parts: list, op_names: dict) -> str:
+        # Process && and || left-associatively (already iterative)
+        if len(parts) == 1:
+            return parts[0].to_sexp()
         result = parts[0].to_sexp()
         for i in range(1, len(parts) - 1, 2):
             op = parts[i]
@@ -1149,13 +3801,20 @@ class Redirect(Node):
     def to_sexp(self) -> str:
         # Strip fd prefix from operator (e.g., "2>" -> ">", "{fd}>" -> ">")
         op = self.op.lstrip("0123456789")
-        # Strip {varname} prefix if present
+        # Strip {varname} or {varname[subscript]} prefix if present
         if op.startswith("{"):
             j = 1
             if j < len(op) and (op[j].isalpha() or op[j] == "_"):
                 j += 1
                 while j < len(op) and (op[j].isalnum() or op[j] == "_"):
                     j += 1
+                # Handle optional [subscript] part
+                if j < len(op) and op[j] == "[":
+                    j += 1
+                    while j < len(op) and op[j] != "]":
+                        j += 1
+                    if j < len(op) and op[j] == "]":
+                        j += 1
                 if j < len(op) and op[j] == "}":
                     op = _substring(op, j + 1, len(op))
         target_val = self.target.value
@@ -1165,6 +3824,11 @@ class Redirect(Node):
         target_val = self.target._strip_locale_string_dollars(target_val)
         # Format command/process substitutions (uses self.target for parts access)
         target_val = self.target._format_command_substitutions(target_val)
+        # Strip line continuations (backslash-newline) from arithmetic expressions
+        target_val = self.target._strip_arith_line_continuations(target_val)
+        # Escape trailing backslash (would escape the closing quote otherwise)
+        if target_val.endswith("\\") and not target_val.endswith("\\\\"):
+            target_val = target_val + "\\"
         # For fd duplication, target starts with & (e.g., "&1", "&2", "&-")
         if target_val.startswith("&"):
             # Determine the real operator
@@ -1172,23 +3836,36 @@ class Redirect(Node):
                 op = ">&"
             elif op == "<":
                 op = "<&"
-            fd_target = _substring(target_val, 1, len(target_val)).rstrip(
-                "-"
-            )  # "&1" -> "1", "&1-" -> "1"
-            if fd_target.isdigit():
-                return '(redirect "' + op + '" ' + fd_target + ")"
-            elif target_val == "&-":
+            raw = _substring(target_val, 1, len(target_val))  # "&0--" -> "0--"
+            # Pure digits: dup fd N (must be <= INT_MAX to be a valid fd)
+            if raw.isdigit() and int(raw) <= 2147483647:
+                return '(redirect "' + op + '" ' + str(int(raw)) + ")"
+            # Exact move syntax: N- (digits + exactly one dash, N <= INT_MAX)
+            if raw.endswith("-") and raw[:-1].isdigit() and int(raw[:-1]) <= 2147483647:
+                return '(redirect "' + op + '" ' + str(int(raw[:-1])) + ")"
+            if target_val == "&-":
                 return '(redirect ">&-" 0)'
-            else:
-                # Variable fd dup like >&$fd or >&$fd- (move) - strip the & and trailing -
-                return '(redirect "' + op + '" "' + fd_target + '")'
+            # Variable/word target: strip exactly one trailing dash if present
+            fd_target = raw[:-1] if raw.endswith("-") else raw
+            return '(redirect "' + op + '" "' + fd_target + '")'
         # Handle case where op is already >& or <&
         if op == ">&" or op == "<&":
-            if target_val.isdigit():
-                return '(redirect "' + op + '" ' + target_val + ")"
-            # Variable fd dup with move indicator (trailing -)
-            target_val = target_val.rstrip("-")
-            return '(redirect "' + op + '" "' + target_val + '")'
+            # Valid fd number must be digits and <= INT_MAX (2147483647)
+            if target_val.isdigit() and int(target_val) <= 2147483647:
+                return '(redirect "' + op + '" ' + str(int(target_val)) + ")"
+            # Handle close: <& - or >& - (with space before -)
+            if target_val == "-":
+                return '(redirect ">&-" 0)'
+            # Exact move syntax: N- (digits + exactly one dash, N <= INT_MAX)
+            if (
+                target_val.endswith("-")
+                and target_val[:-1].isdigit()
+                and int(target_val[:-1]) <= 2147483647
+            ):
+                return '(redirect "' + op + '" ' + str(int(target_val[:-1])) + ")"
+            # Variable/word target: strip exactly one trailing dash if present
+            out_val = target_val[:-1] if target_val.endswith("-") else target_val
+            return '(redirect "' + op + '" "' + out_val + '")'
         return '(redirect "' + op + '" "' + target_val + '")'
 
 
@@ -1200,6 +3877,8 @@ class HereDoc(Node):
     strip_tabs: bool = False
     quoted: bool = False
     fd: int | None = None
+    complete: bool = True
+    _start_pos: int = -1  # Parser position where heredoc redirect started (for dedup)
 
     def __init__(
         self,
@@ -1208,6 +3887,7 @@ class HereDoc(Node):
         strip_tabs: bool = False,
         quoted: bool = False,
         fd: int = None,
+        complete: bool = True,
     ):
         self.kind = "heredoc"
         self.delimiter = delimiter
@@ -1215,19 +3895,25 @@ class HereDoc(Node):
         self.strip_tabs = strip_tabs
         self.quoted = quoted
         self.fd = fd
+        self.complete = complete
+        self._start_pos = -1
 
     def to_sexp(self) -> str:
         op = "<<-" if self.strip_tabs else "<<"
-        return f'(redirect "{op}" "{self.content}")'
+        content = self.content
+        # Escape trailing backslash (would escape the closing quote otherwise)
+        if content.endswith("\\") and not content.endswith("\\\\"):
+            content = content + "\\"
+        return f'(redirect "{op}" "{content}")'
 
 
 class Subshell(Node):
     """A subshell ( list )."""
 
     body: Node
-    redirects: list["Redirect | HereDoc"] | None = None
+    redirects: list[Redirect | HereDoc] | None = None
 
-    def __init__(self, body: Node, redirects: list["Redirect | HereDoc"] | None = None):
+    def __init__(self, body: Node, redirects: list[Redirect | HereDoc] | None = None):
         self.kind = "subshell"
         self.body = body
         self.redirects = redirects
@@ -1241,9 +3927,9 @@ class BraceGroup(Node):
     """A brace group { list; }."""
 
     body: Node
-    redirects: list["Redirect | HereDoc"] | None = None
+    redirects: list[Redirect | HereDoc] | None = None
 
-    def __init__(self, body: Node, redirects: list["Redirect | HereDoc"] | None = None):
+    def __init__(self, body: Node, redirects: list[Redirect | HereDoc] | None = None):
         self.kind = "brace-group"
         self.body = body
         self.redirects = redirects
@@ -1262,11 +3948,7 @@ class If(Node):
     redirects: list[Node]
 
     def __init__(
-        self,
-        condition: Node,
-        then_body: Node,
-        else_body: Node = None,
-        redirects: list[Node] = None,
+        self, condition: Node, then_body: Node, else_body: Node = None, redirects: list[Node] = None
     ):
         self.kind = "if"
         self.condition = condition
@@ -1335,11 +4017,7 @@ class For(Node):
     redirects: list[Node]
 
     def __init__(
-        self,
-        var: str,
-        words: list[Word] | None,
-        body: Node,
-        redirects: list[Node] = None,
+        self, var: str, words: list[Word] | None, body: Node, redirects: list[Node] = None
     ):
         self.kind = "for"
         self.var = var
@@ -1357,7 +4035,10 @@ class For(Node):
             for r in self.redirects:
                 redirect_parts.append(r.to_sexp())
             suffix = " " + " ".join(redirect_parts)
-        var_escaped = self.var.replace("\\", "\\\\").replace('"', '\\"')
+        # Format command substitutions in var (e.g., for $(echo i) normalizes whitespace)
+        temp_word = Word(self.var, [])
+        var_formatted = temp_word._format_command_substitutions(self.var)
+        var_escaped = var_formatted.replace("\\", "\\\\").replace('"', '\\"')
         if self.words is None:
             # No 'in' clause - bash-oracle implies (in (word "\"$@\""))
             return (
@@ -1370,14 +4051,7 @@ class For(Node):
             )
         elif len(self.words) == 0:
             # Empty 'in' clause - bash-oracle outputs (in)
-            return (
-                '(for (word "'
-                + var_escaped
-                + '") (in) '
-                + self.body.to_sexp()
-                + ")"
-                + suffix
-            )
+            return '(for (word "' + var_escaped + '") (in) ' + self.body.to_sexp() + ")" + suffix
         else:
             word_parts = []
             for w in self.words:
@@ -1404,9 +4078,7 @@ class ForArith(Node):
     body: Node
     redirects: list[Node]
 
-    def __init__(
-        self, init: str, cond: str, incr: str, body: Node, redirects: list[Node] = None
-    ):
+    def __init__(self, init: str, cond: str, incr: str, body: Node, redirects: list[Node] = None):
         self.kind = "for-arith"
         self.init = init
         self.cond = cond
@@ -1423,7 +4095,9 @@ class ForArith(Node):
             w = Word(s, [])
             val = w._expand_all_ansi_c_quotes(s)
             val = w._strip_locale_string_dollars(val)
+            val = w._format_command_substitutions(val)
             val = val.replace("\\", "\\\\").replace('"', '\\"')
+            val = val.replace("\n", "\\n").replace("\t", "\\t")
             return val
 
         suffix = ""
@@ -1433,7 +4107,7 @@ class ForArith(Node):
                 redirect_parts.append(r.to_sexp())
             suffix = " " + " ".join(redirect_parts)
         init_val = self.init if self.init else "1"
-        cond_val = _normalize_fd_redirects(self.cond) if self.cond else "1"
+        cond_val = self.cond if self.cond else "1"
         incr_val = self.incr if self.incr else "1"
         init_str = format_arith_val(init_val)
         cond_str = format_arith_val(cond_val)
@@ -1451,11 +4125,7 @@ class Select(Node):
     redirects: list[Node]
 
     def __init__(
-        self,
-        var: str,
-        words: list[Word] | None,
-        body: Node,
-        redirects: list[Node] = None,
+        self, var: str, words: list[Word] | None, body: Node, redirects: list[Node] = None
     ):
         self.kind = "select"
         self.var = var
@@ -1502,12 +4172,10 @@ class Case(Node):
     """A case statement."""
 
     word: Word
-    patterns: list["CasePattern"]
+    patterns: list[CasePattern]
     redirects: list[Node]
 
-    def __init__(
-        self, word: Word, patterns: list["CasePattern"], redirects: list[Node] = None
-    ):
+    def __init__(self, word: Word, patterns: list[CasePattern], redirects: list[Node] = None):
         self.kind = "case"
         self.word = word
         self.patterns = patterns
@@ -1583,6 +4251,8 @@ def _consume_bracket_class(s: str, start: int, depth: int) -> tuple:
             is_bracket = True
             break
         if s[scan_pos] == ")" and depth == 0:
+            break
+        if s[scan_pos] == "|" and depth == 0:
             break
         scan_pos += 1
     if not is_bracket:
@@ -1730,15 +4400,7 @@ class ParamExpansion(Node):
             else:
                 arg_val = ""
             escaped_arg = arg_val.replace("\\", "\\\\").replace('"', '\\"')
-            return (
-                '(param "'
-                + escaped_param
-                + '" "'
-                + escaped_op
-                + '" "'
-                + escaped_arg
-                + '")'
-            )
+            return '(param "' + escaped_param + '" "' + escaped_op + '" "' + escaped_arg + '")'
         return '(param "' + escaped_param + '")'
 
 
@@ -1778,37 +4440,33 @@ class ParamIndirect(Node):
             else:
                 arg_val = ""
             escaped_arg = arg_val.replace("\\", "\\\\").replace('"', '\\"')
-            return (
-                '(param-indirect "'
-                + escaped
-                + '" "'
-                + escaped_op
-                + '" "'
-                + escaped_arg
-                + '")'
-            )
+            return '(param-indirect "' + escaped + '" "' + escaped_op + '" "' + escaped_arg + '")'
         return '(param-indirect "' + escaped + '")'
 
 
 class CommandSubstitution(Node):
-    """A command substitution $(...) or `...`."""
+    """A command substitution $(...), `...`, or ${ cmd; }."""
 
     command: Node
+    brace: bool
 
-    def __init__(self, command: Node):
+    def __init__(self, command: Node, brace: bool = False):
         self.kind = "cmdsub"
         self.command = command
+        self.brace = brace
 
     def to_sexp(self) -> str:
+        if self.brace:
+            return "(funsub " + self.command.to_sexp() + ")"
         return "(cmdsub " + self.command.to_sexp() + ")"
 
 
 class ArithmeticExpansion(Node):
     """An arithmetic expansion $((...)) with parsed internals."""
 
-    expression: "Node | None"  # Parsed arithmetic expression, or None for empty
+    expression: Node | None  # Parsed arithmetic expression, or None for empty
 
-    def __init__(self, expression: "Node | None"):
+    def __init__(self, expression: Node | None):
         self.kind = "arith"
         self.expression = expression
 
@@ -1821,15 +4479,12 @@ class ArithmeticExpansion(Node):
 class ArithmeticCommand(Node):
     """An arithmetic command ((...)) with parsed internals."""
 
-    expression: "Node | None"  # Parsed arithmetic expression, or None for empty
+    expression: Node | None  # Parsed arithmetic expression, or None for empty
     redirects: list[Node]
     raw_content: str  # Raw expression text for bash-oracle-compatible output
 
     def __init__(
-        self,
-        expression: "Node | None",
-        redirects: list[Node] = None,
-        raw_content: str = "",
+        self, expression: Node | None, redirects: list[Node] = None, raw_content: str = ""
     ):
         self.kind = "arith-cmd"
         self.expression = expression
@@ -1841,10 +4496,15 @@ class ArithmeticCommand(Node):
     def to_sexp(self) -> str:
         # bash-oracle format: (arith (word "content"))
         # Redirects are siblings: (arith (word "...")) (redirect ...)
+        # Format command substitutions using Word's method
+        formatted = Word(self.raw_content)._format_command_substitutions(
+            self.raw_content, in_arith=True
+        )
         escaped = (
-            self.raw_content.replace("\\", "\\\\")
+            formatted.replace("\\", "\\\\")
             .replace('"', '\\"')
             .replace("\n", "\\n")
+            .replace("\t", "\\t")
         )
         result = '(arith (word "' + escaped + '"))'
         if self.redirects:
@@ -1870,6 +4530,16 @@ class ArithNumber(Node):
 
     def to_sexp(self) -> str:
         return '(number "' + self.value + '")'
+
+
+class ArithEmpty(Node):
+    """A missing operand in arithmetic context (e.g., in $((|)) or $((1|)))."""
+
+    def __init__(self):
+        self.kind = "empty"
+
+    def to_sexp(self) -> str:
+        return "(empty)"
 
 
 class ArithVar(Node):
@@ -1900,13 +4570,7 @@ class ArithBinaryOp(Node):
 
     def to_sexp(self) -> str:
         return (
-            '(binary-op "'
-            + self.op
-            + '" '
-            + self.left.to_sexp()
-            + " "
-            + self.right.to_sexp()
-            + ")"
+            '(binary-op "' + self.op + '" ' + self.left.to_sexp() + " " + self.right.to_sexp() + ")"
         )
 
 
@@ -1992,13 +4656,7 @@ class ArithAssign(Node):
 
     def to_sexp(self) -> str:
         return (
-            '(assign "'
-            + self.op
-            + '" '
-            + self.target.to_sexp()
-            + " "
-            + self.value.to_sexp()
-            + ")"
+            '(assign "' + self.op + '" ' + self.target.to_sexp() + " " + self.value.to_sexp() + ")"
         )
 
 
@@ -2080,11 +4738,7 @@ class ArithDeprecated(Node):
         self.expression = expression
 
     def to_sexp(self) -> str:
-        escaped = (
-            self.expression.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-        )
+        escaped = self.expression.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
         return '(arith-deprecated "' + escaped + '")'
 
 
@@ -2114,9 +4768,7 @@ class AnsiCQuote(Node):
         self.content = content
 
     def to_sexp(self) -> str:
-        escaped = (
-            self.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-        )
+        escaped = self.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
         return '(ansi-c "' + escaped + '")'
 
 
@@ -2130,9 +4782,7 @@ class LocaleString(Node):
         self.content = content
 
     def to_sexp(self) -> str:
-        escaped = (
-            self.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-        )
+        escaped = self.content.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
         return '(locale "' + escaped + '")'
 
 
@@ -2193,10 +4843,10 @@ class Time(Node):
 class ConditionalExpr(Node):
     """A conditional expression [[ expression ]]."""
 
-    body: "Node | str"  # Parsed node or raw string for backwards compat
+    body: Node | str  # Parsed node or raw string for backwards compat
     redirects: list[Node]
 
-    def __init__(self, body: "Node | str", redirects: list[Node] = None):
+    def __init__(self, body: Node | str, redirects: list[Node] = None):
         self.kind = "cond-expr"
         self.body = body
         if redirects is None:
@@ -2209,9 +4859,7 @@ class ConditionalExpr(Node):
         body_kind = getattr(self.body, "kind", None)
         if body_kind is None:
             # body is a string
-            escaped = (
-                self.body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-            )
+            escaped = self.body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             result = '(cond "' + escaped + '")'
         else:
             result = "(cond " + self.body.to_sexp() + ")"
@@ -2382,14 +5030,38 @@ def _format_cond_body(node: Node) -> str:
     if kind == "cond-or":
         return _format_cond_body(node.left) + " || " + _format_cond_body(node.right)
     if kind == "cond-not":
-        return "! " + _format_cond_body(node.body)
+        return "! " + _format_cond_body(node.operand)
     if kind == "cond-paren":
-        return "( " + _format_cond_body(node.body) + " )"
+        return "( " + _format_cond_body(node.inner) + " )"
     return ""
 
 
-def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -> str:
+def _starts_with_subshell(node: Node) -> bool:
+    """Check if a node starts with a subshell (for compact redirect formatting in procsub)."""
+    if node.kind == "subshell":
+        return True
+    if node.kind == "list":
+        for p in node.parts:
+            if p.kind != "operator":
+                return _starts_with_subshell(p)
+        return False
+    if node.kind == "pipeline":
+        if node.commands:
+            return _starts_with_subshell(node.commands[0])
+        return False
+    return False
+
+
+def _format_cmdsub_node(
+    node: Node,
+    indent: int = 0,
+    in_procsub: bool = False,
+    compact_redirects: bool = False,
+    procsub_first: bool = False,
+) -> str:
     """Format an AST node for command substitution output (bash-oracle pretty-print format)."""
+    if node is None:
+        return ""
     sp = _repeat_str(" ", indent)
     inner_sp = _repeat_str(" ", indent + 4)
     if node.kind == "empty":
@@ -2400,11 +5072,29 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
             val = w._expand_all_ansi_c_quotes(w.value)
             # Strip $ from locale strings $"..." (quote-aware)
             val = w._strip_locale_string_dollars(val)
+            # Normalize whitespace in array assignments
+            val = w._normalize_array_whitespace(val)
             val = w._format_command_substitutions(val)
             parts.append(val)
+        # Check for heredocs - their bodies need to come at the end
+        heredocs = []
         for r in node.redirects:
-            parts.append(_format_redirect(r))
-        return " ".join(parts)
+            if r.kind == "heredoc":
+                heredocs.append(r)
+        for r in node.redirects:
+            # For heredocs, output just the operator part; body comes at end
+            parts.append(_format_redirect(r, compact=compact_redirects, heredoc_op_only=True))
+        # In compact mode with words, don't add space before redirects
+        if compact_redirects and node.words and node.redirects:
+            word_parts = parts[: len(node.words)]
+            redirect_parts = parts[len(node.words) :]
+            result = " ".join(word_parts) + "".join(redirect_parts)
+        else:
+            result = " ".join(parts)
+        # Append heredoc bodies at the end
+        for h in heredocs:
+            result = result + _format_heredoc_body(h)
+        return result
     if node.kind == "pipeline":
         # Build list of (cmd, needs_pipe_both_redirect) filtering out PipeBoth markers
         cmds = []
@@ -2415,9 +5105,7 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
                 i += 1
                 continue
             # Check if next element is PipeBoth
-            needs_redirect = (
-                i + 1 < len(node.commands) and node.commands[i + 1].kind == "pipe-both"
-            )
+            needs_redirect = i + 1 < len(node.commands) and node.commands[i + 1].kind == "pipe-both"
             cmds.append((cmd, needs_redirect))
             i += 1
         # Format pipeline, handling heredocs specially
@@ -2425,9 +5113,10 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
         idx = 0
         while idx < len(cmds):
             cmd, needs_redirect = cmds[idx]
-            formatted = _format_cmdsub_node(cmd, indent)
-            if needs_redirect:
-                formatted = formatted + " 2>&1"
+            # Only first command in pipeline inherits procsub_first
+            formatted = _format_cmdsub_node(
+                cmd, indent, in_procsub, False, procsub_first and idx == 0
+            )
             is_last = idx == len(cmds) - 1
             # Check if command has actual heredoc redirects
             has_heredoc = False
@@ -2436,6 +5125,16 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
                     if r.kind == "heredoc":
                         has_heredoc = True
                         break
+            # Add 2>&1 for |& pipes - before heredoc body if present
+            if needs_redirect:
+                if has_heredoc:
+                    first_nl = formatted.find("\n")
+                    if first_nl != -1:
+                        formatted = formatted[:first_nl] + " 2>&1" + formatted[first_nl:]
+                    else:
+                        formatted = formatted + " 2>&1"
+                else:
+                    formatted = formatted + " 2>&1"
             if not is_last and has_heredoc:
                 # Heredoc present - insert pipe after heredoc delimiter, before content
                 # Pattern: "... <<DELIM\ncontent\nDELIM\n" -> "... <<DELIM |\ncontent\nDELIM\n"
@@ -2447,6 +5146,8 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
                 result_parts.append(formatted)
             idx += 1
         # Join with " | " for commands without heredocs, or just join if heredocs handled
+        # In procsub, if first command is subshell, use compact "|" separator
+        compact_pipe = in_procsub and cmds and cmds[0][0].kind == "subshell"
         result = ""
         idx = 0
         while idx < len(result_parts):
@@ -2455,6 +5156,8 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
                 # If previous part ends with heredoc (newline), add indented command
                 if result.endswith("\n"):
                     result = result + "  " + part
+                elif compact_pipe:
+                    result = result + "|" + part
                 else:
                     result = result + " | " + part
             else:
@@ -2462,29 +5165,117 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
             idx += 1
         return result
     if node.kind == "list":
+        # Check if any command in the list has a heredoc redirect
+        has_heredoc = False
+        for p in node.parts:
+            if p.kind == "command" and p.redirects:
+                for r in p.redirects:
+                    if r.kind == "heredoc":
+                        has_heredoc = True
+                        break
+            elif p.kind == "pipeline":
+                # Check commands within the pipeline
+                for cmd in p.commands:
+                    if cmd.kind == "command" and cmd.redirects:
+                        for r in cmd.redirects:
+                            if r.kind == "heredoc":
+                                has_heredoc = True
+                                break
+                    if has_heredoc:
+                        break
         # Join commands with operators
         result = []
+        skipped_semi = False
+        cmd_count = 0  # Track number of non-operator commands seen
         for p in node.parts:
             if p.kind == "operator":
                 if p.op == ";":
+                    # Skip semicolon if previous command ends with heredoc (newline)
+                    if result and result[len(result) - 1].endswith("\n"):
+                        skipped_semi = True
+                        continue
+                    # Skip semicolon after pattern: heredoc, newline, command
+                    if (
+                        len(result) >= 3
+                        and result[len(result) - 2] == "\n"
+                        and result[len(result) - 3].endswith("\n")
+                    ):
+                        skipped_semi = True
+                        continue
                     result.append(";")
+                    skipped_semi = False
                 elif p.op == "\n":
                     # Skip newline if it follows a semicolon (redundant separator)
                     if result and result[len(result) - 1] == ";":
+                        skipped_semi = False
+                        continue
+                    # If previous ends with heredoc newline
+                    if result and result[len(result) - 1].endswith("\n"):
+                        # Add space if semicolon was skipped, else newline
+                        result.append(" " if skipped_semi else "\n")
+                        skipped_semi = False
                         continue
                     result.append("\n")
+                    skipped_semi = False
                 elif p.op == "&":
-                    result.append(" &")
+                    # If previous command has heredoc, insert & before heredoc content
+                    # But if it's a pipeline (contains |), append at end instead
+                    if (
+                        result
+                        and "<<" in result[len(result) - 1]
+                        and "\n" in result[len(result) - 1]
+                    ):
+                        last = result[len(result) - 1]
+                        # If this is a pipeline (has |), append & at the end
+                        if " |" in last or last.startswith("|"):
+                            result[len(result) - 1] = last + " &"
+                        else:
+                            first_nl = last.find("\n")
+                            result[len(result) - 1] = last[:first_nl] + " &" + last[first_nl:]
+                    else:
+                        result.append(" &")
                 else:
-                    result.append(" " + p.op)
+                    # For || and &&, insert before heredoc content like we do for &
+                    if (
+                        result
+                        and "<<" in result[len(result) - 1]
+                        and "\n" in result[len(result) - 1]
+                    ):
+                        last = result[len(result) - 1]
+                        first_nl = last.find("\n")
+                        result[len(result) - 1] = (
+                            last[:first_nl] + " " + p.op + " " + last[first_nl:]
+                        )
+                    else:
+                        result.append(" " + p.op)
             else:
                 if result and not result[len(result) - 1].endswith((" ", "\n")):
                     result.append(" ")
-                result.append(_format_cmdsub_node(p, indent))
-        # Strip trailing ; or newline
+                # Only first command in list inherits procsub_first
+                formatted_cmd = _format_cmdsub_node(
+                    p, indent, in_procsub, compact_redirects, procsub_first and cmd_count == 0
+                )
+                # After heredoc with || or && inserted, add leading space to next command
+                if len(result) > 0:
+                    last = result[len(result) - 1]
+                    if " || \n" in last or " && \n" in last:
+                        formatted_cmd = " " + formatted_cmd
+                # When semicolon was skipped due to heredoc, add leading space
+                if skipped_semi:
+                    formatted_cmd = " " + formatted_cmd
+                    skipped_semi = False
+                result.append(formatted_cmd)
+                cmd_count += 1
+        # Strip trailing ; or newline (but preserve heredoc's trailing newline)
         s = "".join(result)
-        while s.endswith(";") or s.endswith("\n"):
+        # If we have & with heredoc (& before newline content), preserve trailing newline and add space
+        if " &\n" in s and s.endswith("\n"):
+            return s + " "
+        while s.endswith(";"):
             s = _substring(s, 0, len(s) - 1)
+        if not has_heredoc:
+            while s.endswith("\n"):
+                s = _substring(s, 0, len(s) - 1)
         return s
     if node.kind == "if":
         cond = _format_cmdsub_node(node.condition, indent)
@@ -2514,25 +5305,36 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
     if node.kind == "for":
         var = node.var
         body = _format_cmdsub_node(node.body, indent + 4)
-        if node.words:
+        if node.words is not None:
             word_vals = []
             for w in node.words:
                 word_vals.append(w.value)
             words = " ".join(word_vals)
-            result = (
-                "for "
-                + var
-                + " in "
-                + words
-                + ";\ndo\n"
-                + inner_sp
-                + body
-                + ";\n"
-                + sp
-                + "done"
-            )
+            if words:
+                result = (
+                    "for "
+                    + var
+                    + " in "
+                    + words
+                    + ";\n"
+                    + sp
+                    + "do\n"
+                    + inner_sp
+                    + body
+                    + ";\n"
+                    + sp
+                    + "done"
+                )
+            else:
+                # Empty 'in' clause: for var in ;
+                result = (
+                    "for " + var + " in ;\n" + sp + "do\n" + inner_sp + body + ";\n" + sp + "done"
+                )
         else:
-            result = "for " + var + ";\ndo\n" + inner_sp + body + ";\n" + sp + "done"
+            # No 'in' clause - bash implies 'in "$@"'
+            result = (
+                "for " + var + ' in "$@";\n' + sp + "do\n" + inner_sp + body + ";\n" + sp + "done"
+            )
         if node.redirects:
             for r in node.redirects:
                 result = result + " " + _format_redirect(r)
@@ -2571,15 +5373,12 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
             term = p.terminator  # ;;, ;&, or ;;&
             pat_indent = _repeat_str(" ", indent + 8)
             term_indent = _repeat_str(" ", indent + 4)
+            body_part = pat_indent + body + "\n" if body else "\n"
             if i == 0:
                 # First pattern on same line as 'in'
-                patterns.append(
-                    " " + pat + ")\n" + pat_indent + body + "\n" + term_indent + term
-                )
+                patterns.append(" " + pat + ")\n" + body_part + term_indent + term)
             else:
-                patterns.append(
-                    pat + ")\n" + pat_indent + body + "\n" + term_indent + term
-                )
+                patterns.append(pat + ")\n" + body_part + term_indent + term)
             i += 1
         pattern_str = ("\n" + _repeat_str(" ", indent + 4)).join(patterns)
         redirects = ""
@@ -2596,14 +5395,15 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
         body = _format_cmdsub_node(inner_body, indent + 4).rstrip(";")
         return f"function {name} () \n{{ \n{inner_sp}{body}\n}}"
     if node.kind == "subshell":
-        body = _format_cmdsub_node(node.body, indent, in_procsub)
+        body = _format_cmdsub_node(node.body, indent, in_procsub, compact_redirects)
         redirects = ""
         if node.redirects:
             redirect_parts = []
             for r in node.redirects:
                 redirect_parts.append(_format_redirect(r))
             redirects = " ".join(redirect_parts)
-        if in_procsub:
+        # Use compact format only when subshell is at the start of a procsub
+        if procsub_first:
             if redirects:
                 return "(" + body + ") " + redirects
             return "(" + body + ")"
@@ -2613,6 +5413,8 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
     if node.kind == "brace-group":
         body = _format_cmdsub_node(node.body, indent)
         body = body.rstrip(";")  # Strip trailing semicolons before adding our own
+        # Don't add semicolon after background operator
+        terminator = " }" if body.endswith(" &") else "; }"
         redirects = ""
         if node.redirects:
             redirect_parts = []
@@ -2620,8 +5422,8 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
                 redirect_parts.append(_format_redirect(r))
             redirects = " ".join(redirect_parts)
         if redirects:
-            return "{ " + body + "; } " + redirects
-        return "{ " + body + "; }"
+            return "{ " + body + terminator + " " + redirects
+        return "{ " + body + terminator
     if node.kind == "arith-cmd":
         return "((" + node.raw_content + "))"
     if node.kind == "cond-expr":
@@ -2629,29 +5431,36 @@ def _format_cmdsub_node(node: Node, indent: int = 0, in_procsub: bool = False) -
         return "[[ " + body + " ]]"
     if node.kind == "negation":
         if node.pipeline:
-            return "\\! " + _format_cmdsub_node(node.pipeline, indent)
-        return "\\!"
+            return "! " + _format_cmdsub_node(node.pipeline, indent)
+        return "! "
     if node.kind == "time":
         prefix = "time -p " if node.posix else "time "
         if node.pipeline:
             return prefix + _format_cmdsub_node(node.pipeline, indent)
-        return prefix.rstrip()
+        return prefix
     # Fallback: return empty for unknown types
     return ""
 
 
-def _format_redirect(r: "Redirect | HereDoc") -> str:
+def _format_redirect(
+    r: Redirect | HereDoc, compact: bool = False, heredoc_op_only: bool = False
+) -> str:
     """Format a redirect for command substitution output."""
     if r.kind == "heredoc":
-        # Include heredoc content: <<DELIM\ncontent\nDELIM\n
         if r.strip_tabs:
             op = "<<-"
         else:
             op = "<<"
+        if r.fd is not None and r.fd != 0:
+            op = str(r.fd) + op
         if r.quoted:
             delim = "'" + r.delimiter + "'"
         else:
             delim = r.delimiter
+        if heredoc_op_only:
+            # Just the operator part (<<DELIM), body comes separately
+            return op + delim
+        # Include heredoc content: <<DELIM\ncontent\nDELIM\n
         return op + delim + "\n" + r.content + r.delimiter + "\n"
     op = r.op
     # Normalize default fd: 1> -> >, 0< -> <
@@ -2660,21 +5469,28 @@ def _format_redirect(r: "Redirect | HereDoc") -> str:
     elif op == "0<":
         op = "<"
     target = r.target.value
+    # Expand ANSI-C $'...' quotes
+    target = r.target._expand_all_ansi_c_quotes(target)
+    # Strip $ from locale strings $"..."
+    target = r.target._strip_locale_string_dollars(target)
+    # Format command/process substitutions
+    target = r.target._format_command_substitutions(target)
     # For fd duplication (target starts with &), handle normalization
     if target.startswith("&"):
         # Normalize N<&- to N>&- (close always uses >)
+        was_input_close = False
         if target == "&-" and op.endswith("<"):
+            was_input_close = True
             op = _substring(op, 0, len(op) - 1) + ">"
         # Check if target is a literal fd (digit or -)
         after_amp = _substring(target, 1, len(target))
-        is_literal_fd = after_amp == "-" or (
-            len(after_amp) > 0 and after_amp[0].isdigit()
-        )
+        is_literal_fd = after_amp == "-" or (len(after_amp) > 0 and after_amp[0].isdigit())
         if is_literal_fd:
             # Add default fd for bare >&N or <&N
-            if op == ">":
-                op = "1>"
-            elif op == "<":
+            if op == ">" or op == ">&":
+                # If we normalized from <&-, use fd 0 (stdin), otherwise fd 1 (stdout)
+                op = "0>" if was_input_close else "1>"
+            elif op == "<" or op == "<&":
                 op = "0<"
         else:
             # Variable target: use bare >& or <&
@@ -2683,31 +5499,143 @@ def _format_redirect(r: "Redirect | HereDoc") -> str:
             elif op == "0<":
                 op = "<"
         return op + target
+    # For >& and <& (fd dup operators), no space before target
+    if op.endswith("&"):
+        return op + target
+    if compact:
+        return op + target
     return op + " " + target
 
 
-def _normalize_fd_redirects(s: str) -> str:
-    """Normalize fd redirects in a raw string: >&2 -> 1>&2, <&N -> 0<&N."""
-    # Match >&N or <&N not preceded by a digit, add default fd
-    result = []
-    i = 0
-    while i < len(s):
-        # Check for >&N or <&N
-        if i + 2 < len(s) and s[i + 1] == "&" and s[i + 2].isdigit():
-            prev_is_digit = i > 0 and s[i - 1].isdigit()
-            if s[i] == ">" and not prev_is_digit:
-                result.append("1>&")
-                result.append(s[i + 2])
-                i += 3
-                continue
-            elif s[i] == "<" and not prev_is_digit:
-                result.append("0<&")
-                result.append(s[i + 2])
-                i += 3
-                continue
-        result.append(s[i])
+def _format_heredoc_body(r: HereDoc) -> str:
+    """Format just the heredoc body part (content + closing delimiter)."""
+    return "\n" + r.content + r.delimiter + "\n"
+
+
+def _lookahead_for_esac(value: str, start: int, case_depth: int) -> bool:
+    """Look ahead from start to find if esac closes all cases before a closing ).
+
+    Returns True if we find esac that brings case_depth to 0.
+    Returns False if we hit a ) that would close the command substitution.
+    """
+    i = start
+    depth = case_depth
+    quote = QuoteState()
+    while i < len(value):
+        c = value[i]
+        # Handle escapes (only in double quotes)
+        if c == "\\" and i + 1 < len(value) and quote.double:
+            i += 2
+            continue
+        # Track quote state
+        if c == "'" and not quote.double:
+            quote.single = not quote.single
+            i += 1
+            continue
+        if c == '"' and not quote.single:
+            quote.double = not quote.double
+            i += 1
+            continue
+        # Skip content inside quotes
+        if quote.single or quote.double:
+            i += 1
+            continue
+        # Check for case/esac keywords
+        if _starts_with_at(value, i, "case") and _is_word_boundary(value, i, 4):
+            depth += 1
+            i += 4
+        elif _starts_with_at(value, i, "esac") and _is_word_boundary(value, i, 4):
+            depth -= 1
+            if depth == 0:
+                return True
+            i += 4
+        elif c == "(":
+            i += 1
+        elif c == ")":
+            if depth > 0:
+                i += 1
+            else:
+                break
+        else:
+            i += 1
+    return False
+
+
+def _skip_backtick(value: str, start: int) -> int:
+    """Skip past a backtick command substitution. Returns position after closing `."""
+    i = start + 1  # Skip opening `
+    while i < len(value) and value[i] != "`":
+        if value[i] == "\\" and i + 1 < len(value):
+            i += 2
+        else:
+            i += 1
+    if i < len(value):
+        i += 1  # Skip closing `
+    return i
+
+
+def _is_valid_arithmetic_start(value: str, start: int) -> bool:
+    """Check if $(( at position starts a valid arithmetic expression.
+
+    Scans forward looking for )) at the top paren level (excluding nested $()).
+    Returns True if valid arithmetic, False if this is actually $( ( ... ) )
+    (command substitution containing a subshell).
+    """
+    scan_paren = 0
+    scan_i = start + 3  # Skip past $((
+    while scan_i < len(value):
+        scan_c = value[scan_i]
+        # Skip over $( command subs - their parens shouldn't count
+        if scan_c == "$" and scan_i + 1 < len(value) and value[scan_i + 1] == "(":
+            scan_i = _find_cmdsub_end(value, scan_i + 2)
+            continue
+        if scan_c == "(":
+            scan_paren += 1
+        elif scan_c == ")":
+            if scan_paren > 0:
+                scan_paren -= 1
+            elif scan_i + 1 < len(value) and value[scan_i + 1] == ")":
+                return True  # Found )) at top level, valid arithmetic
+            else:
+                # Single ) at top level without following ) - not valid arithmetic
+                return False
+        scan_i += 1
+    return False  # Never found ))
+
+
+def _find_funsub_end(value: str, start: int) -> int:
+    """Find the end of a ${ cmd; } brace command substitution.
+
+    Starts after the opening ${. Returns position after the closing }.
+    Handles nested braces, quotes, and command substitutions.
+    """
+    depth = 1
+    i = start
+    quote = QuoteState()
+    while i < len(value) and depth > 0:
+        c = value[i]
+        if c == "\\" and i + 1 < len(value) and not quote.single:
+            i += 2
+            continue
+        if c == "'" and not quote.double:
+            quote.single = not quote.single
+            i += 1
+            continue
+        if c == '"' and not quote.single:
+            quote.double = not quote.double
+            i += 1
+            continue
+        if quote.single or quote.double:
+            i += 1
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
         i += 1
-    return "".join(result)
+    return len(value)
 
 
 def _find_cmdsub_end(value: str, start: int) -> int:
@@ -2717,30 +5645,30 @@ def _find_cmdsub_end(value: str, start: int) -> int:
     """
     depth = 1
     i = start
-    in_single = False
-    in_double = False
+    quote = QuoteState()
     case_depth = 0  # Track nested case statements
     in_case_patterns = False  # After 'in' but before first ;; or esac
     arith_depth = 0  # Track nested arithmetic expressions
+    arith_paren_depth = 0  # Track grouping parens inside arithmetic
     while i < len(value) and depth > 0:
         c = value[i]
         # Handle escapes
-        if c == "\\" and i + 1 < len(value) and not in_single:
+        if c == "\\" and i + 1 < len(value) and not quote.single:
             i += 2
             continue
         # Handle quotes
-        if c == "'" and not in_double:
-            in_single = not in_single
+        if c == "'" and not quote.double:
+            quote.single = not quote.single
             i += 1
             continue
-        if c == '"' and not in_single:
-            in_double = not in_double
+        if c == '"' and not quote.single:
+            quote.double = not quote.double
             i += 1
             continue
-        if in_single:
+        if quote.single:
             i += 1
             continue
-        if in_double:
+        if quote.double:
             # Inside double quotes, $() command substitution is still active
             if _starts_with_at(value, i, "$(") and not _starts_with_at(value, i, "$(("):
                 # Recursively find end of nested command substitution
@@ -2752,16 +5680,21 @@ def _find_cmdsub_end(value: str, start: int) -> int:
             continue
         # Handle comments - skip from # to end of line
         # Only treat # as comment if preceded by whitespace or at start
-        if c == "#" and (
-            i == start
-            or value[i - 1] == " "
-            or value[i - 1] == "\t"
-            or value[i - 1] == "\n"
-            or value[i - 1] == ";"
-            or value[i - 1] == "|"
-            or value[i - 1] == "&"
-            or value[i - 1] == "("
-            or value[i - 1] == ")"
+        # Don't treat # as comment inside arithmetic expressions (arith_depth > 0)
+        if (
+            c == "#"
+            and arith_depth == 0
+            and (
+                i == start
+                or value[i - 1] == " "
+                or value[i - 1] == "\t"
+                or value[i - 1] == "\n"
+                or value[i - 1] == ";"
+                or value[i - 1] == "|"
+                or value[i - 1] == "&"
+                or value[i - 1] == "("
+                or value[i - 1] == ")"
+            )
         ):
             while i < len(value) and value[i] != "\n":
                 i += 1
@@ -2795,13 +5728,23 @@ def _find_cmdsub_end(value: str, start: int) -> int:
             continue
         # Handle arithmetic expressions $((
         if _starts_with_at(value, i, "$(("):
-            arith_depth += 1
-            i += 3
+            if _is_valid_arithmetic_start(value, i):
+                arith_depth += 1
+                i += 3
+                continue
+            # Not valid arithmetic, treat $( as nested cmdsub and ( as paren
+            j = _find_cmdsub_end(value, i + 2)
+            i = j
             continue
-        # Handle arithmetic close ))
-        if arith_depth > 0 and _starts_with_at(value, i, "))"):
+        # Handle arithmetic close )) - only when no inner grouping parens are open
+        if arith_depth > 0 and arith_paren_depth == 0 and _starts_with_at(value, i, "))"):
             arith_depth -= 1
             i += 2
+            continue
+        # Handle backtick command substitution - skip to closing backtick
+        # Must handle this before heredoc check to avoid treating << inside backticks as heredoc
+        if c == "`":
+            i = _skip_backtick(value, i)
             continue
         # Handle heredocs (but not << inside arithmetic, which is shift operator)
         if arith_depth == 0 and _starts_with_at(value, i, "<<"):
@@ -2814,11 +5757,7 @@ def _find_cmdsub_end(value: str, start: int) -> int:
             i += 4
             continue
         # Check for 'in' keyword (after case)
-        if (
-            case_depth > 0
-            and _starts_with_at(value, i, "in")
-            and _is_word_boundary(value, i, 2)
-        ):
+        if case_depth > 0 and _starts_with_at(value, i, "in") and _is_word_boundary(value, i, 2):
             in_case_patterns = True
             i += 2
             continue
@@ -2837,12 +5776,19 @@ def _find_cmdsub_end(value: str, start: int) -> int:
         if c == "(":
             # In case patterns, ( before pattern name is optional and not a grouping paren
             if not (in_case_patterns and case_depth > 0):
-                depth += 1
+                if arith_depth > 0:
+                    arith_paren_depth += 1
+                else:
+                    depth += 1
         elif c == ")":
             # In case patterns, ) after pattern name is not a grouping paren
             if in_case_patterns and case_depth > 0:
-                # This ) is a case pattern terminator, skip it
-                pass
+                if not _lookahead_for_esac(value, i + 1, case_depth):
+                    depth -= 1
+            elif arith_depth > 0:
+                if arith_paren_depth > 0:
+                    arith_paren_depth -= 1
+                # else: single ) in arithmetic without matching ( - skip it
             else:
                 depth -= 1
         i += 1
@@ -2874,27 +5820,84 @@ def _skip_heredoc(value: str, start: int) -> int:
         # Backslash-quoted delimiter like <<\EOF
         i += 1
         delim_start = i
-        while i < len(value) and not _is_whitespace(value[i]):
+        if i < len(value):
+            i += 1
+        while i < len(value) and not _is_metachar(value[i]):
             i += 1
         delimiter = _substring(value, delim_start, i)
     else:
-        # Unquoted delimiter
-        while i < len(value) and not _is_whitespace(value[i]):
+        # Unquoted delimiter - stop at metacharacters like )
+        while i < len(value) and not _is_metachar(value[i]):
             i += 1
         delimiter = _substring(value, delim_start, i)
     # Skip to end of line (heredoc content starts on next line)
+    # But track paren depth - if we hit a ) at depth 0, it closes the cmdsub
+    # Must handle quotes and backticks since newlines in them don't end the line
+    paren_depth = 0
+    quote = QuoteState()
+    in_backtick = False
     while i < len(value) and value[i] != "\n":
+        c = value[i]
+        # Handle escapes (in double quotes or backticks)
+        if c == "\\" and i + 1 < len(value) and (quote.double or in_backtick):
+            i += 2
+            continue
+        # Track quote state
+        if c == "'" and not quote.double and not in_backtick:
+            quote.single = not quote.single
+            i += 1
+            continue
+        if c == '"' and not quote.single and not in_backtick:
+            quote.double = not quote.double
+            i += 1
+            continue
+        if c == "`" and not quote.single:
+            in_backtick = not in_backtick
+            i += 1
+            continue
+        # Skip content inside quotes/backticks
+        if quote.single or quote.double or in_backtick:
+            i += 1
+            continue
+        # Track paren depth
+        if c == "(":
+            paren_depth += 1
+        elif c == ")":
+            if paren_depth == 0:
+                # This ) closes the enclosing command substitution, stop here
+                break
+            paren_depth -= 1
         i += 1
-    if i < len(value):
+    # If we stopped at ) (closing cmdsub), return here - no heredoc content
+    if i < len(value) and value[i] == ")":
+        return i
+    if i < len(value) and value[i] == "\n":
         i += 1  # Skip newline
     # Find the end delimiter on its own line
     while i < len(value):
         line_start = i
-        # Find end of this line
+        # Find end of this line - heredoc content can contain )
         line_end = i
         while line_end < len(value) and value[line_end] != "\n":
             line_end += 1
         line = _substring(value, line_start, line_end)
+        # Handle backslash-newline continuation (join continued lines)
+        while line_end < len(value):
+            trailing_bs = 0
+            for j in range(len(line) - 1, -1, -1):
+                if line[j] == "\\":
+                    trailing_bs += 1
+                else:
+                    break
+            if trailing_bs % 2 == 0:
+                break  # Even backslashes (including 0) - no continuation
+            # Odd backslashes - line continuation
+            line = line[:-1]  # Remove trailing backslash
+            line_end += 1  # Skip newline
+            next_line_start = line_end
+            while line_end < len(value) and value[line_end] != "\n":
+                line_end += 1
+            line = line + _substring(value, next_line_start, line_end)
         # Check if this line is the delimiter (possibly with leading tabs for <<-)
         if start + 2 < len(value) and value[start + 2] == "-":
             stripped = line.lstrip("\t")
@@ -2906,6 +5909,12 @@ def _skip_heredoc(value: str, start: int) -> int:
                 return line_end + 1
             else:
                 return line_end
+        # Check if line starts with delimiter followed by other content
+        # This handles cases like "Xb)" where X is delimiter and b) continues the cmdsub
+        if stripped.startswith(delimiter) and len(stripped) > len(delimiter):
+            # Return position right after the delimiter
+            tabs_stripped = len(line) - len(stripped)
+            return line_start + tabs_stripped + len(delimiter)
         if line_end < len(value):
             i = line_end + 1
         else:
@@ -2913,14 +5922,86 @@ def _skip_heredoc(value: str, start: int) -> int:
     return i
 
 
+def _find_heredoc_content_end(
+    source: str, start: int, delimiters: list[tuple[str, bool]]
+) -> tuple[int, int]:
+    """Find heredoc content in source starting at start.
+    Returns (content_start, content_end) where content_start is position after newline
+    and content_end is position after all heredoc content.
+    delimiters is list of (delimiter, strip_tabs) tuples.
+    """
+    if not delimiters:
+        return start, start
+    pos = start
+    # Skip to end of current line (including non-whitespace)
+    while pos < len(source) and source[pos] != "\n":
+        pos += 1
+    if pos >= len(source):
+        return start, start
+    content_start = pos  # Include the newline in heredoc content
+    pos += 1  # skip the newline for scanning
+    for delimiter, strip_tabs in delimiters:
+        while pos < len(source):
+            line_start = pos
+            line_end = pos
+            while line_end < len(source) and source[line_end] != "\n":
+                line_end += 1
+            line = _substring(source, line_start, line_end)
+            # Handle backslash-newline continuation (join continued lines)
+            while line_end < len(source):
+                trailing_bs = 0
+                for j in range(len(line) - 1, -1, -1):
+                    if line[j] == "\\":
+                        trailing_bs += 1
+                    else:
+                        break
+                if trailing_bs % 2 == 0:
+                    break  # Even backslashes (including 0) - no continuation
+                # Odd backslashes - line continuation
+                line = line[:-1]  # Remove trailing backslash
+                line_end += 1  # Skip newline
+                next_line_start = line_end
+                while line_end < len(source) and source[line_end] != "\n":
+                    line_end += 1
+                line = line + _substring(source, next_line_start, line_end)
+            if strip_tabs:
+                line_stripped = line.lstrip("\t")
+            else:
+                line_stripped = line
+            if line_stripped == delimiter:
+                pos = line_end + 1 if line_end < len(source) else line_end
+                break
+            # Check if line starts with delimiter followed by other content
+            # This handles cases like "a?&)" where "a" is delimiter and "?&)" continues the process sub
+            if line_stripped.startswith(delimiter) and len(line_stripped) > len(delimiter):
+                # Return position right after the delimiter
+                tabs_stripped = len(line) - len(line_stripped)
+                pos = line_start + tabs_stripped + len(delimiter)
+                break
+            pos = line_end + 1 if line_end < len(source) else line_end
+    return content_start, pos
+
+
 def _is_word_boundary(s: str, pos: int, word_len: int) -> bool:
-    """Check if the word at pos is a standalone word (not part of larger word)."""
-    # Check character before
-    if pos > 0 and s[pos - 1].isalnum():
-        return False
+    """Check if the word at pos is a standalone word (not part of larger word).
+
+    For reserved words to be recognized, they must be preceded by whitespace,
+    command separators, or be at the start of the string. Characters like }
+    can be part of command names (e.g., }case is a valid command).
+    """
+    # Check character before - must be whitespace, separator, or start
+    if pos > 0:
+        prev = s[pos - 1]
+        # Alphanumeric or _ means the keyword is part of a larger word
+        if prev.isalnum() or prev == "_":
+            return False
+        # These characters can prefix a word and make it not a keyword
+        # e.g., }case, {case, !case are command names, not keyword
+        if prev in "{}!":
+            return False
     # Check character after
     end = pos + word_len
-    if end < len(s) and s[end].isalnum():
+    if end < len(s) and (s[end].isalnum() or s[end] == "_"):
         return False
     return True
 
@@ -2944,11 +6025,6 @@ RESERVED_WORDS = {
     "function",
     "coproc",
 }
-
-# Metacharacters that break words (unquoted)
-# Note: {} are NOT metacharacters - they're only special at command position
-# for brace groups. In words like {a,b,c}, braces are literal.
-METACHAR = set(" \t\n|&;()<>")
 
 COND_UNARY_OPS = {
     "-a",
@@ -2999,9 +6075,117 @@ COND_BINARY_OPS = {
 
 COMPOUND_KEYWORDS = {"while", "until", "for", "if", "case", "select"}
 
+# Builtins that allow array assignments in argument position (bash's ASSIGNMENT_BUILTIN flag)
+ASSIGNMENT_BUILTINS = {"alias", "declare", "typeset", "local", "export", "readonly", "eval", "let"}
+
 
 def _is_quote(c: str) -> bool:
     return c == "'" or c == '"'
+
+
+def _collapse_whitespace(s: str) -> str:
+    """Collapse consecutive tabs/spaces to single space and strip."""
+    result = []
+    prev_was_ws = False
+    for c in s:
+        if c == " " or c == "\t":
+            if not prev_was_ws:
+                result.append(" ")
+            prev_was_ws = True
+        else:
+            result.append(c)
+            prev_was_ws = False
+    joined = "".join(result)
+    return joined.strip(" \t")
+
+
+def _count_trailing_backslashes(s: str) -> int:
+    """Count trailing backslashes in a string."""
+    count = 0
+    for i in range(len(s) - 1, -1, -1):
+        if s[i] == "\\":
+            count += 1
+        else:
+            break
+    return count
+
+
+def _normalize_heredoc_delimiter(delimiter: str) -> str:
+    """Normalize heredoc delimiter for matching."""
+    result = []
+    i = 0
+    while i < len(delimiter):
+        # Handle command substitution $(...)
+        if i + 1 < len(delimiter) and delimiter[i : i + 2] == "$(":
+            result.append("$(")
+            i += 2
+            depth = 1
+            inner = []
+            while i < len(delimiter) and depth > 0:
+                if delimiter[i] == "(":
+                    depth += 1
+                    inner.append(delimiter[i])
+                elif delimiter[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        inner_str = "".join(inner)
+                        inner_str = _collapse_whitespace(inner_str)
+                        result.append(inner_str)
+                        result.append(")")
+                    else:
+                        inner.append(delimiter[i])
+                else:
+                    inner.append(delimiter[i])
+                i += 1
+        # Handle parameter expansion ${...}
+        elif i + 1 < len(delimiter) and delimiter[i : i + 2] == "${":
+            result.append("${")
+            i += 2
+            depth = 1
+            inner = []
+            while i < len(delimiter) and depth > 0:
+                if delimiter[i] == "{":
+                    depth += 1
+                    inner.append(delimiter[i])
+                elif delimiter[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        inner_str = "".join(inner)
+                        inner_str = _collapse_whitespace(inner_str)
+                        result.append(inner_str)
+                        result.append("}")
+                    else:
+                        inner.append(delimiter[i])
+                else:
+                    inner.append(delimiter[i])
+                i += 1
+        # Handle process substitution <(...) and >(...)
+        elif i + 1 < len(delimiter) and delimiter[i] in "<>" and delimiter[i + 1] == "(":
+            result.append(delimiter[i])
+            result.append("(")
+            i += 2
+            depth = 1
+            inner = []
+            while i < len(delimiter) and depth > 0:
+                if delimiter[i] == "(":
+                    depth += 1
+                    inner.append(delimiter[i])
+                elif delimiter[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        inner_str = "".join(inner)
+                        inner_str = _collapse_whitespace(inner_str)
+                        result.append(inner_str)
+                        result.append(")")
+                    else:
+                        inner.append(delimiter[i])
+                else:
+                    inner.append(delimiter[i])
+                i += 1
+        else:
+            result.append(delimiter[i])
+            i += 1
+    return "".join(result)
 
 
 def _is_metachar(c: str) -> bool:
@@ -3019,6 +6203,11 @@ def _is_metachar(c: str) -> bool:
     )
 
 
+def _is_funsub_char(c: str) -> bool:
+    """Check if character triggers brace command substitution (funsub)."""
+    return c == " " or c == "\t" or c == "\n" or c == "|"
+
+
 def _is_extglob_prefix(c: str) -> bool:
     return c == "@" or c == "?" or c == "*" or c == "+" or c == "!"
 
@@ -3029,8 +6218,13 @@ def _is_redirect_char(c: str) -> bool:
 
 def _is_special_param(c: str) -> bool:
     return (
-        c == "?" or c == "$" or c == "!" or c == "#" or c == "@" or c == "*" or c == "-"
+        c == "?" or c == "$" or c == "!" or c == "#" or c == "@" or c == "*" or c == "-" or c == "&"
     )
+
+
+def _is_special_param_unbraced(c: str) -> bool:
+    """Special params valid after bare $ (excludes & which is a shell metachar)."""
+    return c == "?" or c == "$" or c == "!" or c == "#" or c == "@" or c == "*" or c == "-"
 
 
 def _is_digit(c: str) -> bool:
@@ -3039,24 +6233,6 @@ def _is_digit(c: str) -> bool:
 
 def _is_semicolon_or_newline(c: str) -> bool:
     return c == ";" or c == "\n"
-
-
-def _is_right_bracket(c: str) -> bool:
-    return c == ")" or c == "}"
-
-
-def _is_word_start_context(c: str) -> bool:
-    """Check if char is a valid context for starting a word (whitespace or metachar except >)."""
-    return (
-        c == " "
-        or c == "\t"
-        or c == "\n"
-        or c == ";"
-        or c == "|"
-        or c == "&"
-        or c == "<"
-        or c == "("
-    )
 
 
 def _is_word_end_context(c: str) -> bool:
@@ -3073,6 +6249,128 @@ def _is_word_end_context(c: str) -> bool:
         or c == "("
         or c == ")"
     )
+
+
+# Flags for _skip_matched_pair (mirrors bash subst.c)
+_SMP_LITERAL = 1  # No quote/escape processing
+_SMP_PAST_OPEN = 2  # start points past open bracket
+
+
+def _skip_matched_pair(s: str, start: int, open: str, close: str, flags: int = 0) -> int:
+    """Skip a matched pair of brackets, handling quotes and escapes.
+
+    Mirrors bash's skip_matched_pair() in subst.c:2086.
+    Returns index after closing bracket, or -1 if unmatched.
+
+    Flags:
+        _SMP_LITERAL (1): No quote/escape processing
+        _SMP_PAST_OPEN (2): start already points past open bracket
+    """
+    n = len(s)
+    if flags & _SMP_PAST_OPEN:
+        i = start
+    else:
+        if start >= n or s[start] != open:
+            return -1
+        i = start + 1
+    depth = 1
+    pass_next = False
+    in_single = False
+    in_double = False
+    while i < n and depth > 0:
+        c = s[i]
+        if pass_next:
+            pass_next = False
+            i += 1
+            continue
+        literal = flags & _SMP_LITERAL
+        if not literal and c == "\\":
+            pass_next = True
+            i += 1
+            continue
+        if not literal and c == "'" and not in_double:
+            in_single = not in_single
+            i += 1
+            continue
+        if not literal and c == '"' and not in_single:
+            in_double = not in_double
+            i += 1
+            continue
+        in_quotes = in_single or in_double
+        if not literal and not in_quotes and c == open:
+            depth += 1
+        elif not in_quotes and c == close:
+            depth -= 1
+        i += 1
+    return i if depth == 0 else -1
+
+
+def _skip_subscript(s: str, start: int, flags: int = 0) -> int:
+    """Skip a bracketed subscript starting at s[start]='['.
+
+    Mirrors bash's skipsubscript() in subst.c:2186.
+    Flags are passed through to _skip_matched_pair().
+    """
+    return _skip_matched_pair(s, start, "[", "]", flags)
+
+
+def _assignment(s: str, flags: int = 0) -> int:
+    """Return index of '=' if s is an assignment word, else -1.
+
+    Handles: NAME=, NAME+=, NAME[sub]=, NAME[sub]+=
+    Matches bash's assignment() function in general.c.
+
+    Flags:
+        & 2: Use literal subscript matching (for compound assignments)
+    """
+    if not s:
+        return -1
+    if not (s[0].isalpha() or s[0] == "_"):
+        return -1
+    i = 1
+    while i < len(s):
+        c = s[i]
+        if c == "=":
+            return i
+        if c == "[":
+            sub_flags = _SMP_LITERAL if (flags & 2) else 0
+            end = _skip_subscript(s, i, sub_flags)
+            if end == -1:
+                return -1
+            i = end
+            if i < len(s) and s[i] == "+":
+                i += 1
+            if i < len(s) and s[i] == "=":
+                return i
+            return -1
+        if c == "+":
+            if i + 1 < len(s) and s[i + 1] == "=":
+                return i + 1
+            return -1
+        if not (c.isalnum() or c == "_"):
+            return -1
+        i += 1
+    return -1
+
+
+def _is_array_assignment_prefix(chars: list[str]) -> bool:
+    """Check if chars form name or name[subscript]... for array assignments."""
+    if not chars:
+        return False
+    if not (chars[0].isalpha() or chars[0] == "_"):
+        return False
+    s = "".join(chars)
+    i = 1
+    while i < len(s) and (s[i].isalnum() or s[i] == "_"):
+        i += 1
+    while i < len(s):
+        if s[i] != "[":
+            return False
+        end = _skip_subscript(s, i, _SMP_LITERAL)
+        if end == -1:
+            return False
+        i = end
+    return True
 
 
 def _is_special_param_or_digit(c: str) -> bool:
@@ -3101,16 +6399,37 @@ def _is_simple_param_op(c: str) -> bool:
     return c == "-" or c == "=" or c == "?" or c == "+"
 
 
-def _is_escape_char_in_dquote(c: str) -> bool:
+def _is_escape_char_in_backtick(c: str) -> bool:
     return c == "$" or c == "`" or c == "\\"
 
 
-def _is_list_terminator(c: str) -> bool:
-    return c == "\n" or c == "|" or c == ";" or c == "(" or c == ")"
+def _is_negation_boundary(c: str) -> bool:
+    return _is_whitespace(c) or c == ";" or c == "|" or c == ")" or c == "&" or c == ">" or c == "<"
 
 
-def _is_semicolon_or_amp(c: str) -> bool:
-    return c == ";" or c == "&"
+def _is_backslash_escaped(value: str, idx: int) -> bool:
+    """Return True if value[idx] is escaped by an odd number of backslashes."""
+    bs_count = 0
+    j = idx - 1
+    while j >= 0 and value[j] == "\\":
+        bs_count += 1
+        j -= 1
+    return bs_count % 2 == 1
+
+
+def _is_dollar_dollar_paren(value: str, idx: int) -> bool:
+    """Return True if $( at idx is actually $$( where $$ is PID, not command sub.
+
+    Count consecutive $ before idx. If odd, the $( is consumed by $$ (PID param).
+    E.g., $$(  -> $$ + ( literal (1 $ before, odd)
+          $$$( -> $$ + $( cmdsub (2 $ before, even)
+    """
+    dollar_count = 0
+    j = idx - 1
+    while j >= 0 and value[j] == "$":
+        dollar_count += 1
+        j -= 1
+    return dollar_count % 2 == 1
 
 
 def _is_paren(c: str) -> bool:
@@ -3133,27 +6452,318 @@ def _is_newline_or_right_paren(c: str) -> bool:
     return c == "\n" or c == ")"
 
 
-def _is_newline_or_right_bracket(c: str) -> bool:
-    return c == "\n" or c == ")" or c == "}"
-
-
 def _is_semicolon_newline_brace(c: str) -> bool:
     return c == ";" or c == "\n" or c == "{"
 
 
-def _str_contains(haystack: str, needle: str) -> bool:
-    """Check if haystack contains needle substring."""
-    return haystack.find(needle) != -1
+def _looks_like_assignment(s: str) -> bool:
+    """Check if s looks like an assignment word."""
+    return _assignment(s) != -1
+
+
+def _is_valid_identifier(name: str) -> bool:
+    """Check if name is a valid bash identifier (variable/function name)."""
+    if not name:
+        return False
+    if not (name[0].isalpha() or name[0] == "_"):
+        return False
+    for c in name[1:]:
+        if not (c.isalnum() or c == "_"):
+            return False
+    return True
+
+
+# Word parsing context constants
+WORD_CTX_NORMAL = 0  # Regular command context
+WORD_CTX_COND = 1  # Inside [[ ]]
+WORD_CTX_REGEX = 2  # RHS of =~ in [[ ]]
 
 
 class Parser:
     """Recursive descent parser for bash."""
 
-    def __init__(self, source: str):
+    def __init__(self, source: str, in_process_sub: bool = False, extglob: bool = False):
         self.source = source
         self.pos = 0
         self.length = len(source)
-        self._pending_heredoc_end = None
+        self._pending_heredocs: list[HereDoc] = []
+        # Track heredoc content that was consumed into command/process substitutions
+        # and needs to be skipped when we reach a newline
+        self._cmdsub_heredoc_end: int | None = None
+        self._saw_newline_in_single_quote = False
+        self._in_process_sub = in_process_sub
+        # Extglob parsing enabled (bash shopt extglob)
+        self._extglob = extglob
+        # Context stack for tracking nested parsing scopes
+        self._ctx = ContextStack()
+        # Lexer for tokenization
+        self._lexer = Lexer(source, extglob=extglob)
+        self._lexer._parser = self  # Back-reference for expansion parsing
+        # Token history for context-sensitive parsing (last 4 tokens like bash)
+        self._token_history: list[Token | None] = [None, None, None, None]
+        # Parser state flags for context-sensitive decisions
+        self._parser_state = ParserStateFlags.NONE
+        # Dolbrace state for ${...} parameter expansion parsing
+        self._dolbrace_state = DolbraceState.NONE
+        # EOF token mechanism for inline command substitution parsing
+        self._eof_token: str | None = None
+        # Word parsing context for Lexer sync
+        self._word_context = WORD_CTX_NORMAL
+        self._at_command_start = False
+        self._in_array_literal = False
+        self._in_assign_builtin = False
+
+    def _set_state(self, flag: int) -> None:
+        """Set a parser state flag."""
+        self._parser_state = self._parser_state | flag
+
+    def _clear_state(self, flag: int) -> None:
+        """Clear a parser state flag."""
+        self._parser_state = self._parser_state & ~flag
+
+    def _in_state(self, flag: int) -> bool:
+        """Check if a parser state flag is set."""
+        return (self._parser_state & flag) != 0
+
+    def _save_parser_state(self) -> SavedParserState:
+        """Save current parser state for nested parsing.
+
+        Based on bash's save_parser_state(). Used when entering nested
+        constructs like command substitutions to preserve context.
+        """
+        return SavedParserState(
+            parser_state=self._parser_state,
+            dolbrace_state=self._dolbrace_state,
+            pending_heredocs=list(self._pending_heredocs),
+            ctx_stack=self._ctx.copy_stack(),
+            eof_token=self._eof_token,
+        )
+
+    def _restore_parser_state(self, saved: SavedParserState) -> None:
+        """Restore parser state after nested parsing.
+
+        Based on bash's restore_parser_state(). Note: position is NOT restored
+        since we've advanced through the nested content. Heredocs are also not
+        restored since they were consumed during nested parsing.
+        """
+        self._parser_state = saved.parser_state
+        self._dolbrace_state = saved.dolbrace_state
+        self._eof_token = saved.eof_token
+        # Restore complete context stack
+        self._ctx.restore_from(saved.ctx_stack)
+
+    def _record_token(self, tok: Token) -> None:
+        """Record token in history, shifting older tokens."""
+        self._token_history = [
+            tok,
+            self._token_history[0],
+            self._token_history[1],
+            self._token_history[2],
+        ]
+
+    def _update_dolbrace_for_op(self, op: str | None, has_param: bool) -> None:
+        """Update dolbrace state based on operator seen.
+
+        Based on bash's parse.y lines 4010-4027.
+        """
+        if self._dolbrace_state == DolbraceState.NONE:
+            return
+        if op is None or len(op) == 0:
+            return
+        first_char = op[0]
+        # If we have a param name and see certain operators, go to QUOTE/QUOTE2
+        if self._dolbrace_state == DolbraceState.PARAM and has_param:
+            if first_char in "%#^,":
+                self._dolbrace_state = DolbraceState.QUOTE
+                return
+            if first_char == "/":
+                self._dolbrace_state = DolbraceState.QUOTE2
+                return
+        # Any operator char transitions PARAM -> OP
+        if self._dolbrace_state == DolbraceState.PARAM:
+            if first_char in "#%^,~:-=?+/":
+                self._dolbrace_state = DolbraceState.OP
+
+    def _sync_lexer(self) -> None:
+        """Sync Lexer position and state to Parser."""
+        # Invalidate cache if it doesn't match our current position or context
+        if self._lexer._token_cache is not None:
+            if (
+                self._lexer._token_cache.pos != self.pos
+                or self._lexer._cached_word_context != self._word_context
+                or self._lexer._cached_at_command_start != self._at_command_start
+                or self._lexer._cached_in_array_literal != self._in_array_literal
+                or self._lexer._cached_in_assign_builtin != self._in_assign_builtin
+            ):
+                self._lexer._token_cache = None
+        # Sync lexer position
+        if self._lexer.pos != self.pos:
+            self._lexer.pos = self.pos
+        self._lexer._eof_token = self._eof_token
+        self._lexer._parser_state = self._parser_state
+        # Sync last read token from parser's token history
+        self._lexer._last_read_token = self._token_history[0]
+        # Sync word context
+        self._lexer._word_context = self._word_context
+        self._lexer._at_command_start = self._at_command_start
+        self._lexer._in_array_literal = self._in_array_literal
+        self._lexer._in_assign_builtin = self._in_assign_builtin
+
+    def _sync_parser(self) -> None:
+        """Sync Parser position to Lexer position."""
+        self.pos = self._lexer.pos
+
+    def _lex_peek_token(self) -> Token:
+        """Peek at next token via Lexer."""
+        # Check if cached token is valid: same position AND same word context
+        # (word context affects how array subscripts and other constructs are parsed)
+        if (
+            self._lexer._token_cache is not None
+            and self._lexer._token_cache.pos == self.pos
+            and self._lexer._cached_word_context == self._word_context
+            and self._lexer._cached_at_command_start == self._at_command_start
+            and self._lexer._cached_in_array_literal == self._in_array_literal
+            and self._lexer._cached_in_assign_builtin == self._in_assign_builtin
+        ):
+            return self._lexer._token_cache
+        # Need to read a new token - sync lexer to our position first
+        saved_pos = self.pos
+        self._sync_lexer()
+        result = self._lexer.peek_token()
+        # Save the context used for this cached token
+        self._lexer._cached_word_context = self._word_context
+        self._lexer._cached_at_command_start = self._at_command_start
+        self._lexer._cached_in_array_literal = self._in_array_literal
+        self._lexer._cached_in_assign_builtin = self._in_assign_builtin
+        # Save the post-read position (may have advanced for heredocs)
+        self._lexer._post_read_pos = self._lexer.pos
+        # Restore parser position for peek semantics
+        self.pos = saved_pos
+        return result
+
+    def _lex_next_token(self) -> Token:
+        """Get next token via Lexer and sync position."""
+        # Check if cached token is valid: same position AND same word context
+        if (
+            self._lexer._token_cache is not None
+            and self._lexer._token_cache.pos == self.pos
+            and self._lexer._cached_word_context == self._word_context
+            and self._lexer._cached_at_command_start == self._at_command_start
+            and self._lexer._cached_in_array_literal == self._in_array_literal
+            and self._lexer._cached_in_assign_builtin == self._in_assign_builtin
+        ):
+            # Consume cached token - use saved post-read position
+            tok = self._lexer.next_token()
+            self.pos = self._lexer._post_read_pos
+            self._lexer.pos = self._lexer._post_read_pos
+        else:
+            # No valid cache - sync and read fresh
+            self._sync_lexer()
+            tok = self._lexer.next_token()
+            # Save context for this token
+            self._lexer._cached_word_context = self._word_context
+            self._lexer._cached_at_command_start = self._at_command_start
+            self._lexer._cached_in_array_literal = self._in_array_literal
+            self._lexer._cached_in_assign_builtin = self._in_assign_builtin
+            self._sync_parser()
+        self._record_token(tok)
+        return tok
+
+    def _lex_skip_blanks(self) -> None:
+        """Skip blanks via Lexer."""
+        self._sync_lexer()
+        self._lexer.skip_blanks()
+        self._sync_parser()
+
+    def _lex_skip_comment(self) -> bool:
+        """Skip comment via Lexer. Returns True if comment was skipped."""
+        self._sync_lexer()
+        result = self._lexer._skip_comment()
+        self._sync_parser()
+        return result
+
+    def _lex_is_command_terminator(self) -> bool:
+        """Check if next token is a simple command terminator.
+
+        Returns True for tokens that terminate a simple command:
+        - EOF (including via _eof_token mechanism)
+        - NEWLINE
+        - PIPE (but not PIPE_AMP)
+        - SEMI (but not SEMI_SEMI, SEMI_AMP, SEMI_SEMI_AMP)
+        - LPAREN, RPAREN
+        - AMP (but not AMP_GREATER, AMP_GREATER_GREATER, AND_AND)
+        - RBRACE (at command position)
+        """
+        tok = self._lex_peek_token()
+        t = tok.type
+        return t in (
+            TokenType.EOF,
+            TokenType.NEWLINE,
+            TokenType.PIPE,
+            TokenType.SEMI,
+            TokenType.LPAREN,
+            TokenType.RPAREN,
+            TokenType.AMP,
+        )
+
+    def _lex_peek_operator(self) -> tuple[int, str] | None:
+        """Peek operator token. Returns (token_type, value) or None."""
+        tok = self._lex_peek_token()
+        t = tok.type
+        # Single-char operators: SEMI(10) through GREATER(18)
+        # Multi-char operators: AND_AND(30) through PIPE_AMP(45)
+        if (t >= TokenType.SEMI and t <= TokenType.GREATER) or (
+            t >= TokenType.AND_AND and t <= TokenType.PIPE_AMP
+        ):
+            return (t, tok.value)
+        return None
+
+    def _lex_peek_reserved_word(self) -> str | None:
+        """Peek reserved word. Returns word value if reserved, None otherwise."""
+        tok = self._lex_peek_token()
+        if tok.type != TokenType.WORD:
+            return None
+        # Strip trailing backslash-newline (line continuation) for classification
+        # The lexer includes \<newline> in words, but reserved word check ignores it
+        word = tok.value
+        if word.endswith("\\\n"):
+            word = word[:-2]
+        # Check against module-level RESERVED_WORDS set plus additional reserved tokens
+        # (Using module-level constant for transpiler compatibility)
+        if word in RESERVED_WORDS or word in ("{", "}", "[[", "]]", "!", "time"):
+            return word
+        return None
+
+    def _lex_is_at_reserved_word(self, word: str) -> bool:
+        """Check if next token is a specific reserved word."""
+        reserved = self._lex_peek_reserved_word()
+        return reserved == word
+
+    def _lex_consume_word(self, expected: str) -> bool:
+        """Try to consume a word token matching expected. Returns True if successful."""
+        tok = self._lex_peek_token()
+        if tok.type != TokenType.WORD:
+            return False
+        # Strip trailing backslash-newline (line continuation) for comparison
+        word = tok.value
+        if word.endswith("\\\n"):
+            word = word[:-2]
+        if word == expected:
+            self._lex_next_token()
+            return True
+        return False
+
+    def _lex_peek_case_terminator(self) -> str | None:
+        """Peek case terminator (;;, ;&, ;;&). Returns value or None."""
+        tok = self._lex_peek_token()
+        t = tok.type
+        if t == TokenType.SEMI_SEMI:
+            return ";;"
+        if t == TokenType.SEMI_AMP:
+            return ";&"
+        if t == TokenType.SEMI_SEMI_AMP:
+            return ";;&"
+        return None
 
     def at_end(self) -> bool:
         """Check if we've reached the end of input."""
@@ -3173,21 +6783,41 @@ class Parser:
         self.pos += 1
         return ch
 
+    def peek_at(self, offset: int) -> str:
+        """Peek at character at offset from current position.
+
+        Returns empty string if position is out of bounds.
+        """
+        pos = self.pos + offset
+        if pos < 0 or pos >= self.length:
+            return ""
+        return self.source[pos]
+
+    def lookahead(self, n: int) -> str:
+        """Return next n characters without consuming."""
+        return _substring(self.source, self.pos, self.pos + n)
+
+    def _is_bang_followed_by_procsub(self) -> bool:
+        """Check if ! at current position is followed by >( or <( process substitution."""
+        if self.pos + 2 >= self.length:
+            return False
+        next_char = self.source[self.pos + 1]
+        if next_char != ">" and next_char != "<":
+            return False
+        return self.source[self.pos + 2] == "("
+
     def skip_whitespace(self) -> None:
         """Skip spaces, tabs, comments, and backslash-newline continuations."""
         while not self.at_end():
+            # Use Lexer for spaces/tabs
+            self._lex_skip_blanks()
+            if self.at_end():
+                break
             ch = self.peek()
-            if _is_whitespace_no_newline(ch):
-                self.advance()
-            elif ch == "#":
-                # Skip comment to end of line (but not the newline itself)
-                while not self.at_end() and self.peek() != "\n":
-                    self.advance()
-            elif (
-                ch == "\\"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "\n"
-            ):
+            if ch == "#":
+                # Use Lexer to skip comment
+                self._lex_skip_comment()
+            elif ch == "\\" and self.peek_at(1) == "\n":
                 # Backslash-newline is line continuation - skip both
                 self.advance()
                 self.advance()
@@ -3200,28 +6830,58 @@ class Parser:
             ch = self.peek()
             if _is_whitespace(ch):
                 self.advance()
-                # After advancing past a newline, skip any pending heredoc content
+                # After advancing past a newline, gather pending heredoc content
                 if ch == "\n":
-                    if (
-                        self._pending_heredoc_end is not None
-                        and self._pending_heredoc_end > self.pos
-                    ):
-                        self.pos = self._pending_heredoc_end
-                        self._pending_heredoc_end = None
+                    self._gather_heredoc_bodies()
+                    # Skip heredoc content consumed by command/process substitutions
+                    if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                        self.pos = self._cmdsub_heredoc_end
+                        self._cmdsub_heredoc_end = None
             elif ch == "#":
                 # Skip comment to end of line
                 while not self.at_end() and self.peek() != "\n":
                     self.advance()
-            elif (
-                ch == "\\"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "\n"
-            ):
+            elif ch == "\\" and self.peek_at(1) == "\n":
                 # Backslash-newline is line continuation - skip both
                 self.advance()
                 self.advance()
             else:
                 break
+
+    def _at_list_terminating_bracket(self) -> bool:
+        """Check if we're at a bracket that terminates a list (closing subshell or brace group).
+
+        Returns True for ')' always (since it's a metachar).
+        Returns True for '}' only if it's standalone (followed by word-end context or EOF).
+        This handles cases like 'a&}}' where '}}' is a word, not a brace-group closer.
+        Also returns True if we're at the EOF token (for funsub parsing).
+        """
+        if self.at_end():
+            return False
+        ch = self.peek()
+        # Check if we're at the EOF token (e.g., } in funsub or ) in comsub)
+        if self._eof_token is not None and ch == self._eof_token:
+            return True
+        if ch == ")":
+            return True
+        if ch == "}":
+            # } is only a list terminator if standalone (not part of a word like }})
+            next_pos = self.pos + 1
+            if next_pos >= self.length:
+                return True  # } at EOF is standalone
+            return _is_word_end_context(self.source[next_pos])
+        return False
+
+    def _at_eof_token(self) -> bool:
+        """Check if next token is the EOF token (grammar-level check)."""
+        if self._eof_token is None:
+            return False
+        tok = self._lex_peek_token()
+        if self._eof_token == ")":
+            return tok.type == TokenType.RPAREN
+        if self._eof_token == "}":
+            return tok.type == TokenType.WORD and tok.value == "}"
+        return False
 
     def _collect_redirects(self) -> list | None:
         """Collect trailing redirects after a compound command."""
@@ -3240,18 +6900,20 @@ class Parser:
             brace = self.parse_brace_group()
             if brace is None:
                 raise ParseError(
-                    f"Expected brace group body in {context}", pos=self.pos
+                    f"Expected brace group body in {context}", pos=self._lex_peek_token().pos
                 )
             return brace.body
-        if self.consume_word("do"):
+        if self._lex_consume_word("do"):
             body = self.parse_list_until({"done"})
             if body is None:
-                raise ParseError("Expected commands after 'do'", pos=self.pos)
+                raise ParseError("Expected commands after 'do'", pos=self._lex_peek_token().pos)
             self.skip_whitespace_and_newlines()
-            if not self.consume_word("done"):
-                raise ParseError(f"Expected 'done' to close {context}", pos=self.pos)
+            if not self._lex_consume_word("done"):
+                raise ParseError(
+                    f"Expected 'done' to close {context}", pos=self._lex_peek_token().pos
+                )
             return body
-        raise ParseError(f"Expected 'do' or '{{' in {context}", pos=self.pos)
+        raise ParseError(f"Expected 'do' or '{{' in {context}", pos=self._lex_peek_token().pos)
 
     def peek_word(self) -> str | None:
         """Peek at the next word without consuming it."""
@@ -3268,6 +6930,14 @@ class Parser:
             # Stop at quotes - don't include in peek
             if _is_quote(ch):
                 break
+            # Stop at backslash-newline (line continuation)
+            if ch == "\\" and self.pos + 1 < self.length and self.source[self.pos + 1] == "\n":
+                break
+            # Handle backslash escaping next character (even metacharacters)
+            if ch == "\\" and self.pos + 1 < self.length:
+                chars.append(self.advance())  # backslash
+                chars.append(self.advance())  # escaped char
+                continue
             chars.append(self.advance())
 
         if chars:
@@ -3278,409 +6948,154 @@ class Parser:
         return word
 
     def consume_word(self, expected: str) -> bool:
-        """Try to consume a specific reserved word. Returns True if successful."""
+        """Try to consume a specific word. Returns True if successful.
+
+        Note: This is kept for edge cases (process sub leading }, variable names).
+        Most reserved word consumption has been migrated to _lex_consume_word().
+        """
         saved_pos = self.pos
         self.skip_whitespace()
 
         word = self.peek_word()
-        if word != expected:
+        # In command substitutions, strip leading } for keyword matching
+        # Don't strip { because it's used for brace groups
+        keyword_word = word
+        has_leading_brace = False
+        if word is not None and self._in_process_sub and len(word) > 1 and word[0] == "}":
+            keyword_word = word[1:]
+            has_leading_brace = True
+
+        if keyword_word != expected:
             self.pos = saved_pos
             return False
 
         # Actually consume the word
         self.skip_whitespace()
+        # If there's a leading } or {, skip it first
+        if has_leading_brace:
+            self.advance()
         for _ in expected:
             self.advance()
+        # Skip trailing backslash-newline (line continuation)
+        while (
+            self.peek() == "\\" and self.pos + 1 < self.length and self.source[self.pos + 1] == "\n"
+        ):
+            self.advance()  # skip backslash
+            self.advance()  # skip newline
         return True
 
-    def parse_word(self, at_command_start: bool = False) -> Word | None:
-        """Parse a word token, detecting parameter expansions and command substitutions.
+    def _is_word_terminator(
+        self, ctx: int, ch: str, bracket_depth: int = 0, paren_depth: int = 0
+    ) -> bool:
+        """Check if character terminates word in given context."""
+        self._sync_lexer()
+        return self._lexer._is_word_terminator(ctx, ch, bracket_depth, paren_depth)
 
-        at_command_start: When True, preserve spaces inside brackets for array
-        assignments like a[1 + 2]=. When False, spaces break the word.
-        """
-        self.skip_whitespace()
-
-        if self.at_end():
-            return None
-
-        start = self.pos
-        chars = []
-        parts = []
-        bracket_depth = 0  # Track [...] for array subscripts
-        seen_equals = False  # Track if we've seen = (for array assignment detection)
-
-        while not self.at_end():
-            ch = self.peek()
-
-            # Track bracket depth for array subscripts like a[1+2]=3
-            # Inside brackets, metacharacters like | and ( are literal
-            # Only track [ after we've seen some chars (so [ -f file ] still works)
-            # Only at command start (array assignments), not in argument position
-            # Only BEFORE = sign (key=1],a[1 should not track the [1 part)
-            # Only after identifier char (not [[ which is conditional keyword)
-            if ch == "[" and chars and at_command_start and not seen_equals:
-                prev_char = chars[len(chars) - 1]
-                if prev_char.isalnum() or (prev_char == "_" or prev_char == "]"):
-                    bracket_depth += 1
-                    chars.append(self.advance())
-                    continue
-            if ch == "]" and bracket_depth > 0:
-                bracket_depth -= 1
-                chars.append(self.advance())
-                continue
-            if ch == "=" and bracket_depth == 0:
-                seen_equals = True
-
-            # Single-quoted string - no expansion
-            if ch == "'":
-                self.advance()  # consume opening quote
-                chars.append("'")
-                while not self.at_end() and self.peek() != "'":
-                    chars.append(self.advance())
-                if self.at_end():
-                    raise ParseError("Unterminated single quote", pos=start)
-                chars.append(self.advance())  # consume closing quote
-
-            # Double-quoted string - expansions happen inside
-            elif ch == '"':
-                self.advance()  # consume opening quote
-                chars.append('"')
-                while not self.at_end() and self.peek() != '"':
-                    c = self.peek()
-                    # Handle escape sequences in double quotes
-                    if c == "\\" and self.pos + 1 < self.length:
-                        next_c = self.source[self.pos + 1]
-                        if next_c == "\n":
-                            # Line continuation - skip both backslash and newline
-                            self.advance()
-                            self.advance()
-                        else:
-                            chars.append(self.advance())  # backslash
-                            chars.append(self.advance())  # escaped char
-                    # Handle arithmetic expansion $((...))
-                    elif (
-                        c == "$"
-                        and self.pos + 2 < self.length
-                        and self.source[self.pos + 1] == "("
-                        and self.source[self.pos + 2] == "("
-                    ):
-                        arith_result = self._parse_arithmetic_expansion()
-                        arith_node = arith_result[0]
-                        arith_text = arith_result[1]
-                        if arith_node:
-                            parts.append(arith_node)
-                            chars.append(arith_text)
-                        else:
-                            # Not arithmetic - try command substitution
-                            cmdsub_result = self._parse_command_substitution()
-                            cmdsub_node = cmdsub_result[0]
-                            cmdsub_text = cmdsub_result[1]
-                            if cmdsub_node:
-                                parts.append(cmdsub_node)
-                                chars.append(cmdsub_text)
-                            else:
-                                chars.append(self.advance())
-                    # Handle deprecated arithmetic expansion $[expr]
-                    elif (
-                        c == "$"
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "["
-                    ):
-                        arith_result = self._parse_deprecated_arithmetic()
-                        arith_node = arith_result[0]
-                        arith_text = arith_result[1]
-                        if arith_node:
-                            parts.append(arith_node)
-                            chars.append(arith_text)
-                        else:
-                            chars.append(self.advance())
-                    # Handle command substitution $(...)
-                    elif (
-                        c == "$"
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "("
-                    ):
-                        cmdsub_result = self._parse_command_substitution()
-                        cmdsub_node = cmdsub_result[0]
-                        cmdsub_text = cmdsub_result[1]
-                        if cmdsub_node:
-                            parts.append(cmdsub_node)
-                            chars.append(cmdsub_text)
-                        else:
-                            chars.append(self.advance())
-                    # Handle parameter expansion inside double quotes
-                    elif c == "$":
-                        param_result = self._parse_param_expansion()
-                        param_node = param_result[0]
-                        param_text = param_result[1]
-                        if param_node:
-                            parts.append(param_node)
-                            chars.append(param_text)
-                        else:
-                            chars.append(self.advance())  # just $
-                    # Handle backtick command substitution
-                    elif c == "`":
-                        cmdsub_result = self._parse_backtick_substitution()
-                        cmdsub_node = cmdsub_result[0]
-                        cmdsub_text = cmdsub_result[1]
-                        if cmdsub_node:
-                            parts.append(cmdsub_node)
-                            chars.append(cmdsub_text)
-                        else:
-                            chars.append(self.advance())
-                    else:
-                        chars.append(self.advance())
-                if self.at_end():
-                    raise ParseError("Unterminated double quote", pos=start)
-                chars.append(self.advance())  # consume closing quote
-
-            # Escape outside quotes
-            elif ch == "\\" and self.pos + 1 < self.length:
-                next_ch = self.source[self.pos + 1]
-                if next_ch == "\n":
-                    # Line continuation - skip both backslash and newline
+    def _scan_double_quote(
+        self, chars: list, parts: list, start: int, handle_line_continuation: bool = True
+    ) -> None:
+        """Scan double-quoted string with expansions. Assumes opening quote consumed."""
+        chars.append('"')
+        while not self.at_end() and self.peek() != '"':
+            c = self.peek()
+            if c == "\\" and self.pos + 1 < self.length:
+                next_c = self.source[self.pos + 1]
+                if handle_line_continuation and next_c == "\n":
                     self.advance()
                     self.advance()
                 else:
-                    chars.append(self.advance())  # backslash
-                    chars.append(self.advance())  # escaped char
-
-            # ANSI-C quoting $'...'
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "'"
-            ):
-                ansi_result = self._parse_ansi_c_quote()
-                ansi_node = ansi_result[0]
-                ansi_text = ansi_result[1]
-                if ansi_node:
-                    parts.append(ansi_node)
-                    chars.append(ansi_text)
-                else:
                     chars.append(self.advance())
-
-            # Locale translation $"..."
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == '"'
-            ):
-                locale_result = self._parse_locale_string()
-                locale_node = locale_result[0]
-                locale_text = locale_result[1]
-                inner_parts = locale_result[2]
-                if locale_node:
-                    parts.append(locale_node)
-                    parts.extend(inner_parts)
-                    chars.append(locale_text)
-                else:
                     chars.append(self.advance())
-
-            # Arithmetic expansion $((...)) - try before command substitution
-            # If it fails (returns None), fall through to command substitution
-            elif (
-                ch == "$"
-                and self.pos + 2 < self.length
-                and self.source[self.pos + 1] == "("
-                and self.source[self.pos + 2] == "("
-            ):
-                arith_result = self._parse_arithmetic_expansion()
-                arith_node = arith_result[0]
-                arith_text = arith_result[1]
-                if arith_node:
-                    parts.append(arith_node)
-                    chars.append(arith_text)
-                else:
-                    # Not arithmetic (e.g., '$( ( ... ) )' is command sub + subshell)
-                    cmdsub_result = self._parse_command_substitution()
-                    cmdsub_node = cmdsub_result[0]
-                    cmdsub_text = cmdsub_result[1]
-                    if cmdsub_node:
-                        parts.append(cmdsub_node)
-                        chars.append(cmdsub_text)
-                    else:
-                        chars.append(self.advance())
-
-            # Deprecated arithmetic expansion $[expr]
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "["
-            ):
-                arith_result = self._parse_deprecated_arithmetic()
-                arith_node = arith_result[0]
-                arith_text = arith_result[1]
-                if arith_node:
-                    parts.append(arith_node)
-                    chars.append(arith_text)
-                else:
+            elif c == "$":
+                if not self._parse_dollar_expansion(chars, parts, in_dquote=True):
                     chars.append(self.advance())
-
-            # Command substitution $(...)
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                cmdsub_result = self._parse_command_substitution()
-                cmdsub_node = cmdsub_result[0]
-                cmdsub_text = cmdsub_result[1]
-                if cmdsub_node:
-                    parts.append(cmdsub_node)
-                    chars.append(cmdsub_text)
-                else:
-                    chars.append(self.advance())
-
-            # Parameter expansion $var or ${...}
-            elif ch == "$":
-                param_result = self._parse_param_expansion()
-                param_node = param_result[0]
-                param_text = param_result[1]
-                if param_node:
-                    parts.append(param_node)
-                    chars.append(param_text)
-                else:
-                    chars.append(self.advance())  # just $
-
-            # Backtick command substitution
-            elif ch == "`":
-                cmdsub_result = self._parse_backtick_substitution()
-                cmdsub_node = cmdsub_result[0]
-                cmdsub_text = cmdsub_result[1]
-                if cmdsub_node:
-                    parts.append(cmdsub_node)
-                    chars.append(cmdsub_text)
-                else:
-                    chars.append(self.advance())
-
-            # Process substitution <(...) or >(...)
-            elif (
-                _is_redirect_char(ch)
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                procsub_result = self._parse_process_substitution()
-                procsub_node = procsub_result[0]
-                procsub_text = procsub_result[1]
-                if procsub_node:
-                    parts.append(procsub_node)
-                    chars.append(procsub_text)
-                else:
-                    # Not a process substitution, treat as metacharacter
-                    break
-
-            # Array literal: name=(elements) or name+=(elements)
-            elif (
-                ch == "("
-                and chars
-                and (
-                    chars[len(chars) - 1] == "="
-                    or (
-                        len(chars) >= 2
-                        and chars[len(chars) - 2] == "+"
-                        and chars[len(chars) - 1] == "="
-                    )
-                )
-            ):
-                array_result = self._parse_array_literal()
-                array_node = array_result[0]
-                array_text = array_result[1]
-                if array_node:
-                    parts.append(array_node)
-                    chars.append(array_text)
-                else:
-                    # Unexpected: ( without matching )
-                    break
-
-            # Extglob pattern @(), ?(), *(), +(), !()
-            elif (
-                _is_extglob_prefix(ch)
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                chars.append(self.advance())  # @, ?, *, +, or !
-                chars.append(self.advance())  # (
-                extglob_depth = 1
-                while not self.at_end() and extglob_depth > 0:
-                    c = self.peek()
-                    if c == ")":
-                        chars.append(self.advance())
-                        extglob_depth -= 1
-                    elif c == "(":
-                        chars.append(self.advance())
-                        extglob_depth += 1
-                    elif c == "\\":
-                        chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())
-                    elif c == "'":
-                        chars.append(self.advance())
-                        while not self.at_end() and self.peek() != "'":
-                            chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())
-                    elif c == '"':
-                        chars.append(self.advance())
-                        while not self.at_end() and self.peek() != '"':
-                            if self.peek() == "\\" and self.pos + 1 < self.length:
-                                chars.append(self.advance())
-                            chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())
-                    elif (
-                        c == "$"
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "("
-                    ):
-                        # $() or $(()) inside extglob
-                        chars.append(self.advance())  # $
-                        chars.append(self.advance())  # (
-                        if not self.at_end() and self.peek() == "(":
-                            # $(()) arithmetic
-                            chars.append(self.advance())  # second (
-                            paren_depth = 2
-                            while not self.at_end() and paren_depth > 0:
-                                pc = self.peek()
-                                if pc == "(":
-                                    paren_depth += 1
-                                elif pc == ")":
-                                    paren_depth -= 1
-                                chars.append(self.advance())
-                        else:
-                            # $() command sub - count as nested paren
-                            extglob_depth += 1
-                    elif (
-                        _is_extglob_prefix(c)
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "("
-                    ):
-                        # Nested extglob
-                        chars.append(self.advance())  # @, ?, *, +, or !
-                        chars.append(self.advance())  # (
-                        extglob_depth += 1
-                    else:
-                        chars.append(self.advance())
-
-            # Metacharacter ends the word (unless inside brackets like a[x|y]=1)
-            elif _is_metachar(ch) and bracket_depth == 0:
-                break
-
-            # Regular character (including metacharacters inside brackets)
             else:
                 chars.append(self.advance())
+        if self.at_end():
+            raise ParseError("Unterminated double quote", pos=start)
+        chars.append(self.advance())
 
-        if not chars:
+    def _parse_dollar_expansion(self, chars: list, parts: list, in_dquote: bool = False) -> bool:
+        """Handle $ expansions. Returns True if expansion parsed, False if bare $."""
+        # Check $(( -> arithmetic expansion
+        if (
+            self.pos + 2 < self.length
+            and self.source[self.pos + 1] == "("
+            and self.source[self.pos + 2] == "("
+        ):
+            result = self._parse_arithmetic_expansion()
+            if result[0]:
+                parts.append(result[0])
+                chars.append(result[1])
+                return True
+            # Not arithmetic (e.g., '$( ( ... ) )' is command sub + subshell)
+            result = self._parse_command_substitution()
+            if result[0]:
+                parts.append(result[0])
+                chars.append(result[1])
+                return True
+            return False
+        # Check $[ -> deprecated arithmetic
+        if self.pos + 1 < self.length and self.source[self.pos + 1] == "[":
+            result = self._parse_deprecated_arithmetic()
+            if result[0]:
+                parts.append(result[0])
+                chars.append(result[1])
+                return True
+            return False
+        # Check $( -> command substitution
+        if self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+            result = self._parse_command_substitution()
+            if result[0]:
+                parts.append(result[0])
+                chars.append(result[1])
+                return True
+            return False
+        # Otherwise -> parameter expansion
+        result = self._parse_param_expansion(in_dquote)
+        if result[0]:
+            parts.append(result[0])
+            chars.append(result[1])
+            return True
+        return False
+
+    def _parse_word_internal(
+        self, ctx: int, at_command_start: bool = False, in_array_literal: bool = False
+    ) -> Word | None:
+        """Unified word parser with context-aware termination. Sets context and delegates."""
+        self._word_context = ctx
+        return self.parse_word(at_command_start, in_array_literal)
+
+    def parse_word(
+        self,
+        at_command_start: bool = False,
+        in_array_literal: bool = False,
+        in_assign_builtin: bool = False,
+    ) -> Word | None:
+        """Parse a word token by consuming WORD token with pre-parsed Word object."""
+        self.skip_whitespace()
+        if self.at_end():
             return None
-
-        if parts:
-            return Word("".join(chars), parts)
-        else:
-            return Word("".join(chars), None)
+        # Set context for Lexer before peeking
+        self._at_command_start = at_command_start
+        self._in_array_literal = in_array_literal
+        self._in_assign_builtin = in_assign_builtin
+        tok = self._lex_peek_token()
+        if tok.type != TokenType.WORD:
+            # Reset context when not a word to avoid affecting subsequent calls
+            self._at_command_start = False
+            self._in_array_literal = False
+            self._in_assign_builtin = False
+            return None
+        self._lex_next_token()
+        # Reset context after consuming to avoid affecting subsequent calls
+        self._at_command_start = False
+        self._in_array_literal = False
+        self._in_assign_builtin = False
+        return tok.word
 
     def _parse_command_substitution(self) -> tuple[Node | None, str]:
-        """Parse a $(...) command substitution.
+        """Parse a $(...) command substitution using EOF token mechanism.
 
         Returns (node, text) where node is CommandSubstitution and text is raw text.
         """
@@ -3696,367 +7111,62 @@ class Parser:
 
         self.advance()  # consume (
 
-        # Find matching closing paren, being aware of:
-        # - Nested $() and plain ()
-        # - Quoted strings
-        # - case statements (where ) after pattern isn't a closer)
-        content_start = self.pos
-        depth = 1
-        case_depth = 0  # Track nested case statements
-        arith_depth = 0  # Track nested arithmetic expressions
+        # Save state and set up for inline parsing with EOF token
+        saved = self._save_parser_state()
+        self._set_state(ParserStateFlags.PST_CMDSUBST | ParserStateFlags.PST_EOFTOKEN)
+        self._eof_token = ")"
 
-        while not self.at_end() and depth > 0:
-            c = self.peek()
-
-            # Single-quoted string - no special chars inside
-            if c == "'":
-                self.advance()
-                while not self.at_end() and self.peek() != "'":
-                    self.advance()
-                if not self.at_end():
-                    self.advance()
-                continue
-
-            # Double-quoted string - handle escapes and nested $()
-            if c == '"':
-                self.advance()
-                while not self.at_end() and self.peek() != '"':
-                    if self.peek() == "\\" and self.pos + 1 < self.length:
-                        self.advance()
-                        self.advance()
-                    elif (
-                        self.peek() == "$"
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "("
-                    ):
-                        # Nested $() in double quotes - recurse to find matching )
-                        # Command substitution creates new quoting context
-                        self.advance()  # $
-                        self.advance()  # (
-                        nested_depth = 1
-                        while not self.at_end() and nested_depth > 0:
-                            nc = self.peek()
-                            if nc == "'":
-                                self.advance()
-                                while not self.at_end() and self.peek() != "'":
-                                    self.advance()
-                                if not self.at_end():
-                                    self.advance()
-                            elif nc == '"':
-                                self.advance()
-                                while not self.at_end() and self.peek() != '"':
-                                    if (
-                                        self.peek() == "\\"
-                                        and self.pos + 1 < self.length
-                                    ):
-                                        self.advance()
-                                    self.advance()
-                                if not self.at_end():
-                                    self.advance()
-                            elif nc == "\\" and self.pos + 1 < self.length:
-                                self.advance()
-                                self.advance()
-                            elif (
-                                nc == "$"
-                                and self.pos + 1 < self.length
-                                and self.source[self.pos + 1] == "("
-                            ):
-                                self.advance()
-                                self.advance()
-                                nested_depth += 1
-                            elif nc == "(":
-                                nested_depth += 1
-                                self.advance()
-                            elif nc == ")":
-                                nested_depth -= 1
-                                if nested_depth > 0:
-                                    self.advance()
-                            else:
-                                self.advance()
-                        if nested_depth == 0:
-                            self.advance()  # consume the closing )
-                    else:
-                        self.advance()
-                if not self.at_end():
-                    self.advance()
-                continue
-
-            # Backslash escape
-            if c == "\\" and self.pos + 1 < self.length:
-                self.advance()
-                self.advance()
-                continue
-
-            # Comment - skip until newline
-            if c == "#" and self._is_word_boundary_before():
-                while not self.at_end() and self.peek() != "\n":
-                    self.advance()
-                continue
-
-            # Handle arithmetic expressions $((
-            if (
-                c == "$"
-                and self.pos + 2 < self.length
-                and self.source[self.pos + 1] == "("
-                and self.source[self.pos + 2] == "("
-            ):
-                arith_depth += 1
-                self.advance()  # $
-                self.advance()  # (
-                self.advance()  # (
-                continue
-
-            # Handle arithmetic close ))
-            if (
-                arith_depth > 0
-                and c == ")"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == ")"
-            ):
-                arith_depth -= 1
-                self.advance()  # )
-                self.advance()  # )
-                continue
-
-            # Heredoc - skip until delimiter line is found (not inside arithmetic)
-            if (
-                arith_depth == 0
-                and c == "<"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "<"
-            ):
-                self.advance()  # first <
-                self.advance()  # second <
-                # Check for <<- (strip tabs)
-                if not self.at_end() and self.peek() == "-":
-                    self.advance()
-                # Skip whitespace before delimiter
-                while not self.at_end() and _is_whitespace_no_newline(self.peek()):
-                    self.advance()
-                # Parse delimiter (handle quoting)
-                delimiter_chars = []
-                if not self.at_end():
-                    ch = self.peek()
-                    if _is_quote(ch):
-                        quote = self.advance()
-                        while not self.at_end() and self.peek() != quote:
-                            delimiter_chars.append(self.advance())
-                        if not self.at_end():
-                            self.advance()  # closing quote
-                    elif ch == "\\":
-                        self.advance()
-                        # Backslash quotes - first char can be special, then read word
-                        if not self.at_end():
-                            delimiter_chars.append(self.advance())
-                        while not self.at_end() and not _is_metachar(self.peek()):
-                            delimiter_chars.append(self.advance())
-                    else:
-                        # Unquoted delimiter with possible embedded quotes
-                        while not self.at_end() and not _is_metachar(self.peek()):
-                            ch = self.peek()
-                            if _is_quote(ch):
-                                quote = self.advance()
-                                while not self.at_end() and self.peek() != quote:
-                                    delimiter_chars.append(self.advance())
-                                if not self.at_end():
-                                    self.advance()
-                            elif ch == "\\":
-                                self.advance()
-                                if not self.at_end():
-                                    delimiter_chars.append(self.advance())
-                            else:
-                                delimiter_chars.append(self.advance())
-                delimiter = "".join(delimiter_chars)
-                if delimiter:
-                    # Skip to end of current line
-                    while not self.at_end() and self.peek() != "\n":
-                        self.advance()
-                    # Skip newline
-                    if not self.at_end() and self.peek() == "\n":
-                        self.advance()
-                    # Skip lines until we find the delimiter
-                    while not self.at_end():
-                        line_start = self.pos
-                        line_end = self.pos
-                        while line_end < self.length and self.source[line_end] != "\n":
-                            line_end += 1
-                        line = _substring(self.source, line_start, line_end)
-                        # Move position to end of line
-                        self.pos = line_end
-                        # Check if this line matches delimiter
-                        check_line = line.lstrip("\t")
-                        if check_line == delimiter:
-                            # Skip newline after delimiter
-                            if not self.at_end() and self.peek() == "\n":
-                                self.advance()
-                            break
-                        # Also check for delimiter followed by ) which closes cmdsub
-                        if (
-                            check_line.startswith(delimiter)
-                            and len(check_line) > len(delimiter)
-                            and check_line[len(delimiter)] == ")"
-                        ):
-                            # Position parser at the ) so it closes the cmdsub
-                            tabs_stripped = len(line) - len(check_line)
-                            self.pos = line_start + tabs_stripped + len(delimiter)
-                            break
-                        # Skip newline and continue
-                        if not self.at_end() and self.peek() == "\n":
-                            self.advance()
-                continue
-
-            # Track case/esac for pattern terminator handling
-            # Check for 'case' keyword (word boundary: preceded by space/newline/start)
-            if c == "c" and self._is_word_boundary_before():
-                if self._lookahead_keyword("case"):
-                    case_depth += 1
-                    self._skip_keyword("case")
-                    continue
-
-            # Check for 'esac' keyword
-            if c == "e" and self._is_word_boundary_before() and case_depth > 0:
-                if self._lookahead_keyword("esac"):
-                    case_depth -= 1
-                    self._skip_keyword("esac")
-                    continue
-
-            # Handle parentheses
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                # In case statement, ) after pattern is a terminator, not a paren
-                # Only decrement depth if we're not in a case pattern position
-                if case_depth > 0 and depth == 1:
-                    # This ) might be a case pattern terminator, not closing the $(
-                    # Look ahead to see if there's still content that needs esac
-                    saved = self.pos
-                    self.advance()  # skip this )
-                    # Scan ahead to see if we find esac that closes our case
-                    # before finding a ) that could close our $(
-                    temp_depth = 0
-                    temp_case_depth = case_depth  # Track nested cases in lookahead
-                    found_esac = False
-                    while not self.at_end():
-                        tc = self.peek()
-                        if tc == "'" or tc == '"':
-                            # Skip quoted strings
-                            q = tc
-                            self.advance()
-                            while not self.at_end() and self.peek() != q:
-                                if q == '"' and self.peek() == "\\":
-                                    self.advance()
-                                self.advance()
-                            if not self.at_end():
-                                self.advance()
-                        elif (
-                            tc == "c"
-                            and self._is_word_boundary_before()
-                            and self._lookahead_keyword("case")
-                        ):
-                            # Nested case in lookahead
-                            temp_case_depth += 1
-                            self._skip_keyword("case")
-                        elif (
-                            tc == "e"
-                            and self._is_word_boundary_before()
-                            and self._lookahead_keyword("esac")
-                        ):
-                            temp_case_depth -= 1
-                            if temp_case_depth == 0:
-                                # All cases are closed
-                                found_esac = True
-                                break
-                            self._skip_keyword("esac")
-                        elif tc == "(":
-                            temp_depth += 1
-                            self.advance()
-                        elif tc == ")":
-                            # In case, ) is a pattern terminator, not a closer
-                            if temp_case_depth > 0:
-                                self.advance()
-                            elif temp_depth > 0:
-                                temp_depth -= 1
-                                self.advance()
-                            else:
-                                # Found a ) that could be our closer
-                                break
-                        else:
-                            self.advance()
-                    self.pos = saved
-                    if found_esac:
-                        # This ) is a case pattern terminator, not our closer
-                        self.advance()
-                        continue
-                depth -= 1
-
-            if depth > 0:
-                self.advance()
-
-        if depth != 0:
-            self.pos = start
-            return None, ""
-
-        content = _substring(self.source, content_start, self.pos)
-        self.advance()  # consume final )
-
-        text = _substring(self.source, start, self.pos)
-
-        # Parse the content as a command list
-        sub_parser = Parser(content)
-        cmd = sub_parser.parse_list()
+        # Parse the command list inline - grammar will stop at matching )
+        cmd = self.parse_list()
         if cmd is None:
             cmd = Empty()
 
-        # Ensure all content was consumed - if not, there's a syntax error
-        sub_parser.skip_whitespace_and_newlines()
-        if not sub_parser.at_end():
-            raise ParseError("Unexpected content in command substitution", pos=start)
+        # After parse_list, we should be at the closing )
+        self.skip_whitespace_and_newlines()
+        if self.at_end() or self.peek() != ")":
+            self._restore_parser_state(saved)
+            self.pos = start
+            return None, ""
 
+        self.advance()  # consume final )
+        text_end = self.pos
+        text = _substring(self.source, start, text_end)
+
+        self._restore_parser_state(saved)
         return CommandSubstitution(cmd), text
 
-    def _is_word_boundary_before(self) -> bool:
-        """Check if current position is at a word boundary (preceded by space/newline/start)."""
-        if self.pos == 0:
-            return True
-        prev = self.source[self.pos - 1]
-        return _is_word_start_context(prev)
+    def _parse_funsub(self, start: int) -> tuple[Node | None, str]:
+        """Parse brace command substitution ${ cmd; } or ${| cmd; }.
 
-    def _is_assignment_word(self, word: "Word") -> bool:
-        """Check if a word is an assignment (contains = outside of quotes)."""
-        in_single = False
-        in_double = False
-        i = 0
-        while i < len(word.value):
-            ch = word.value[i]
-            if ch == "'" and not in_double:
-                in_single = not in_single
-            elif ch == '"' and not in_single:
-                in_double = not in_double
-            elif ch == "\\" and not in_single and i + 1 < len(word.value):
-                i += 1  # Skip next char
-                continue
-            elif ch == "=" and not in_single and not in_double:
-                return True
-            i += 1
-        return False
-
-    def _lookahead_keyword(self, keyword: str) -> bool:
-        """Check if keyword appears at current position followed by word boundary."""
-        if self.pos + len(keyword) > self.length:
-            return False
-        if not _starts_with_at(self.source, self.pos, keyword):
-            return False
-        # Check word boundary after keyword
-        after_pos = self.pos + len(keyword)
-        if after_pos >= self.length:
-            return True
-        after = self.source[after_pos]
-        return _is_word_end_context(after)
-
-    def _skip_keyword(self, keyword: str) -> None:
-        """Skip over a keyword."""
-        for _ in keyword:
+        Called from Lexer when ${ followed by funsub char is detected.
+        start is position of $, and we're at the char after {.
+        """
+        self._sync_parser()
+        # Skip leading | if present (${| ... } variant)
+        if not self.at_end() and self.peek() == "|":
             self.advance()
+        # Save state and set up for inline parsing with EOF token
+        saved = self._save_parser_state()
+        self._set_state(ParserStateFlags.PST_CMDSUBST | ParserStateFlags.PST_EOFTOKEN)
+        self._eof_token = "}"
+        # Parse the command list inline - grammar will stop at matching }
+        cmd = self.parse_list()
+        if cmd is None:
+            cmd = Empty()
+        # After parse_list, we should be at the closing }
+        self.skip_whitespace_and_newlines()
+        if self.at_end() or self.peek() != "}":
+            self._restore_parser_state(saved)
+            raise MatchedPairError("unexpected EOF looking for `}'", pos=start)
+        self.advance()  # consume final }
+        text = _substring(self.source, start, self.pos)
+        self._restore_parser_state(saved)
+        self._sync_lexer()
+        return CommandSubstitution(cmd, brace=True), text
+
+    def _is_assignment_word(self, word: Word) -> bool:
+        """Check if a word is an assignment (name=value)."""
+        return _assignment(word.value) != -1
 
     def _parse_backtick_substitution(self) -> tuple[Node | None, str]:
         """Parse a `...` command substitution.
@@ -4075,10 +7185,66 @@ class Parser:
         # other \X -> \X (backslash is literal)
         # content_chars: what gets parsed as the inner command
         # text_chars: what appears in the word representation (with line continuations removed)
-        content_chars = []
+        content_chars: list[str] = []
         text_chars = ["`"]  # opening backtick
-        while not self.at_end() and self.peek() != "`":
+        # Heredoc state tracking
+        pending_heredocs: list[tuple[str, bool]] = []
+        in_heredoc_body = False
+        current_heredoc_delim = ""
+        current_heredoc_strip = False
+
+        while not self.at_end() and (in_heredoc_body or self.peek() != "`"):
+            # When in heredoc body, scan for delimiter line by line (no escape processing)
+            if in_heredoc_body:
+                line_start = self.pos
+                line_end = line_start
+                while line_end < self.length and self.source[line_end] != "\n":
+                    line_end += 1
+                line = _substring(self.source, line_start, line_end)
+                check_line = line.lstrip("\t") if current_heredoc_strip else line
+                if check_line == current_heredoc_delim:
+                    # Found delimiter - add line to content and exit body mode
+                    for ch in line:
+                        content_chars.append(ch)
+                        text_chars.append(ch)
+                    self.pos = line_end
+                    if self.pos < self.length and self.source[self.pos] == "\n":
+                        content_chars.append("\n")
+                        text_chars.append("\n")
+                        self.advance()
+                    in_heredoc_body = False
+                    if len(pending_heredocs) > 0:
+                        current_heredoc_delim, current_heredoc_strip = pending_heredocs.pop(0)
+                        in_heredoc_body = True
+                elif check_line.startswith(current_heredoc_delim) and len(check_line) > len(
+                    current_heredoc_delim
+                ):
+                    # Delimiter with trailing content
+                    tabs_stripped = len(line) - len(check_line)
+                    end_pos = tabs_stripped + len(current_heredoc_delim)
+                    for i in range(end_pos):
+                        content_chars.append(line[i])
+                        text_chars.append(line[i])
+                    self.pos = line_start + end_pos
+                    in_heredoc_body = False
+                    if len(pending_heredocs) > 0:
+                        current_heredoc_delim, current_heredoc_strip = pending_heredocs.pop(0)
+                        in_heredoc_body = True
+                else:
+                    # Not delimiter - add line and newline to content
+                    for ch in line:
+                        content_chars.append(ch)
+                        text_chars.append(ch)
+                    self.pos = line_end
+                    if self.pos < self.length and self.source[self.pos] == "\n":
+                        content_chars.append("\n")
+                        text_chars.append("\n")
+                        self.advance()
+                continue
+
             c = self.peek()
+
+            # Escape handling
             if c == "\\" and self.pos + 1 < self.length:
                 next_c = self.source[self.pos + 1]
                 if next_c == "\n":
@@ -4086,7 +7252,7 @@ class Parser:
                     self.advance()  # skip \
                     self.advance()  # skip newline
                     # Don't add to content_chars or text_chars
-                elif _is_escape_char_in_dquote(next_c):
+                elif _is_escape_char_in_backtick(next_c):
                     # Escape sequence: skip backslash in content, keep both in text
                     self.advance()  # skip \
                     escaped = self.advance()
@@ -4098,22 +7264,180 @@ class Parser:
                     ch = self.advance()
                     content_chars.append(ch)
                     text_chars.append(ch)
-            else:
+                continue
+
+            # Heredoc declaration
+            if c == "<" and self.pos + 1 < self.length and self.source[self.pos + 1] == "<":
+                # Check for here-string <<<
+                if self.pos + 2 < self.length and self.source[self.pos + 2] == "<":
+                    content_chars.append(self.advance())  # <
+                    text_chars.append("<")
+                    content_chars.append(self.advance())  # <
+                    text_chars.append("<")
+                    content_chars.append(self.advance())  # <
+                    text_chars.append("<")
+                    # Skip whitespace and here-string word
+                    while not self.at_end() and _is_whitespace_no_newline(self.peek()):
+                        ch = self.advance()
+                        content_chars.append(ch)
+                        text_chars.append(ch)
+                    while (
+                        not self.at_end()
+                        and not _is_whitespace(self.peek())
+                        and self.peek() not in "()"
+                    ):
+                        if self.peek() == "\\" and self.pos + 1 < self.length:
+                            ch = self.advance()
+                            content_chars.append(ch)
+                            text_chars.append(ch)
+                            ch = self.advance()
+                            content_chars.append(ch)
+                            text_chars.append(ch)
+                        elif self.peek() in "\"'":
+                            quote = self.peek()
+                            ch = self.advance()
+                            content_chars.append(ch)
+                            text_chars.append(ch)
+                            while not self.at_end() and self.peek() != quote:
+                                if quote == '"' and self.peek() == "\\":
+                                    ch = self.advance()
+                                    content_chars.append(ch)
+                                    text_chars.append(ch)
+                                ch = self.advance()
+                                content_chars.append(ch)
+                                text_chars.append(ch)
+                            if not self.at_end():
+                                ch = self.advance()
+                                content_chars.append(ch)
+                                text_chars.append(ch)
+                        else:
+                            ch = self.advance()
+                            content_chars.append(ch)
+                            text_chars.append(ch)
+                    continue
+                # Heredoc <<
+                content_chars.append(self.advance())  # <
+                text_chars.append("<")
+                content_chars.append(self.advance())  # <
+                text_chars.append("<")
+                strip_tabs = False
+                if not self.at_end() and self.peek() == "-":
+                    strip_tabs = True
+                    content_chars.append(self.advance())
+                    text_chars.append("-")
+                # Skip whitespace
+                while not self.at_end() and _is_whitespace_no_newline(self.peek()):
+                    ch = self.advance()
+                    content_chars.append(ch)
+                    text_chars.append(ch)
+                # Parse delimiter
+                delimiter_chars: list[str] = []
+                if not self.at_end():
+                    ch = self.peek()
+                    if _is_quote(ch):
+                        quote = self.advance()
+                        content_chars.append(quote)
+                        text_chars.append(quote)
+                        while not self.at_end() and self.peek() != quote:
+                            dch = self.advance()
+                            content_chars.append(dch)
+                            text_chars.append(dch)
+                            delimiter_chars.append(dch)
+                        if not self.at_end():
+                            closing = self.advance()
+                            content_chars.append(closing)
+                            text_chars.append(closing)
+                    elif ch == "\\":
+                        esc = self.advance()
+                        content_chars.append(esc)
+                        text_chars.append(esc)
+                        if not self.at_end():
+                            dch = self.advance()
+                            content_chars.append(dch)
+                            text_chars.append(dch)
+                            delimiter_chars.append(dch)
+                        while not self.at_end() and not _is_metachar(self.peek()):
+                            dch = self.advance()
+                            content_chars.append(dch)
+                            text_chars.append(dch)
+                            delimiter_chars.append(dch)
+                    else:
+                        # Stop at backtick (closes substitution) or metachar
+                        while (
+                            not self.at_end()
+                            and not _is_metachar(self.peek())
+                            and self.peek() != "`"
+                        ):
+                            ch = self.peek()
+                            if _is_quote(ch):
+                                quote = self.advance()
+                                content_chars.append(quote)
+                                text_chars.append(quote)
+                                while not self.at_end() and self.peek() != quote:
+                                    dch = self.advance()
+                                    content_chars.append(dch)
+                                    text_chars.append(dch)
+                                    delimiter_chars.append(dch)
+                                if not self.at_end():
+                                    closing = self.advance()
+                                    content_chars.append(closing)
+                                    text_chars.append(closing)
+                            elif ch == "\\":
+                                esc = self.advance()
+                                content_chars.append(esc)
+                                text_chars.append(esc)
+                                if not self.at_end():
+                                    dch = self.advance()
+                                    content_chars.append(dch)
+                                    text_chars.append(dch)
+                                    delimiter_chars.append(dch)
+                            else:
+                                dch = self.advance()
+                                content_chars.append(dch)
+                                text_chars.append(dch)
+                                delimiter_chars.append(dch)
+                delimiter = "".join(delimiter_chars)
+                if delimiter:
+                    pending_heredocs.append((delimiter, strip_tabs))
+                continue
+
+            # Newline - check for heredoc body mode
+            if c == "\n":
                 ch = self.advance()
                 content_chars.append(ch)
                 text_chars.append(ch)
+                if len(pending_heredocs) > 0:
+                    current_heredoc_delim, current_heredoc_strip = pending_heredocs.pop(0)
+                    in_heredoc_body = True
+                continue
+
+            # Regular character
+            ch = self.advance()
+            content_chars.append(ch)
+            text_chars.append(ch)
 
         if self.at_end():
-            self.pos = start
-            return None, ""
+            raise ParseError("Unterminated backtick", pos=start)
 
         self.advance()  # consume closing `
         text_chars.append("`")  # closing backtick
         text = "".join(text_chars)
         content = "".join(content_chars)
 
+        # Check for heredocs whose bodies follow the closing backtick
+        if len(pending_heredocs) > 0:
+            heredoc_start, heredoc_end = _find_heredoc_content_end(
+                self.source, self.pos, pending_heredocs
+            )
+            if heredoc_end > heredoc_start:
+                content = content + _substring(self.source, heredoc_start, heredoc_end)
+                if self._cmdsub_heredoc_end is None:
+                    self._cmdsub_heredoc_end = heredoc_end
+                else:
+                    self._cmdsub_heredoc_end = max(self._cmdsub_heredoc_end, heredoc_end)
+
         # Parse the content as a command list
-        sub_parser = Parser(content)
+        sub_parser = Parser(content, extglob=self._extglob)
         cmd = sub_parser.parse_list()
         if cmd is None:
             cmd = Empty()
@@ -4121,9 +7445,11 @@ class Parser:
         return CommandSubstitution(cmd), text
 
     def _parse_process_substitution(self) -> tuple[Node | None, str]:
-        """Parse a <(...) or >(...) process substitution.
+        """Parse a <(...) or >(...) process substitution using EOF token mechanism.
 
         Returns (node, text) where node is ProcessSubstitution and text is raw text.
+        If the content can't be parsed as a valid command, returns (None, text) so
+        the caller can treat it as literal characters.
         """
         if self.at_end() or not _is_redirect_char(self.peek()):
             return None, ""
@@ -4137,65 +7463,57 @@ class Parser:
 
         self.advance()  # consume (
 
-        # Find matching ) - track nested parens and handle quotes
-        content_start = self.pos
-        depth = 1
+        # Save state and set up for inline parsing with EOF token
+        saved = self._save_parser_state()
+        old_in_process_sub = self._in_process_sub
+        self._in_process_sub = True
+        self._set_state(ParserStateFlags.PST_EOFTOKEN)
+        self._eof_token = ")"
 
-        while not self.at_end() and depth > 0:
-            c = self.peek()
+        # Try to parse the command list inline - grammar will stop at matching )
+        try:
+            cmd = self.parse_list()
+            if cmd is None:
+                cmd = Empty()
 
-            # Single-quoted string
-            if c == "'":
-                self.advance()
-                while not self.at_end() and self.peek() != "'":
-                    self.advance()
-                if not self.at_end():
-                    self.advance()
-                continue
+            # After parse_list, we should be at the closing )
+            self.skip_whitespace_and_newlines()
+            if self.at_end() or self.peek() != ")":
+                # Parsing didn't reach the closing ) - not a valid process sub
+                raise ParseError("Invalid process substitution", pos=start)
 
-            # Double-quoted string
-            if c == '"':
-                self.advance()
-                while not self.at_end() and self.peek() != '"':
-                    if self.peek() == "\\" and self.pos + 1 < self.length:
-                        self.advance()
-                    self.advance()
-                if not self.at_end():
-                    self.advance()
-                continue
+            self.advance()  # consume final )
+            text_end = self.pos
+            text = _substring(self.source, start, text_end)
+            # Strip line continuations (backslash-newline) from text
+            text = _strip_line_continuations_comment_aware(text)
 
-            # Backslash escape
-            if c == "\\" and self.pos + 1 < self.length:
-                self.advance()
-                self.advance()
-                continue
+            self._restore_parser_state(saved)
+            self._in_process_sub = old_in_process_sub
+            return ProcessSubstitution(direction, cmd), text
 
-            # Nested parentheses (including nested process substitutions)
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    break
+        except ParseError as e:
+            # Parsing failed - check if we should error or fall back to literal
+            self._restore_parser_state(saved)
+            self._in_process_sub = old_in_process_sub
 
-            self.advance()
+            # Check what's after the opening <( or >(
+            content_start_char = self.source[start + 2] if start + 2 < self.length else ""
 
-        if depth != 0:
-            self.pos = start
-            return None, ""
+            # If content starts with ( (like <((...)), bash treats as literal, not procsub
+            # If content starts with space/tab/newline, bash commits to procsub and errors
+            if content_start_char in " \t\n":
+                # Committed to procsub - re-raise the error (bash behavior)
+                raise e
 
-        content = _substring(self.source, content_start, self.pos)
-        self.advance()  # consume final )
-
-        text = _substring(self.source, start, self.pos)
-
-        # Parse the content as a command list
-        sub_parser = Parser(content)
-        cmd = sub_parser.parse_list()
-        if cmd is None:
-            cmd = Empty()
-
-        return ProcessSubstitution(direction, cmd), text
+            # Otherwise, fall back to scanning for closing ) and return as literal
+            self.pos = start + 2  # after <( or >(
+            self._lexer.pos = self.pos  # sync lexer to parser
+            self._lexer._parse_matched_pair("(", ")")
+            self.pos = self._lexer.pos  # sync parser from lexer
+            text = _substring(self.source, start, self.pos)
+            text = _strip_line_continuations_comment_aware(text)
+            return None, text
 
     def _parse_array_literal(self) -> tuple[Node | None, str]:
         """Parse an array literal (word1 word2 ...).
@@ -4208,6 +7526,7 @@ class Parser:
 
         start = self.pos
         self.advance()  # consume (
+        self._set_state(ParserStateFlags.PST_COMPASSIGN)
 
         elements = []
 
@@ -4216,40 +7535,41 @@ class Parser:
             self.skip_whitespace_and_newlines()
 
             if self.at_end():
+                self._clear_state(ParserStateFlags.PST_COMPASSIGN)
                 raise ParseError("Unterminated array literal", pos=start)
 
             if self.peek() == ")":
                 break
 
             # Parse an element word
-            word = self.parse_word()
+            word = self.parse_word(False, True)  # at_command_start=False, in_array_literal=True
             if word is None:
                 # Might be a closing paren or error
                 if self.peek() == ")":
                     break
+                self._clear_state(ParserStateFlags.PST_COMPASSIGN)
                 raise ParseError("Expected word in array literal", pos=self.pos)
 
             elements.append(word)
 
         if self.at_end() or self.peek() != ")":
+            self._clear_state(ParserStateFlags.PST_COMPASSIGN)
             raise ParseError("Expected ) to close array literal", pos=self.pos)
         self.advance()  # consume )
 
         text = _substring(self.source, start, self.pos)
+        self._clear_state(ParserStateFlags.PST_COMPASSIGN)
         return Array(elements), text
 
     def _parse_arithmetic_expansion(self) -> tuple[Node | None, str]:
         """Parse a $((...)) arithmetic expansion with parsed internals.
 
         Returns (node, text) where node is ArithmeticExpansion and text is raw text.
-        Returns (None, "") if this is not arithmetic expansion (e.g., $( ( ... ) )
-        which is command substitution containing a subshell).
+        Returns (None, "") if this is not arithmetic expansion.
         """
         if self.at_end() or self.peek() != "$":
             return None, ""
-
         start = self.pos
-
         # Check for $((
         if (
             self.pos + 2 >= self.length
@@ -4257,52 +7577,70 @@ class Parser:
             or self.source[self.pos + 2] != "("
         ):
             return None, ""
-
         self.advance()  # consume $
         self.advance()  # consume first (
         self.advance()  # consume second (
-
-        # Find matching )) - need to track nested parens
-        # Must be )) with no space between - ') )' is command sub + subshell
+        # Find matching )) by tracking paren depth
         content_start = self.pos
-        depth = 1  # We're inside one level of (( already
-
+        depth = 2
+        first_close_pos: int | None = None
         while not self.at_end() and depth > 0:
             c = self.peek()
-
-            if c == "(":
+            # Skip single-quoted strings (parens inside don't count)
+            if c == "'":
+                self.advance()
+                while not self.at_end() and self.peek() != "'":
+                    self.advance()
+                if not self.at_end():
+                    self.advance()
+            # Skip double-quoted strings (parens inside don't count)
+            elif c == '"':
+                self.advance()
+                while not self.at_end():
+                    if self.peek() == "\\" and self.pos + 1 < self.length:
+                        self.advance()
+                        self.advance()
+                    elif self.peek() == '"':
+                        self.advance()
+                        break
+                    else:
+                        self.advance()
+            # Handle backslash escapes outside quotes
+            elif c == "\\" and self.pos + 1 < self.length:
+                self.advance()
+                self.advance()
+            elif c == "(":
                 depth += 1
                 self.advance()
             elif c == ")":
-                # Check for ))
-                if (
-                    depth == 1
-                    and self.pos + 1 < self.length
-                    and self.source[self.pos + 1] == ")"
-                ):
-                    # Found the closing ))
-                    break
+                if depth == 2:
+                    first_close_pos = self.pos
                 depth -= 1
                 if depth == 0:
-                    # Closed with ) but next isn't ) - this is $( ( ... ) )
-                    self.pos = start
-                    return None, ""
+                    break
                 self.advance()
             else:
+                if depth == 1:
+                    first_close_pos = None
                 self.advance()
-
-        if self.at_end() or depth != 1:
+        if depth != 0:
+            if self.at_end():
+                raise MatchedPairError("unexpected EOF looking for `))'", pos=start)
             self.pos = start
             return None, ""
-
-        content = _substring(self.source, content_start, self.pos)
-        self.advance()  # consume first )
-        self.advance()  # consume second )
-
+        # Content ends at first_close_pos if set, else at final )
+        if first_close_pos is not None:
+            content = _substring(self.source, content_start, first_close_pos)
+        else:
+            content = _substring(self.source, content_start, self.pos)
+        self.advance()  # consume final )
         text = _substring(self.source, start, self.pos)
-
         # Parse the arithmetic expression
-        expr = self._parse_arith_expr(content)
+        try:
+            expr = self._parse_arith_expr(content)
+        except ParseError:
+            self.pos = start
+            return None, ""
         return ArithmeticExpansion(expr), text
 
     # ========== Arithmetic expression parser ==========
@@ -4330,7 +7668,9 @@ class Parser:
         saved_arith_src = getattr(self, "_arith_src", None)
         saved_arith_pos = getattr(self, "_arith_pos", None)
         saved_arith_len = getattr(self, "_arith_len", None)
+        saved_parser_state = self._parser_state
 
+        self._set_state(ParserStateFlags.PST_ARITH)
         self._arith_src = content
         self._arith_pos = 0
         self._arith_len = len(content)
@@ -4340,7 +7680,8 @@ class Parser:
         else:
             result = self._arith_parse_comma()
 
-        # Restore previous arith context
+        # Restore previous arith context and parser state
+        self._parser_state = saved_parser_state
         if saved_arith_src is not None:
             self._arith_src = saved_arith_src
             self._arith_pos = saved_arith_pos
@@ -4694,9 +8035,7 @@ class Parser:
                     index = self._arith_parse_comma()
                     self._arith_skip_ws()
                     if not self._arith_consume("]"):
-                        raise ParseError(
-                            "Expected ']' in array subscript", pos=self._arith_pos
-                        )
+                        raise ParseError("Expected ']' in array subscript", pos=self._arith_pos)
                     left = ArithSubscript(left.name, index)
                 else:
                     break
@@ -4716,9 +8055,7 @@ class Parser:
             expr = self._arith_parse_comma()
             self._arith_skip_ws()
             if not self._arith_consume(")"):
-                raise ParseError(
-                    "Expected ')' in arithmetic expression", pos=self._arith_pos
-                )
+                raise ParseError("Expected ')' in arithmetic expression", pos=self._arith_pos)
             return expr
 
         # Parameter length #$var or #${...}
@@ -4752,6 +8089,12 @@ class Parser:
                 )
             escaped_char = self._arith_advance()  # consume escaped character
             return ArithEscape(escaped_char)
+
+        # Check for end of expression or operators - bash allows missing operands
+        # (defers validation to runtime), so we return an empty node
+        # Include #{} and ; which bash accepts syntactically but fails at runtime
+        if self._arith_at_end() or c in ")]:,;?|&<>=!+-*/%^~#{}":
+            return ArithEmpty()
 
         # Number or variable
         return self._arith_parse_number_or_var()
@@ -4834,16 +8177,8 @@ class Parser:
         self._arith_advance()  # consume )
 
         # Parse the command inside
-        saved_pos = self.pos
-        saved_src = self.source
-        saved_len = self.length
-        self.source = content
-        self.pos = 0
-        self.length = len(content)
-        cmd = self.parse_list()
-        self.source = saved_src
-        self.pos = saved_pos
-        self.length = saved_len
+        sub_parser = Parser(content, extglob=self._extglob)
+        cmd = sub_parser.parse_list()
 
         return CommandSubstitution(cmd)
 
@@ -4934,9 +8269,7 @@ class Parser:
             self._arith_advance()
         content = _substring(self._arith_src, content_start, self._arith_pos)
         if not self._arith_consume("'"):
-            raise ParseError(
-                "Unterminated single quote in arithmetic", pos=self._arith_pos
-            )
+            raise ParseError("Unterminated single quote in arithmetic", pos=self._arith_pos)
         return ArithNumber(content)
 
     def _arith_parse_double_quote(self) -> Node:
@@ -4952,9 +8285,7 @@ class Parser:
                 self._arith_advance()
         content = _substring(self._arith_src, content_start, self._arith_pos)
         if not self._arith_consume('"'):
-            raise ParseError(
-                "Unterminated double quote in arithmetic", pos=self._arith_pos
-            )
+            raise ParseError("Unterminated double quote in arithmetic", pos=self._arith_pos)
         return ArithNumber(content)
 
     def _arith_parse_backtick(self) -> Node:
@@ -4972,16 +8303,8 @@ class Parser:
         if not self._arith_consume("`"):
             raise ParseError("Unterminated backtick in arithmetic", pos=self._arith_pos)
         # Parse the command inside
-        saved_pos = self.pos
-        saved_src = self.source
-        saved_len = self.length
-        self.source = content
-        self.pos = 0
-        self.length = len(content)
-        cmd = self.parse_list()
-        self.source = saved_src
-        self.pos = saved_pos
-        self.length = saved_len
+        sub_parser = Parser(content, extglob=self._extglob)
+        cmd = sub_parser.parse_list()
         return CommandSubstitution(cmd)
 
     def _arith_parse_number_or_var(self) -> Node:
@@ -5017,8 +8340,7 @@ class Parser:
             return ArithVar("".join(chars))
 
         raise ParseError(
-            "Unexpected character '" + c + "' in arithmetic expression",
-            pos=self._arith_pos,
+            "Unexpected character '" + c + "' in arithmetic expression", pos=self._arith_pos
         )
 
     def _parse_deprecated_arithmetic(self) -> tuple[Node | None, str]:
@@ -5038,584 +8360,20 @@ class Parser:
         self.advance()  # consume $
         self.advance()  # consume [
 
-        # Find matching ] - need to track nested brackets
-        content_start = self.pos
-        depth = 1
-
-        while not self.at_end() and depth > 0:
-            c = self.peek()
-
-            if c == "[":
-                depth += 1
-                self.advance()
-            elif c == "]":
-                depth -= 1
-                if depth == 0:
-                    break
-                self.advance()
-            else:
-                self.advance()
-
-        if self.at_end() or depth != 0:
-            self.pos = start
-            return None, ""
-
-        content = _substring(self.source, content_start, self.pos)
-        self.advance()  # consume ]
+        # Find matching ] using unified matched pair parsing
+        self._lexer.pos = self.pos  # sync lexer to parser
+        content = self._lexer._parse_matched_pair("[", "]", MatchedPairFlags.ARITH)
+        self.pos = self._lexer.pos  # sync parser from lexer
 
         text = _substring(self.source, start, self.pos)
         return ArithDeprecated(content), text
 
-    def _parse_ansi_c_quote(self) -> tuple[Node | None, str]:
-        """Parse ANSI-C quoting $'...'.
-
-        Returns (node, text) where node is the AST node and text is the raw text.
-        Returns (None, "") if not a valid ANSI-C quote.
-        """
-        if self.at_end() or self.peek() != "$":
-            return None, ""
-        if self.pos + 1 >= self.length or self.source[self.pos + 1] != "'":
-            return None, ""
-
-        start = self.pos
-        self.advance()  # consume $
-        self.advance()  # consume opening '
-
-        content_chars = []
-        found_close = False
-        while not self.at_end():
-            ch = self.peek()
-            if ch == "'":
-                self.advance()  # consume closing '
-                found_close = True
-                break
-            elif ch == "\\":
-                # Escape sequence - include both backslash and following char in content
-                content_chars.append(self.advance())  # backslash
-                if not self.at_end():
-                    content_chars.append(self.advance())  # escaped char
-            else:
-                content_chars.append(self.advance())
-        if not found_close:
-            # Unterminated - reset and return None
-            self.pos = start
-            return None, ""
-
-        text = _substring(self.source, start, self.pos)
-        content = "".join(content_chars)
-        return AnsiCQuote(content), text
-
-    def _parse_locale_string(self) -> tuple[Node | None, str, list[Node]]:
-        """Parse locale translation $"...".
-
-        Returns (node, text, inner_parts) where:
-        - node is the LocaleString AST node
-        - text is the raw text including $"..."
-        - inner_parts is a list of expansion nodes found inside
-        Returns (None, "", []) if not a valid locale string.
-        """
-        if self.at_end() or self.peek() != "$":
-            return None, "", []
-        if self.pos + 1 >= self.length or self.source[self.pos + 1] != '"':
-            return None, "", []
-
-        start = self.pos
-        self.advance()  # consume $
-        self.advance()  # consume opening "
-
-        content_chars = []
-        inner_parts = []
-        found_close = False
-
-        while not self.at_end():
-            ch = self.peek()
-            if ch == '"':
-                self.advance()  # consume closing "
-                found_close = True
-                break
-            elif ch == "\\" and self.pos + 1 < self.length:
-                # Escape sequence (line continuation removes both)
-                next_ch = self.source[self.pos + 1]
-                if next_ch == "\n":
-                    # Line continuation - skip both backslash and newline
-                    self.advance()
-                    self.advance()
-                else:
-                    content_chars.append(self.advance())  # backslash
-                    content_chars.append(self.advance())  # escaped char
-            # Handle arithmetic expansion $((...))
-            elif (
-                ch == "$"
-                and self.pos + 2 < self.length
-                and self.source[self.pos + 1] == "("
-                and self.source[self.pos + 2] == "("
-            ):
-                arith_result = self._parse_arithmetic_expansion()
-                arith_node = arith_result[0]
-                arith_text = arith_result[1]
-                if arith_node:
-                    inner_parts.append(arith_node)
-                    content_chars.append(arith_text)
-                else:
-                    # Not arithmetic - try command substitution
-                    cmdsub_result = self._parse_command_substitution()
-                    cmdsub_node = cmdsub_result[0]
-                    cmdsub_text = cmdsub_result[1]
-                    if cmdsub_node:
-                        inner_parts.append(cmdsub_node)
-                        content_chars.append(cmdsub_text)
-                    else:
-                        content_chars.append(self.advance())
-            # Handle command substitution $(...)
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                cmdsub_result = self._parse_command_substitution()
-                cmdsub_node = cmdsub_result[0]
-                cmdsub_text = cmdsub_result[1]
-                if cmdsub_node:
-                    inner_parts.append(cmdsub_node)
-                    content_chars.append(cmdsub_text)
-                else:
-                    content_chars.append(self.advance())
-            # Handle parameter expansion
-            elif ch == "$":
-                param_result = self._parse_param_expansion()
-                param_node = param_result[0]
-                param_text = param_result[1]
-                if param_node:
-                    inner_parts.append(param_node)
-                    content_chars.append(param_text)
-                else:
-                    content_chars.append(self.advance())
-            # Handle backtick command substitution
-            elif ch == "`":
-                cmdsub_result = self._parse_backtick_substitution()
-                cmdsub_node = cmdsub_result[0]
-                cmdsub_text = cmdsub_result[1]
-                if cmdsub_node:
-                    inner_parts.append(cmdsub_node)
-                    content_chars.append(cmdsub_text)
-                else:
-                    content_chars.append(self.advance())
-            else:
-                content_chars.append(self.advance())
-        if not found_close:
-            # Unterminated - reset and return None
-            self.pos = start
-            return None, "", []
-
-        content = "".join(content_chars)
-        # Reconstruct text from parsed content (handles line continuation removal)
-        text = '$"' + content + '"'
-        return LocaleString(content), text, inner_parts
-
-    def _parse_param_expansion(self) -> tuple[Node | None, str]:
-        """Parse a parameter expansion starting at $.
-
-        Returns (node, text) where node is the AST node and text is the raw text.
-        Returns (None, "") if not a valid parameter expansion.
-        """
-        if self.at_end() or self.peek() != "$":
-            return None, ""
-
-        start = self.pos
-        self.advance()  # consume $
-
-        if self.at_end():
-            self.pos = start
-            return None, ""
-
-        ch = self.peek()
-
-        # Braced expansion ${...}
-        if ch == "{":
-            self.advance()  # consume {
-            return self._parse_braced_param(start)
-
-        # Simple expansion $var or $special
-        # Special parameters: ?$!#@*-0-9
-        if _is_special_param_or_digit(ch) or ch == "#":
-            self.advance()
-            text = _substring(self.source, start, self.pos)
-            return ParamExpansion(ch), text
-
-        # Variable name [a-zA-Z_][a-zA-Z0-9_]*
-        if ch.isalpha() or ch == "_":
-            name_start = self.pos
-            while not self.at_end():
-                c = self.peek()
-                if c.isalnum() or c == "_":
-                    self.advance()
-                else:
-                    break
-            name = _substring(self.source, name_start, self.pos)
-            text = _substring(self.source, start, self.pos)
-            return ParamExpansion(name), text
-
-        # Not a valid expansion, restore position
-        self.pos = start
-        return None, ""
-
-    def _parse_braced_param(self, start: int) -> tuple[Node | None, str]:
-        """Parse contents of ${...} after the opening brace.
-
-        start is the position of the $.
-        Returns (node, text).
-        """
-        if self.at_end():
-            self.pos = start
-            return None, ""
-
-        ch = self.peek()
-
-        # ${#param} - length
-        if ch == "#":
-            self.advance()
-            param = self._consume_param_name()
-            if param and not self.at_end() and self.peek() == "}":
-                self.advance()
-                text = _substring(self.source, start, self.pos)
-                return ParamLength(param), text
-            self.pos = start
-            return None, ""
-
-        # ${!param} or ${!param<op><arg>} - indirect
-        if ch == "!":
-            self.advance()
-            param = self._consume_param_name()
-            if param:
-                # Skip optional whitespace before closing brace
-                while not self.at_end() and _is_whitespace_no_newline(self.peek()):
-                    self.advance()
-                if not self.at_end() and self.peek() == "}":
-                    self.advance()
-                    text = _substring(self.source, start, self.pos)
-                    return ParamIndirect(param), text
-                # ${!prefix@} and ${!prefix*} are prefix matching (lists variable names)
-                # These are NOT operators - the @/* is part of the indirect form
-                if not self.at_end() and _is_at_or_star(self.peek()):
-                    suffix = self.advance()
-                    while not self.at_end() and _is_whitespace_no_newline(self.peek()):
-                        self.advance()
-                    if not self.at_end() and self.peek() == "}":
-                        self.advance()
-                        text = _substring(self.source, start, self.pos)
-                        return ParamIndirect(param + suffix), text
-                    # Not a valid prefix match, reset
-                    self.pos = start
-                    return None, ""
-                # Check for operator (e.g., ${!##} = indirect of # with # op)
-                op = self._consume_param_operator()
-                if op is not None:
-                    # Parse argument until closing brace
-                    arg_chars = []
-                    depth = 1
-                    while not self.at_end() and depth > 0:
-                        c = self.peek()
-                        if (
-                            c == "$"
-                            and self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "{"
-                        ):
-                            depth += 1
-                            arg_chars.append(self.advance())
-                            arg_chars.append(self.advance())
-                        elif c == "}":
-                            depth -= 1
-                            if depth > 0:
-                                arg_chars.append(self.advance())
-                        elif c == "\\":
-                            arg_chars.append(self.advance())
-                            if not self.at_end():
-                                arg_chars.append(self.advance())
-                        else:
-                            arg_chars.append(self.advance())
-                    if depth == 0:
-                        self.advance()  # consume final }
-                        arg = "".join(arg_chars)
-                        text = _substring(self.source, start, self.pos)
-                        return ParamIndirect(param, op, arg), text
-            self.pos = start
-            return None, ""
-
-        # ${param} or ${param<op><arg>}
-        param = self._consume_param_name()
-        if not param:
-            # Unknown syntax like ${(M)...} (zsh) - consume until matching }
-            # Bash accepts these syntactically but fails at runtime
-            depth = 1
-            content_start = self.pos
-            while not self.at_end() and depth > 0:
-                c = self.peek()
-                if c == "{":
-                    depth += 1
-                    self.advance()
-                elif c == "}":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                    self.advance()
-                elif c == "\\":
-                    self.advance()
-                    if not self.at_end():
-                        self.advance()
-                else:
-                    self.advance()
-            if depth == 0:
-                content = _substring(self.source, content_start, self.pos)
-                self.advance()  # consume final }
-                text = _substring(self.source, start, self.pos)
-                return ParamExpansion(content), text
-            self.pos = start
-            return None, ""
-
-        if self.at_end():
-            self.pos = start
-            return None, ""
-
-        # Check for closing brace (simple expansion)
-        if self.peek() == "}":
-            self.advance()
-            text = _substring(self.source, start, self.pos)
-            return ParamExpansion(param), text
-
-        # Parse operator
-        op = self._consume_param_operator()
-        if op is None:
-            # Unknown operator - bash still parses these (fails at runtime)
-            # Treat the current char as the operator
-            op = self.advance()
-
-        # Parse argument (everything until closing brace)
-        # Track quote state and nesting
-        arg_chars = []
-        depth = 1
-        in_single_quote = False
-        in_double_quote = False
-        while not self.at_end() and depth > 0:
-            c = self.peek()
-            # Single quotes - no escapes, just scan to closing quote
-            if c == "'" and not in_double_quote:
-                in_single_quote = not in_single_quote
-                arg_chars.append(self.advance())
-            # Double quotes - toggle state
-            elif c == '"' and not in_single_quote:
-                in_double_quote = not in_double_quote
-                arg_chars.append(self.advance())
-            # Escape - skip next char (line continuation removes both)
-            elif c == "\\" and not in_single_quote:
-                if self.pos + 1 < self.length and self.source[self.pos + 1] == "\n":
-                    # Line continuation - skip both backslash and newline
-                    self.advance()
-                    self.advance()
-                else:
-                    arg_chars.append(self.advance())
-                    if not self.at_end():
-                        arg_chars.append(self.advance())
-            # Nested ${...} - increase depth (outside single quotes)
-            elif (
-                c == "$"
-                and not in_single_quote
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "{"
-            ):
-                depth += 1
-                arg_chars.append(self.advance())  # $
-                arg_chars.append(self.advance())  # {
-            # Command substitution $(...) - scan to matching )
-            elif (
-                c == "$"
-                and not in_single_quote
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                arg_chars.append(self.advance())  # $
-                arg_chars.append(self.advance())  # (
-                paren_depth = 1
-                while not self.at_end() and paren_depth > 0:
-                    pc = self.peek()
-                    if pc == "(":
-                        paren_depth += 1
-                    elif pc == ")":
-                        paren_depth -= 1
-                    elif pc == "\\":
-                        arg_chars.append(self.advance())
-                        if not self.at_end():
-                            arg_chars.append(self.advance())
-                        continue
-                    arg_chars.append(self.advance())
-            # Backtick command substitution - scan to matching `
-            elif c == "`" and not in_single_quote:
-                arg_chars.append(self.advance())  # opening `
-                while not self.at_end() and self.peek() != "`":
-                    bc = self.peek()
-                    if bc == "\\" and self.pos + 1 < self.length:
-                        next_c = self.source[self.pos + 1]
-                        if _is_escape_char_in_dquote(next_c):
-                            arg_chars.append(self.advance())  # backslash
-                    arg_chars.append(self.advance())
-                if not self.at_end():
-                    arg_chars.append(self.advance())  # closing `
-            # Closing brace - handle depth for nested ${...}
-            elif c == "}":
-                if in_single_quote:
-                    # Inside single quotes, } is literal
-                    arg_chars.append(self.advance())
-                elif in_double_quote:
-                    # Inside double quotes, } can close nested ${...}
-                    if depth > 1:
-                        depth -= 1
-                        arg_chars.append(self.advance())
-                    else:
-                        # Literal } in double quotes (not closing nested)
-                        arg_chars.append(self.advance())
-                else:
-                    depth -= 1
-                    if depth > 0:
-                        arg_chars.append(self.advance())
-            else:
-                arg_chars.append(self.advance())
-
-        if depth != 0:
-            self.pos = start
-            return None, ""
-
-        self.advance()  # consume final }
-        arg = "".join(arg_chars)
-        # Reconstruct text from parsed components (handles line continuation removal)
-        text = "${" + param + op + arg + "}"
-        return ParamExpansion(param, op, arg), text
-
-    def _consume_param_name(self) -> str | None:
-        """Consume a parameter name (variable name, special char, or array subscript)."""
-        if self.at_end():
-            return None
-
-        ch = self.peek()
-
-        # Special parameters
-        if _is_special_param(ch):
-            self.advance()
-            return ch
-
-        # Digits (positional params)
-        if ch.isdigit():
-            name_chars = []
-            while not self.at_end() and self.peek().isdigit():
-                name_chars.append(self.advance())
-            return "".join(name_chars)
-
-        # Variable name
-        if ch.isalpha() or ch == "_":
-            name_chars = []
-            while not self.at_end():
-                c = self.peek()
-                if c.isalnum() or c == "_":
-                    name_chars.append(self.advance())
-                elif c == "[":
-                    # Array subscript - track bracket depth
-                    name_chars.append(self.advance())
-                    bracket_depth = 1
-                    while not self.at_end() and bracket_depth > 0:
-                        sc = self.peek()
-                        if sc == "[":
-                            bracket_depth += 1
-                        elif sc == "]":
-                            bracket_depth -= 1
-                            if bracket_depth == 0:
-                                break
-                        name_chars.append(self.advance())
-                    if not self.at_end() and self.peek() == "]":
-                        name_chars.append(self.advance())
-                    break
-                else:
-                    break
-            if name_chars:
-                return "".join(name_chars)
-            else:
-                return None
-
-        return None
-
-    def _consume_param_operator(self) -> str | None:
-        """Consume a parameter expansion operator."""
-        if self.at_end():
-            return None
-
-        ch = self.peek()
-
-        # Operators with optional colon prefix: :- := :? :+
-        if ch == ":":
-            self.advance()
-            if self.at_end():
-                return ":"
-            next_ch = self.peek()
-            if _is_simple_param_op(next_ch):
-                self.advance()
-                return ":" + next_ch
-            # Just : (substring)
-            return ":"
-
-        # Operators without colon: - = ? +
-        if _is_simple_param_op(ch):
-            self.advance()
-            return ch
-
-        # Pattern removal: # ## % %%
-        if ch == "#":
-            self.advance()
-            if not self.at_end() and self.peek() == "#":
-                self.advance()
-                return "##"
-            return "#"
-
-        if ch == "%":
-            self.advance()
-            if not self.at_end() and self.peek() == "%":
-                self.advance()
-                return "%%"
-            return "%"
-
-        # Substitution: / // /# /%
-        if ch == "/":
-            self.advance()
-            if not self.at_end():
-                next_ch = self.peek()
-                if next_ch == "/":
-                    self.advance()
-                    return "//"
-                elif next_ch == "#":
-                    self.advance()
-                    return "/#"
-                elif next_ch == "%":
-                    self.advance()
-                    return "/%"
-            return "/"
-
-        # Case modification: ^ ^^ , ,,
-        if ch == "^":
-            self.advance()
-            if not self.at_end() and self.peek() == "^":
-                self.advance()
-                return "^^"
-            return "^"
-
-        if ch == ",":
-            self.advance()
-            if not self.at_end() and self.peek() == ",":
-                self.advance()
-                return ",,"
-            return ","
-
-        # Transformation: @
-        if ch == "@":
-            self.advance()
-            return "@"
-
-        return None
+    def _parse_param_expansion(self, in_dquote: bool = False) -> tuple[Node | None, str]:
+        """Parse a parameter expansion starting at $. Delegates to Lexer."""
+        self._sync_lexer()
+        result = self._lexer._read_param_expansion(in_dquote)
+        self._sync_parser()
+        return result
 
     def parse_redirect(self) -> Redirect | HereDoc | None:
         """Parse a redirection operator and target."""
@@ -5632,17 +8390,47 @@ class Parser:
             saved = self.pos
             self.advance()  # consume {
             varname_chars = []
-            while not self.at_end() and (
-                self.peek() != "}" and not _is_redirect_char(self.peek())
-            ):
+            in_bracket = False
+            while not self.at_end() and not _is_redirect_char(self.peek()):
                 ch = self.peek()
-                if ch.isalnum() or (ch == "_" or ch == "[" or ch == "]"):
+                if ch == "}" and not in_bracket:
+                    break
+                elif ch == "[":
+                    in_bracket = True
+                    varname_chars.append(self.advance())
+                elif ch == "]":
+                    in_bracket = False
+                    varname_chars.append(self.advance())
+                elif ch.isalnum() or ch == "_":
+                    varname_chars.append(self.advance())
+                elif in_bracket and not _is_metachar(ch):
                     varname_chars.append(self.advance())
                 else:
                     break
-            if not self.at_end() and self.peek() == "}" and varname_chars:
+            varname = "".join(varname_chars)
+            is_valid_varfd = False
+            if varname:
+                if varname[0].isalpha() or varname[0] == "_":
+                    if "[" in varname or "]" in varname:
+                        left = varname.find("[")
+                        right = varname.rfind("]")
+                        if left != -1 and right == len(varname) - 1 and right > left + 1:
+                            base = varname[:left]
+                            if base and (base[0].isalpha() or base[0] == "_"):
+                                is_valid_varfd = True
+                                for c in base[1:]:
+                                    if not (c.isalnum() or c == "_"):
+                                        is_valid_varfd = False
+                                        break
+                    else:
+                        is_valid_varfd = True
+                        for c in varname[1:]:
+                            if not (c.isalnum() or c == "_"):
+                                is_valid_varfd = False
+                                break
+            if not self.at_end() and self.peek() == "}" and is_valid_varfd:
                 self.advance()  # consume }
-                varfd = "".join(varname_chars)
+                varfd = varname
             else:
                 # Not a valid variable fd, restore
                 self.pos = saved
@@ -5660,13 +8448,9 @@ class Parser:
         # Note: &> does NOT take a preceding fd number. If we consumed digits,
         # they should be a separate word, not an fd. E.g., "2&>1" is command "2"
         # with redirect "&> 1", not fd 2 redirected.
-        if (
-            ch == "&"
-            and self.pos + 1 < self.length
-            and self.source[self.pos + 1] == ">"
-        ):
-            if fd is not None:
-                # We consumed digits that should be a word, not an fd
+        if ch == "&" and self.pos + 1 < self.length and self.source[self.pos + 1] == ">":
+            if fd is not None or varfd is not None:
+                # We consumed digits/varfd that should be a word, not an fd
                 # Restore position and let parse_word handle them
                 self.pos = start
                 return None
@@ -5690,11 +8474,7 @@ class Parser:
 
         # Check for process substitution <(...) or >(...) - not a redirect
         # Only treat as redirect if there's a space before ( or an fd number
-        if (
-            fd is None
-            and self.pos + 1 < self.length
-            and self.source[self.pos + 1] == "("
-        ):
+        if fd is None and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
             # This is a process substitution, not a redirect
             self.pos = start
             return None
@@ -5733,15 +8513,11 @@ class Parser:
             # (>&- should be > with target &-, not >& with target -)
             elif fd is None and varfd is None and op == ">" and next_ch == "&":
                 # Peek ahead to see if there's a digit or - after &
-                if self.pos + 1 >= self.length or not _is_digit_or_dash(
-                    self.source[self.pos + 1]
-                ):
+                if self.pos + 1 >= self.length or not _is_digit_or_dash(self.source[self.pos + 1]):
                     self.advance()
                     op = ">&"
             elif fd is None and varfd is None and op == "<" and next_ch == "&":
-                if self.pos + 1 >= self.length or not _is_digit_or_dash(
-                    self.source[self.pos + 1]
-                ):
+                if self.pos + 1 >= self.length or not _is_digit_or_dash(self.source[self.pos + 1]):
                     self.advance()
                     op = "<&"
 
@@ -5755,82 +8531,257 @@ class Parser:
         elif fd is not None:
             op = str(fd) + op
 
-        self.skip_whitespace()
-
         # Handle fd duplication targets like &1, &2, &-, &10-, &$var
+        # NOTE: No whitespace allowed between operator and & (e.g., <&- is valid, < &- is not)
         if not self.at_end() and self.peek() == "&":
             self.advance()  # consume &
-            # Parse the fd number or - for close, including move syntax like &10-
-            if not self.at_end() and (self.peek().isdigit() or self.peek() == "-"):
-                fd_chars = []
-                while not self.at_end() and self.peek().isdigit():
-                    fd_chars.append(self.advance())
-                if fd_chars:
-                    fd_target = "".join(fd_chars)
+            # Skip whitespace after & to check what follows
+            self.skip_whitespace()
+            # Check for "& -" followed by non-metachar (e.g., "3>& -5" -> 3>&- + word "5")
+            if not self.at_end() and self.peek() == "-":
+                if self.pos + 1 < self.length and not _is_metachar(self.source[self.pos + 1]):
+                    # Consume just the - as close target, leave rest for next word
+                    self.advance()
+                    target = Word("&-")
                 else:
-                    fd_target = ""
-                # Handle just - for close, or N- for move syntax
-                if not self.at_end() and self.peek() == "-":
-                    fd_target += self.advance()  # consume the trailing -
-                target = Word("&" + fd_target)
+                    # Set target to None to fall through to normal parsing
+                    target = None
             else:
-                # Could be &$var or &word - parse word and prepend &
-                inner_word = self.parse_word()
-                if inner_word is not None:
-                    target = Word("&" + inner_word.value)
-                    target.parts = inner_word.parts
+                target = None
+            # If we didn't handle close syntax above, continue with normal parsing
+            if target is None:
+                if not self.at_end() and (self.peek().isdigit() or self.peek() == "-"):
+                    word_start = self.pos
+                    fd_chars = []
+                    while not self.at_end() and self.peek().isdigit():
+                        fd_chars.append(self.advance())
+                    if fd_chars:
+                        fd_target = "".join(fd_chars)
+                    else:
+                        fd_target = ""
+                    # Handle just - for close, or N- for move syntax
+                    if not self.at_end() and self.peek() == "-":
+                        fd_target += self.advance()  # consume the trailing -
+                    # If more word characters follow, treat the whole target as a word (e.g., <&0=)
+                    # BUT: bare "-" (close syntax) is always complete - trailing chars are separate words
+                    if fd_target != "-" and not self.at_end() and not _is_metachar(self.peek()):
+                        self.pos = word_start
+                        inner_word = self.parse_word()
+                        if inner_word is not None:
+                            target = Word("&" + inner_word.value)
+                            target.parts = inner_word.parts
+                        else:
+                            raise ParseError("Expected target for redirect " + op, pos=self.pos)
+                    else:
+                        target = Word("&" + fd_target)
                 else:
-                    raise ParseError("Expected target for redirect " + op, pos=self.pos)
+                    # Could be &$var or &word - parse word and prepend &
+                    inner_word = self.parse_word()
+                    if inner_word is not None:
+                        target = Word("&" + inner_word.value)
+                        target.parts = inner_word.parts
+                    else:
+                        raise ParseError("Expected target for redirect " + op, pos=self.pos)
         else:
-            target = self.parse_word()
+            self.skip_whitespace()
+            # Handle >& - or <& - where space precedes the close syntax
+            # If op is >& or <& and next char is -, check for trailing word chars
+            # that should become a separate word (e.g., ">& -b" -> >&- + word "b")
+            if op in (">&", "<&") and not self.at_end() and self.peek() == "-":
+                if self.pos + 1 < self.length and not _is_metachar(self.source[self.pos + 1]):
+                    # Consume just the - as close target, leave rest for next word
+                    self.advance()
+                    target = Word("&-")
+                else:
+                    target = self.parse_word()
+            else:
+                target = self.parse_word()
 
         if target is None:
             raise ParseError("Expected target for redirect " + op, pos=self.pos)
 
         return Redirect(op, target)
 
-    def _parse_heredoc(self, fd: int | None, strip_tabs: bool) -> HereDoc:
-        """Parse a here document <<DELIM ... DELIM."""
+    def _parse_heredoc_delimiter(self) -> tuple[str, bool]:
+        """Parse heredoc delimiter, handling quoting (can be mixed like 'EOF'"2").
+
+        Returns (delimiter, quoted) where delimiter is the raw delimiter string
+        and quoted is True if any part was quoted (suppresses expansion).
+        """
         self.skip_whitespace()
-
-        # Parse the delimiter, handling quoting (can be mixed like 'EOF'"2")
         quoted = False
-        delimiter_chars = []
+        delimiter_chars: list[str] = []
 
-        while not self.at_end() and not _is_metachar(self.peek()):
-            ch = self.peek()
-            if ch == '"':
-                quoted = True
-                self.advance()
-                while not self.at_end() and self.peek() != '"':
-                    delimiter_chars.append(self.advance())
-                if not self.at_end():
+        while True:
+            while not self.at_end() and not _is_metachar(self.peek()):
+                ch = self.peek()
+                if ch == '"':
+                    quoted = True
                     self.advance()
-            elif ch == "'":
-                quoted = True
-                self.advance()
-                while not self.at_end() and self.peek() != "'":
-                    delimiter_chars.append(self.advance())
-                if not self.at_end():
-                    self.advance()
-            elif ch == "\\":
-                self.advance()
-                if not self.at_end():
-                    next_ch = self.peek()
-                    if next_ch == "\n":
-                        # Backslash-newline: continue delimiter on next line
-                        self.advance()  # skip the newline
-                    else:
-                        # Regular escape - quotes the next char
-                        quoted = True
+                    while not self.at_end() and self.peek() != '"':
                         delimiter_chars.append(self.advance())
-            elif (
-                ch == "$"
+                    if not self.at_end():
+                        self.advance()
+                elif ch == "'":
+                    quoted = True
+                    self.advance()
+                    while not self.at_end() and self.peek() != "'":
+                        c = self.advance()
+                        if c == "\n":
+                            self._saw_newline_in_single_quote = True
+                        delimiter_chars.append(c)
+                    if not self.at_end():
+                        self.advance()
+                elif ch == "\\":
+                    self.advance()
+                    if not self.at_end():
+                        next_ch = self.peek()
+                        if next_ch == "\n":
+                            # Backslash-newline: continue delimiter on next line
+                            self.advance()  # skip the newline
+                        else:
+                            # Regular escape - quotes the next char
+                            quoted = True
+                            delimiter_chars.append(self.advance())
+                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "'":
+                    # ANSI-C quoting $'...' - skip $ and quotes, expand escapes
+                    quoted = True
+                    self.advance()  # skip $
+                    self.advance()  # skip opening '
+                    while not self.at_end() and self.peek() != "'":
+                        c = self.peek()
+                        if c == "\\" and self.pos + 1 < self.length:
+                            self.advance()  # skip backslash
+                            esc = self.peek()
+                            # Handle ANSI-C escapes using the lookup table
+                            esc_val = _get_ansi_escape(esc)
+                            if esc_val >= 0:
+                                delimiter_chars.append(chr(esc_val))
+                                self.advance()
+                            elif esc == "'":
+                                delimiter_chars.append(self.advance())
+                            else:
+                                # Other escapes - just use the escaped char
+                                delimiter_chars.append(self.advance())
+                        else:
+                            delimiter_chars.append(self.advance())
+                    if not self.at_end():
+                        self.advance()  # skip closing '
+                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                    # Command substitution embedded in delimiter
+                    delimiter_chars.append(self.advance())  # $
+                    delimiter_chars.append(self.advance())  # (
+                    depth = 1
+                    while not self.at_end() and depth > 0:
+                        c = self.peek()
+                        if c == "(":
+                            depth += 1
+                        elif c == ")":
+                            depth -= 1
+                        delimiter_chars.append(self.advance())
+                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "{":
+                    # Check if this is $${ where $$ is PID and { ends delimiter
+                    dollar_count = 0
+                    j = self.pos - 1
+                    while j >= 0 and self.source[j] == "$":
+                        dollar_count += 1
+                        j -= 1
+                    # If preceded by backslash, first dollar was escaped
+                    if j >= 0 and self.source[j] == "\\":
+                        dollar_count -= 1
+                    if dollar_count % 2 == 1:
+                        # Odd number of $ before: this $ pairs with previous to form $$
+                        # Don't consume the {, let it end the delimiter
+                        delimiter_chars.append(self.advance())  # $
+                    else:
+                        # Parameter expansion embedded in delimiter
+                        delimiter_chars.append(self.advance())  # $
+                        delimiter_chars.append(self.advance())  # {
+                        depth = 0
+                        while not self.at_end():
+                            c = self.peek()
+                            if c == "{":
+                                depth += 1
+                            elif c == "}":
+                                # Consume the closing brace
+                                delimiter_chars.append(self.advance())
+                                if depth == 0:
+                                    # Outer expansion closed
+                                    break
+                                depth -= 1
+                                # After closing inner brace, check if next is metachar
+                                # If so, the expansion ends here (bash behavior)
+                                if depth == 0 and not self.at_end() and _is_metachar(self.peek()):
+                                    break
+                                continue
+                            delimiter_chars.append(self.advance())
+                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "[":
+                    # Check if this is $$[ where $$ is PID and [ ends delimiter
+                    dollar_count = 0
+                    j = self.pos - 1
+                    while j >= 0 and self.source[j] == "$":
+                        dollar_count += 1
+                        j -= 1
+                    # If preceded by backslash, first dollar was escaped
+                    if j >= 0 and self.source[j] == "\\":
+                        dollar_count -= 1
+                    if dollar_count % 2 == 1:
+                        # Odd number of $ before: this $ pairs with previous to form $$
+                        # Don't consume the [, let it end the delimiter
+                        delimiter_chars.append(self.advance())  # $
+                    else:
+                        # Arithmetic expansion $[...] embedded in delimiter
+                        delimiter_chars.append(self.advance())  # $
+                        delimiter_chars.append(self.advance())  # [
+                        depth = 1
+                        while not self.at_end() and depth > 0:
+                            c = self.peek()
+                            if c == "[":
+                                depth += 1
+                            elif c == "]":
+                                depth -= 1
+                            delimiter_chars.append(self.advance())
+                elif ch == "`":
+                    # Backtick command substitution embedded in delimiter
+                    # Note: In bash, backtick closes command sub even with unclosed quotes inside
+                    delimiter_chars.append(self.advance())  # `
+                    while not self.at_end() and self.peek() != "`":
+                        c = self.peek()
+                        if c == "'":
+                            # Single-quoted string inside backtick - skip to closing quote or `
+                            delimiter_chars.append(self.advance())  # '
+                            while not self.at_end() and self.peek() != "'" and self.peek() != "`":
+                                delimiter_chars.append(self.advance())
+                            if not self.at_end() and self.peek() == "'":
+                                delimiter_chars.append(self.advance())  # closing '
+                        elif c == '"':
+                            # Double-quoted string inside backtick - skip to closing quote or `
+                            delimiter_chars.append(self.advance())  # "
+                            while not self.at_end() and self.peek() != '"' and self.peek() != "`":
+                                if self.peek() == "\\" and self.pos + 1 < self.length:
+                                    delimiter_chars.append(self.advance())  # backslash
+                                delimiter_chars.append(self.advance())
+                            if not self.at_end() and self.peek() == '"':
+                                delimiter_chars.append(self.advance())  # closing "
+                        elif c == "\\" and self.pos + 1 < self.length:
+                            delimiter_chars.append(self.advance())  # backslash
+                            delimiter_chars.append(self.advance())  # escaped char
+                        else:
+                            delimiter_chars.append(self.advance())
+                    if not self.at_end():
+                        delimiter_chars.append(self.advance())  # closing `
+                else:
+                    delimiter_chars.append(self.advance())
+
+            # Check for process substitution syntax <( or >( which is part of delimiter
+            if (
+                not self.at_end()
+                and self.peek() in "<>"
                 and self.pos + 1 < self.length
                 and self.source[self.pos + 1] == "("
             ):
-                # Command substitution embedded in delimiter
-                delimiter_chars.append(self.advance())  # $
+                # Process substitution embedded in delimiter
+                delimiter_chars.append(self.advance())  # < or >
                 delimiter_chars.append(self.advance())  # (
                 depth = 1
                 while not self.at_end() and depth > 0:
@@ -5840,124 +8791,119 @@ class Parser:
                     elif c == ")":
                         depth -= 1
                     delimiter_chars.append(self.advance())
-            else:
-                delimiter_chars.append(self.advance())
+                continue  # Try to collect more delimiter characters
+            break
 
-        delimiter = "".join(delimiter_chars)
+        return "".join(delimiter_chars), quoted
 
-        # Find the end of the current line (command continues until newline)
-        # We need to mark where the heredoc content starts
-        # Must be quote-aware - newlines inside quoted strings don't end the line
+    def _read_heredoc_line(self, quoted: bool) -> tuple[str, int]:
+        """Read a heredoc line, handling backslash-newline continuation for unquoted heredocs.
+
+        Returns (line_content, line_end_pos) where line_content is the logical line
+        (with continuations joined) and line_end_pos is the position after the final newline.
+        """
+        line_start = self.pos
         line_end = self.pos
         while line_end < self.length and self.source[line_end] != "\n":
-            ch = self.source[line_end]
-            if ch == "'":
-                # Single-quoted string - skip to closing quote (no escapes)
-                line_end += 1
-                while line_end < self.length and self.source[line_end] != "'":
-                    line_end += 1
-            elif ch == '"':
-                # Double-quoted string - skip to closing quote (with escapes)
-                line_end += 1
-                while line_end < self.length and self.source[line_end] != '"':
-                    if self.source[line_end] == "\\" and line_end + 1 < self.length:
-                        line_end += 2
-                    else:
-                        line_end += 1
-            elif ch == "\\" and line_end + 1 < self.length:
-                # Backslash escape - skip both chars
-                line_end += 2
-                continue
             line_end += 1
+        line = _substring(self.source, line_start, line_end)
+        if not quoted:
+            while line_end < self.length:
+                trailing_bs = _count_trailing_backslashes(line)
+                if trailing_bs % 2 == 0:
+                    break  # Even backslashes - no continuation
+                line = _substring(line, 0, len(line) - 1)  # Remove escaping backslash
+                line_end += 1  # Skip newline
+                next_line_start = line_end
+                while line_end < self.length and self.source[line_end] != "\n":
+                    line_end += 1
+                line = line + _substring(self.source, next_line_start, line_end)
+        return line, line_end
 
-        # Find heredoc content starting position
-        # If there's already a pending heredoc, this one's content starts after that
-        if (
-            self._pending_heredoc_end is not None
-            and self._pending_heredoc_end > line_end
-        ):
-            content_start = self._pending_heredoc_end
-        elif line_end < self.length:
-            content_start = line_end + 1  # skip the newline
-        else:
-            content_start = self.length
+    def _line_matches_delimiter(
+        self, line: str, delimiter: str, strip_tabs: bool
+    ) -> tuple[bool, str]:
+        """Check if line matches the heredoc delimiter.
 
-        # Find the delimiter line
-        content_lines = []
-        scan_pos = content_start
+        Returns (matches, check_line) where check_line is the line after tab stripping.
+        """
+        check_line = line.lstrip("\t") if strip_tabs else line
+        normalized_check = _normalize_heredoc_delimiter(check_line)
+        normalized_delim = _normalize_heredoc_delimiter(delimiter)
+        return normalized_check == normalized_delim, check_line
 
-        while scan_pos < self.length:
-            # Find end of current line
-            line_start = scan_pos
-            line_end = scan_pos
-            while line_end < self.length and self.source[line_end] != "\n":
-                line_end += 1
+    def _gather_heredoc_bodies(self) -> None:
+        """Gather content for all pending heredocs after command line ends.
 
-            line = _substring(self.source, line_start, line_end)
+        Called after a newline is consumed. Reads content for each pending heredoc
+        in order, advancing self.pos past all heredoc content.
+        """
+        for heredoc in self._pending_heredocs:
+            content_lines: list[str] = []
+            line_start = self.pos
+            while self.pos < self.length:
+                line_start = self.pos
+                line, line_end = self._read_heredoc_line(heredoc.quoted)
+                matches, check_line = self._line_matches_delimiter(
+                    line, heredoc.delimiter, heredoc.strip_tabs
+                )
+                if matches:
+                    self.pos = line_end + 1 if line_end < self.length else line_end
+                    break
+                # Check for delimiter followed by cmdsub/procsub closer
+                normalized_check = _normalize_heredoc_delimiter(check_line)
+                normalized_delim = _normalize_heredoc_delimiter(heredoc.delimiter)
+                # In command substitution: line starts with delimiter - heredoc ends there
+                # Remaining content (e.g., ")x" or "b)") is part of the command sub
+                if self._eof_token == ")" and normalized_check.startswith(normalized_delim):
+                    tabs_stripped = len(line) - len(check_line)
+                    self.pos = line_start + tabs_stripped + len(heredoc.delimiter)
+                    break
+                # At EOF with line starting with delimiter - heredoc terminates (process sub case)
+                if (
+                    line_end >= self.length
+                    and normalized_check.startswith(normalized_delim)
+                    and self._in_process_sub
+                ):
+                    tabs_stripped = len(line) - len(check_line)
+                    self.pos = line_start + tabs_stripped + len(heredoc.delimiter)
+                    break
+                # Add line to content
+                if heredoc.strip_tabs:
+                    line = line.lstrip("\t")
+                if line_end < self.length:
+                    content_lines.append(line + "\n")
+                    self.pos = line_end + 1
+                else:
+                    # EOF - bash keeps trailing newline unless escaped by odd backslash
+                    add_newline = True
+                    if not heredoc.quoted and _count_trailing_backslashes(line) % 2 == 1:
+                        add_newline = False
+                    content_lines.append(line + ("\n" if add_newline else ""))
+                    self.pos = self.length
+            heredoc.content = "".join(content_lines)
+        self._pending_heredocs = []
 
-            # For unquoted heredocs, process backslash-newline before checking delimiter
-            # Join continued lines to check the full logical line against delimiter
-            # Only odd number of trailing backslashes means continuation (even = literal)
-            if not quoted:
-                while line_end < self.length:
-                    # Count trailing backslashes
-                    trailing_bs = 0
-                    for i in range(len(line) - 1, -1, -1):
-                        if line[i] == "\\":
-                            trailing_bs += 1
-                        else:
-                            break
-                    if trailing_bs % 2 == 0:
-                        break  # Even backslashes (including 0) - no continuation
-                    # Odd backslashes - line continuation
-                    line = _substring(
-                        line, 0, len(line) - 1
-                    )  # Remove the escaping backslash
-                    line_end += 1  # Skip newline
-                    next_line_start = line_end
-                    while line_end < self.length and self.source[line_end] != "\n":
-                        line_end += 1
-                    line = line + _substring(self.source, next_line_start, line_end)
+    def _parse_heredoc(self, fd: int | None, strip_tabs: bool) -> HereDoc:
+        """Parse a here document <<DELIM ... DELIM.
 
-            # Check if this line is the delimiter
-            check_line = line
-            if strip_tabs:
-                check_line = line.lstrip("\t")
-
-            if check_line == delimiter:
-                # Found the end - update parser position past the heredoc
-                # We need to consume the heredoc content from the input
-                # But we can't do that here because we haven't finished parsing the command line
-                # Store the heredoc info and let the command parser handle it
-                break
-
-            # Add line to content (with newline, since we consumed continuations above)
-            if strip_tabs:
-                line = line.lstrip("\t")
-            content_lines.append(line + "\n")
-
-            # Move past the newline
-            if line_end < self.length:
-                scan_pos = line_end + 1
-            else:
-                scan_pos = self.length
-
-        # Join content (newlines already included per line)
-        content = "".join(content_lines)
-
-        # Store the position where heredoc content ends so we can skip it later
-        # line_end points to the end of the delimiter line (after any continuations)
-        heredoc_end = line_end
-        if heredoc_end < self.length:
-            heredoc_end += 1  # past the newline
-
-        # Register this heredoc's end position
-        if self._pending_heredoc_end is None:
-            self._pending_heredoc_end = heredoc_end
-        else:
-            self._pending_heredoc_end = max(self._pending_heredoc_end, heredoc_end)
-
-        return HereDoc(delimiter, content, strip_tabs, quoted, fd)
+        Parses the delimiter only. Content is gathered later by _gather_heredoc_bodies
+        after the command line is complete.
+        """
+        start_pos = self.pos
+        self._set_state(ParserStateFlags.PST_HEREDOC)
+        delimiter, quoted = self._parse_heredoc_delimiter()
+        # Check if we've already registered this heredoc (can happen due to re-tokenization)
+        for existing in self._pending_heredocs:
+            if existing._start_pos == start_pos and existing.delimiter == delimiter:
+                self._clear_state(ParserStateFlags.PST_HEREDOC)
+                return existing
+        # Create stub HereDoc with empty content - will be filled in later
+        heredoc = HereDoc(delimiter, "", strip_tabs, quoted, fd, False)
+        heredoc._start_pos = start_pos  # Track position for dedup
+        self._pending_heredocs.append(heredoc)
+        self._clear_state(ParserStateFlags.PST_HEREDOC)
+        return heredoc
 
     def parse_command(self) -> Command | None:
         """Parse a simple command (sequence of words and redirections)."""
@@ -5966,24 +8912,17 @@ class Parser:
 
         while True:
             self.skip_whitespace()
-            if self.at_end():
+            # Use token-based terminator detection
+            # This enables the EOF token mechanism to work at the command level
+            if self._lex_is_command_terminator():
                 break
-            ch = self.peek()
-            # Check for command terminators, but &> and &>> are redirects, not terminators
-            if _is_list_terminator(ch):
-                break
-            if ch == "&" and not (
-                self.pos + 1 < self.length and self.source[self.pos + 1] == ">"
-            ):
-                break
-            # } is only a terminator at command position (closing a brace group)
-            # In argument position, } is just a regular word
-            if self.peek() == "}" and not words:
-                # Check if } would be a standalone word (next char is whitespace/meta/EOF)
-                next_pos = self.pos + 1
-                if next_pos >= self.length or _is_word_end_context(
-                    self.source[next_pos]
-                ):
+            # } and ]] are only terminators at command position (closing brace group
+            # or conditional). In argument position, they're regular words.
+            # Check as reserved words since lexer returns them as WORD tokens.
+            # Use len() == 0 instead of 'not words' for JS transpiler compatibility
+            if len(words) == 0:
+                reserved = self._lex_peek_reserved_word()
+                if reserved == "}" or reserved == "]]":
                     break
 
             # Try to parse a redirect first
@@ -5995,12 +8934,21 @@ class Parser:
             # Otherwise parse a word
             # Allow array assignments like a[1 + 2]= in prefix position (before first non-assignment)
             # Check if all previous words were assignments (contain = not inside quotes)
+            # and no redirects have been seen (redirects break assignment context)
             all_assignments = True
             for w in words:
                 if not self._is_assignment_word(w):
                     all_assignments = False
                     break
-            word = self.parse_word(at_command_start=not words or all_assignments)
+            # Check if first word is an assignment builtin (bash's PST_ASSIGNOK)
+            # This allows array literal assignments after builtins like declare, local, export
+            # but does NOT enable bracket tracking (which is only for true command start)
+            in_assign_builtin = len(words) > 0 and words[0].value in ASSIGNMENT_BUILTINS
+            word = self.parse_word(
+                at_command_start=not words or (all_assignments and len(redirects) == 0),
+                in_array_literal=False,
+                in_assign_builtin=in_assign_builtin,
+            )
             if word is None:
                 break
             words.append(word)
@@ -6017,15 +8965,19 @@ class Parser:
             return None
 
         self.advance()  # consume (
+        self._set_state(ParserStateFlags.PST_SUBSHELL)
 
         body = self.parse_list()
         if body is None:
+            self._clear_state(ParserStateFlags.PST_SUBSHELL)
             raise ParseError("Expected command in subshell", pos=self.pos)
 
         self.skip_whitespace()
         if self.at_end() or self.peek() != ")":
+            self._clear_state(ParserStateFlags.PST_SUBSHELL)
             raise ParseError("Expected ) to close subshell", pos=self.pos)
         self.advance()  # consume )
+        self._clear_state(ParserStateFlags.PST_SUBSHELL)
         return Subshell(body, self._collect_redirects())
 
     def parse_arithmetic_command(self) -> ArithmeticCommand | None:
@@ -6056,17 +9008,35 @@ class Parser:
 
         while not self.at_end() and depth > 0:
             c = self.peek()
-
-            if c == "(":
+            # Skip single-quoted strings (parens inside don't count)
+            if c == "'":
+                self.advance()
+                while not self.at_end() and self.peek() != "'":
+                    self.advance()
+                if not self.at_end():
+                    self.advance()  # consume closing '
+            # Skip double-quoted strings (parens inside don't count)
+            elif c == '"':
+                self.advance()
+                while not self.at_end():
+                    if self.peek() == "\\" and self.pos + 1 < self.length:
+                        self.advance()
+                        self.advance()
+                    elif self.peek() == '"':
+                        self.advance()
+                        break
+                    else:
+                        self.advance()
+            # Handle backslash escapes outside quotes
+            elif c == "\\" and self.pos + 1 < self.length:
+                self.advance()
+                self.advance()
+            elif c == "(":
                 depth += 1
                 self.advance()
             elif c == ")":
                 # Check for )) (must be consecutive, no space)
-                if (
-                    depth == 1
-                    and self.pos + 1 < self.length
-                    and self.source[self.pos + 1] == ")"
-                ):
+                if depth == 1 and self.pos + 1 < self.length and self.source[self.pos + 1] == ")":
                     # Found the closing ))
                     break
                 depth -= 1
@@ -6078,12 +9048,17 @@ class Parser:
             else:
                 self.advance()
 
-        if self.at_end() or depth != 1:
-            # Didn't find )) - might be nested subshells or malformed
+        if self.at_end():
+            # Hit EOF without finding )) - unclosed arithmetic command
+            raise MatchedPairError("unexpected EOF looking for `))'", pos=saved_pos)
+        if depth != 1:
+            # Didn't find )) - might be nested subshells, not arithmetic command
             self.pos = saved_pos
             return None
 
         content = _substring(self.source, content_start, self.pos)
+        # Strip backslash-newline line continuations
+        content = content.replace("\\\n", "")
         self.advance()  # consume first )
         self.advance()  # consume second )
 
@@ -6151,9 +9126,21 @@ class Parser:
             or self.source[self.pos + 1] != "["
         ):
             return None
+        next_pos = self.pos + 2
+        if next_pos < self.length and not (
+            _is_whitespace(self.source[next_pos])
+            or (
+                self.source[next_pos] == "\\"
+                and next_pos + 1 < self.length
+                and self.source[next_pos + 1] == "\n"
+            )
+        ):
+            return None
 
         self.advance()  # consume first [
         self.advance()  # consume second [
+        self._set_state(ParserStateFlags.PST_CONDEXPR)
+        self._word_context = WORD_CTX_COND
 
         # Parse the conditional expression body
         body = self._parse_cond_or()
@@ -6169,12 +9156,14 @@ class Parser:
             or self.pos + 1 >= self.length
             or self.source[self.pos + 1] != "]"
         ):
-            raise ParseError(
-                "Expected ]] to close conditional expression", pos=self.pos
-            )
+            self._clear_state(ParserStateFlags.PST_CONDEXPR)
+            self._word_context = WORD_CTX_NORMAL
+            raise ParseError("Expected ]] to close conditional expression", pos=self.pos)
 
         self.advance()  # consume first ]
         self.advance()  # consume second ]
+        self._clear_state(ParserStateFlags.PST_CONDEXPR)
+        self._word_context = WORD_CTX_NORMAL
         return ConditionalExpr(body, self._collect_redirects())
 
     def _cond_skip_whitespace(self) -> None:
@@ -6198,9 +9187,7 @@ class Parser:
     def _cond_at_end(self) -> bool:
         """Check if we're at ]] (end of conditional)."""
         return self.at_end() or (
-            self.peek() == "]"
-            and self.pos + 1 < self.length
-            and self.source[self.pos + 1] == "]"
+            self.peek() == "]" and self.pos + 1 < self.length and self.source[self.pos + 1] == "]"
         )
 
     def _parse_cond_or(self) -> Node:
@@ -6308,9 +9295,7 @@ class Parser:
                 else:
                     word2 = self._parse_cond_word()
                 if word2 is None:
-                    raise ParseError(
-                        "Expected operand after " + op_word.value, pos=self.pos
-                    )
+                    raise ParseError("Expected operand after " + op_word.value, pos=self.pos)
                 return BinaryTest(op_word.value, word1, word2)
             else:
                 # Not a binary op, restore position
@@ -6322,748 +9307,213 @@ class Parser:
     def _parse_cond_word(self) -> Word | None:
         """Parse a word inside [[ ]], handling expansions but stopping at conditional operators."""
         self._cond_skip_whitespace()
-
         if self._cond_at_end():
             return None
-
         # Check for special tokens that aren't words
         c = self.peek()
         if _is_paren(c):
             return None
-        # Note: ! alone is handled by _parse_cond_term() as negation operator
-        # Here we allow ! as a word so it can be used as pattern in binary tests
         if c == "&" and self.pos + 1 < self.length and self.source[self.pos + 1] == "&":
             return None
         if c == "|" and self.pos + 1 < self.length and self.source[self.pos + 1] == "|":
             return None
-
-        start = self.pos
-        chars = []
-        parts = []
-
-        while not self.at_end():
-            ch = self.peek()
-
-            # End of conditional
-            if (
-                ch == "]"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "]"
-            ):
-                break
-
-            # Word terminators in conditionals
-            if _is_whitespace_no_newline(ch):
-                break
-            # < and > are string comparison operators in [[ ]], terminate words
-            # But <(...) and >(...) are process substitution - don't break
-            if _is_redirect_char(ch) and not (
-                self.pos + 1 < self.length and self.source[self.pos + 1] == "("
-            ):
-                break
-            # ( and ) end words unless part of extended glob: @(...), ?(...), *(...), +(...), !(...)
-            if ch == "(":
-                # Check if this is an extended glob (preceded by @, ?, *, +, or !)
-                if chars and _is_extglob_prefix(chars[len(chars) - 1]):
-                    # Extended glob - consume the parenthesized content
-                    chars.append(self.advance())  # (
-                    depth = 1
-                    while not self.at_end() and depth > 0:
-                        c = self.peek()
-                        if c == "(":
-                            depth += 1
-                        elif c == ")":
-                            depth -= 1
-                        chars.append(self.advance())
-                    continue
-                else:
-                    break
-            if ch == ")":
-                break
-            if (
-                ch == "&"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "&"
-            ):
-                break
-            if (
-                ch == "|"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "|"
-            ):
-                break
-
-            # Glob bracket expression [...] - consume until closing ]
-            # Handles [[:alpha:]], [^0-9], []a-z] (] as first char), etc.
-            if ch == "[":
-                chars.append(self.advance())  # consume [
-                # Handle negation [^
-                if not self.at_end() and self.peek() == "^":
-                    chars.append(self.advance())
-                # Handle ] as first char (literal ])
-                if not self.at_end() and self.peek() == "]":
-                    chars.append(self.advance())
-                # Consume until closing ]
-                while not self.at_end():
-                    c = self.peek()
-                    if c == "]":
-                        chars.append(self.advance())
-                        break
-                    if (
-                        c == "["
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == ":"
-                    ):
-                        # POSIX class like [:alpha:] inside bracket expression
-                        chars.append(self.advance())  # [
-                        chars.append(self.advance())  # :
-                        while not self.at_end() and not (
-                            self.peek() == ":"
-                            and self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "]"
-                        ):
-                            chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())  # :
-                            chars.append(self.advance())  # ]
-                    elif (
-                        c == "["
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "="
-                    ):
-                        # Equivalence class like [=a=] inside bracket expression
-                        chars.append(self.advance())  # [
-                        chars.append(self.advance())  # =
-                        while not self.at_end() and not (
-                            self.peek() == "="
-                            and self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "]"
-                        ):
-                            chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())  # =
-                            chars.append(self.advance())  # ]
-                    elif (
-                        c == "["
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == "."
-                    ):
-                        # Collating symbol like [.ch.] inside bracket expression
-                        chars.append(self.advance())  # [
-                        chars.append(self.advance())  # .
-                        while not self.at_end() and not (
-                            self.peek() == "."
-                            and self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "]"
-                        ):
-                            chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())  # .
-                            chars.append(self.advance())  # ]
-                    else:
-                        chars.append(self.advance())
-                continue
-
-            # Single-quoted string
-            if ch == "'":
-                self.advance()
-                chars.append("'")
-                while not self.at_end() and self.peek() != "'":
-                    chars.append(self.advance())
-                if self.at_end():
-                    raise ParseError("Unterminated single quote", pos=start)
-                chars.append(self.advance())
-
-            # Double-quoted string
-            elif ch == '"':
-                self.advance()
-                chars.append('"')
-                while not self.at_end() and self.peek() != '"':
-                    c = self.peek()
-                    if c == "\\" and self.pos + 1 < self.length:
-                        next_c = self.source[self.pos + 1]
-                        if next_c == "\n":
-                            # Line continuation - skip both backslash and newline
-                            self.advance()
-                            self.advance()
-                        else:
-                            chars.append(self.advance())
-                            chars.append(self.advance())
-                    elif c == "$":
-                        # Handle expansions inside double quotes
-                        if (
-                            self.pos + 2 < self.length
-                            and self.source[self.pos + 1] == "("
-                            and self.source[self.pos + 2] == "("
-                        ):
-                            arith_result = self._parse_arithmetic_expansion()
-                            arith_node = arith_result[0]
-                            arith_text = arith_result[1]
-                            if arith_node:
-                                parts.append(arith_node)
-                                chars.append(arith_text)
-                            else:
-                                # Not arithmetic - try command substitution
-                                cmdsub_result = self._parse_command_substitution()
-                                cmdsub_node = cmdsub_result[0]
-                                cmdsub_text = cmdsub_result[1]
-                                if cmdsub_node:
-                                    parts.append(cmdsub_node)
-                                    chars.append(cmdsub_text)
-                                else:
-                                    chars.append(self.advance())
-                        elif (
-                            self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "("
-                        ):
-                            cmdsub_result = self._parse_command_substitution()
-                            cmdsub_node = cmdsub_result[0]
-                            cmdsub_text = cmdsub_result[1]
-                            if cmdsub_node:
-                                parts.append(cmdsub_node)
-                                chars.append(cmdsub_text)
-                            else:
-                                chars.append(self.advance())
-                        else:
-                            param_result = self._parse_param_expansion()
-                            param_node = param_result[0]
-                            param_text = param_result[1]
-                            if param_node:
-                                parts.append(param_node)
-                                chars.append(param_text)
-                            else:
-                                chars.append(self.advance())
-                    else:
-                        chars.append(self.advance())
-                if self.at_end():
-                    raise ParseError("Unterminated double quote", pos=start)
-                chars.append(self.advance())
-
-            # Escape
-            elif ch == "\\" and self.pos + 1 < self.length:
-                chars.append(self.advance())
-                chars.append(self.advance())
-
-            # ANSI-C quoting $'...'
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "'"
-            ):
-                ansi_result = self._parse_ansi_c_quote()
-                ansi_node = ansi_result[0]
-                ansi_text = ansi_result[1]
-                if ansi_node:
-                    parts.append(ansi_node)
-                    chars.append(ansi_text)
-                else:
-                    chars.append(self.advance())
-
-            # Locale translation $"..."
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == '"'
-            ):
-                locale_result = self._parse_locale_string()
-                locale_node = locale_result[0]
-                locale_text = locale_result[1]
-                inner_parts = locale_result[2]
-                if locale_node:
-                    parts.append(locale_node)
-                    parts.extend(inner_parts)
-                    chars.append(locale_text)
-                else:
-                    chars.append(self.advance())
-
-            # Arithmetic expansion $((...))
-            elif (
-                ch == "$"
-                and self.pos + 2 < self.length
-                and self.source[self.pos + 1] == "("
-                and self.source[self.pos + 2] == "("
-            ):
-                arith_result = self._parse_arithmetic_expansion()
-                arith_node = arith_result[0]
-                arith_text = arith_result[1]
-                if arith_node:
-                    parts.append(arith_node)
-                    chars.append(arith_text)
-                else:
-                    chars.append(self.advance())
-
-            # Command substitution $(...)
-            elif (
-                ch == "$"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                cmdsub_result = self._parse_command_substitution()
-                cmdsub_node = cmdsub_result[0]
-                cmdsub_text = cmdsub_result[1]
-                if cmdsub_node:
-                    parts.append(cmdsub_node)
-                    chars.append(cmdsub_text)
-                else:
-                    chars.append(self.advance())
-
-            # Parameter expansion $var or ${...}
-            elif ch == "$":
-                param_result = self._parse_param_expansion()
-                param_node = param_result[0]
-                param_text = param_result[1]
-                if param_node:
-                    parts.append(param_node)
-                    chars.append(param_text)
-                else:
-                    chars.append(self.advance())
-
-            # Process substitution <(...) or >(...)
-            elif (
-                _is_redirect_char(ch)
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "("
-            ):
-                procsub_result = self._parse_process_substitution()
-                procsub_node = procsub_result[0]
-                procsub_text = procsub_result[1]
-                if procsub_node:
-                    parts.append(procsub_node)
-                    chars.append(procsub_text)
-                else:
-                    chars.append(self.advance())
-
-            # Backtick command substitution
-            elif ch == "`":
-                cmdsub_result = self._parse_backtick_substitution()
-                cmdsub_node = cmdsub_result[0]
-                cmdsub_text = cmdsub_result[1]
-                if cmdsub_node:
-                    parts.append(cmdsub_node)
-                    chars.append(cmdsub_text)
-                else:
-                    chars.append(self.advance())
-
-            # Regular character
-            else:
-                chars.append(self.advance())
-
-        if not chars:
-            return None
-
-        parts_arg = None
-        if parts:
-            parts_arg = parts
-        return Word("".join(chars), parts_arg)
+        return self._parse_word_internal(WORD_CTX_COND)
 
     def _parse_cond_regex_word(self) -> Word | None:
         """Parse a regex pattern word in [[ ]], where ( ) are regex grouping, not conditional grouping."""
         self._cond_skip_whitespace()
-
         if self._cond_at_end():
             return None
-
-        start = self.pos
-        chars = []
-        parts = []
-        paren_depth = 0  # Track regex grouping parens - spaces inside don't terminate
-
-        while not self.at_end():
-            ch = self.peek()
-
-            # End of conditional
-            if (
-                ch == "]"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "]"
-            ):
-                break
-
-            # Backslash-newline continuation (check before space/escape handling)
-            if (
-                ch == "\\"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "\n"
-            ):
-                self.advance()  # consume backslash
-                self.advance()  # consume newline
-                continue
-
-            # Escape sequences - consume both characters (including escaped spaces)
-            if ch == "\\" and self.pos + 1 < self.length:
-                chars.append(self.advance())
-                chars.append(self.advance())
-                continue
-
-            # Track regex grouping parentheses
-            if ch == "(":
-                paren_depth += 1
-                chars.append(self.advance())
-                continue
-            if ch == ")":
-                if paren_depth > 0:
-                    paren_depth -= 1
-                    chars.append(self.advance())
-                    continue
-                # Unmatched ) - probably end of pattern
-                break
-
-            # Regex character class [...] - consume until closing ]
-            # Handles [[:alpha:]], [^0-9], []a-z] (] as first char), etc.
-            if ch == "[":
-                chars.append(self.advance())  # consume [
-                # Handle negation [^
-                if not self.at_end() and self.peek() == "^":
-                    chars.append(self.advance())
-                # Handle ] as first char (literal ])
-                if not self.at_end() and self.peek() == "]":
-                    chars.append(self.advance())
-                # Consume until closing ]
-                while not self.at_end():
-                    c = self.peek()
-                    if c == "]":
-                        chars.append(self.advance())
-                        break
-                    if (
-                        c == "["
-                        and self.pos + 1 < self.length
-                        and self.source[self.pos + 1] == ":"
-                    ):
-                        # POSIX class like [:alpha:] inside bracket expression
-                        chars.append(self.advance())  # [
-                        chars.append(self.advance())  # :
-                        while not self.at_end() and not (
-                            self.peek() == ":"
-                            and self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "]"
-                        ):
-                            chars.append(self.advance())
-                        if not self.at_end():
-                            chars.append(self.advance())  # :
-                            chars.append(self.advance())  # ]
-                    elif c == "$":
-                        # Handle parameter/arithmetic expansions inside bracket expression
-                        if (
-                            self.pos + 1 < self.length
-                            and self.source[self.pos + 1] == "("
-                        ):
-                            # Could be $((...)) arithmetic or $(...) command substitution
-                            if (
-                                self.pos + 2 < self.length
-                                and self.source[self.pos + 2] == "("
-                            ):
-                                # Arithmetic expansion $((...))
-                                arith_result = self._parse_arithmetic_expansion()
-                                arith_node = arith_result[0]
-                                arith_text = arith_result[1]
-                                if arith_node:
-                                    parts.append(arith_node)
-                                    chars.append(arith_text)
-                                else:
-                                    chars.append(self.advance())
-                            else:
-                                # Command substitution $(...)
-                                cmdsub_result = self._parse_command_substitution()
-                                cmdsub_node = cmdsub_result[0]
-                                cmdsub_text = cmdsub_result[1]
-                                if cmdsub_node:
-                                    parts.append(cmdsub_node)
-                                    chars.append(cmdsub_text)
-                                else:
-                                    chars.append(self.advance())
-                        else:
-                            # Parameter expansion ${...} or $var
-                            param_result = self._parse_param_expansion()
-                            param_node = param_result[0]
-                            param_text = param_result[1]
-                            if param_node:
-                                parts.append(param_node)
-                                chars.append(param_text)
-                            else:
-                                chars.append(self.advance())
-                    else:
-                        chars.append(self.advance())
-                continue
-
-            # Word terminators - space/tab ends the regex (unless inside parens), as do && and ||
-            if _is_whitespace(ch) and paren_depth == 0:
-                break
-            if _is_whitespace(ch) and paren_depth > 0:
-                # Space inside regex parens is part of the pattern
-                chars.append(self.advance())
-                continue
-            if (
-                ch == "&"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "&"
-            ):
-                break
-            if (
-                ch == "|"
-                and self.pos + 1 < self.length
-                and self.source[self.pos + 1] == "|"
-            ):
-                break
-
-            # Single-quoted string
-            if ch == "'":
-                self.advance()
-                chars.append("'")
-                while not self.at_end() and self.peek() != "'":
-                    chars.append(self.advance())
-                if self.at_end():
-                    raise ParseError("Unterminated single quote", pos=start)
-                chars.append(self.advance())
-                continue
-
-            # Double-quoted string
-            if ch == '"':
-                self.advance()
-                chars.append('"')
-                while not self.at_end() and self.peek() != '"':
-                    c = self.peek()
-                    if c == "\\" and self.pos + 1 < self.length:
-                        chars.append(self.advance())
-                        chars.append(self.advance())
-                    elif c == "$":
-                        param_result = self._parse_param_expansion()
-                        param_node = param_result[0]
-                        param_text = param_result[1]
-                        if param_node:
-                            parts.append(param_node)
-                            chars.append(param_text)
-                        else:
-                            chars.append(self.advance())
-                    else:
-                        chars.append(self.advance())
-                if self.at_end():
-                    raise ParseError("Unterminated double quote", pos=start)
-                chars.append(self.advance())
-                continue
-
-            # Command substitution $(...) or parameter expansion $var or ${...}
-            if ch == "$":
-                # Try command substitution first
-                if self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
-                    cmdsub_result = self._parse_command_substitution()
-                    cmdsub_node = cmdsub_result[0]
-                    cmdsub_text = cmdsub_result[1]
-                    if cmdsub_node:
-                        parts.append(cmdsub_node)
-                        chars.append(cmdsub_text)
-                        continue
-                param_result = self._parse_param_expansion()
-                param_node = param_result[0]
-                param_text = param_result[1]
-                if param_node:
-                    parts.append(param_node)
-                    chars.append(param_text)
-                else:
-                    chars.append(self.advance())
-                continue
-
-            # Regular character (including ( ) which are regex grouping)
-            chars.append(self.advance())
-
-        if not chars:
-            return None
-
-        parts_arg = None
-        if parts:
-            parts_arg = parts
-        return Word("".join(chars), parts_arg)
+        self._set_state(ParserStateFlags.PST_REGEXP)
+        result = self._parse_word_internal(WORD_CTX_REGEX)
+        self._clear_state(ParserStateFlags.PST_REGEXP)
+        # Restore word context to COND after parsing regex
+        self._word_context = WORD_CTX_COND
+        return result
 
     def parse_brace_group(self) -> BraceGroup | None:
         """Parse a brace group { list }."""
         self.skip_whitespace()
-        if self.at_end() or self.peek() != "{":
+        # Lexer handles { vs {abc distinction: only returns reserved word for standalone {
+        if not self._lex_consume_word("{"):
             return None
-
-        # Check that { is followed by whitespace or ( (it's a reserved word)
-        # {( is valid: brace group containing a subshell
-        if self.pos + 1 < self.length:
-            next_ch = self.source[self.pos + 1]
-            if not _is_whitespace(next_ch) and next_ch != "(":
-                return None
-
-        self.advance()  # consume {
         self.skip_whitespace_and_newlines()
 
         body = self.parse_list()
         if body is None:
-            raise ParseError("Expected command in brace group", pos=self.pos)
+            raise ParseError("Expected command in brace group", pos=self._lex_peek_token().pos)
 
         self.skip_whitespace()
-        if self.at_end() or self.peek() != "}":
-            raise ParseError("Expected } to close brace group", pos=self.pos)
-        self.advance()  # consume }
+        if not self._lex_consume_word("}"):
+            raise ParseError("Expected } to close brace group", pos=self._lex_peek_token().pos)
         return BraceGroup(body, self._collect_redirects())
 
     def parse_if(self) -> If | None:
         """Parse an if statement: if list; then list [elif list; then list]* [else list] fi."""
-        if not self.consume_word("if"):
+        self.skip_whitespace()
+        if not self._lex_consume_word("if"):
             return None
 
         # Parse condition (a list that ends at 'then')
         condition = self.parse_list_until({"then"})
         if condition is None:
-            raise ParseError("Expected condition after 'if'", pos=self.pos)
+            raise ParseError("Expected condition after 'if'", pos=self._lex_peek_token().pos)
 
         # Expect 'then'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("then"):
-            raise ParseError("Expected 'then' after if condition", pos=self.pos)
+        if not self._lex_consume_word("then"):
+            raise ParseError("Expected 'then' after if condition", pos=self._lex_peek_token().pos)
 
         # Parse then body (ends at elif, else, or fi)
         then_body = self.parse_list_until({"elif", "else", "fi"})
         if then_body is None:
-            raise ParseError("Expected commands after 'then'", pos=self.pos)
+            raise ParseError("Expected commands after 'then'", pos=self._lex_peek_token().pos)
 
         # Check what comes next: elif, else, or fi
         self.skip_whitespace_and_newlines()
-        next_word = self.peek_word()
 
         else_body = None
-        if next_word == "elif":
+        if self._lex_is_at_reserved_word("elif"):
             # elif is syntactic sugar for else if ... fi
-            self.consume_word("elif")
+            self._lex_consume_word("elif")
             # Parse the rest as a nested if (but we've already consumed 'elif')
             # We need to parse: condition; then body [elif|else|fi]
             elif_condition = self.parse_list_until({"then"})
             if elif_condition is None:
-                raise ParseError("Expected condition after 'elif'", pos=self.pos)
+                raise ParseError("Expected condition after 'elif'", pos=self._lex_peek_token().pos)
 
             self.skip_whitespace_and_newlines()
-            if not self.consume_word("then"):
-                raise ParseError("Expected 'then' after elif condition", pos=self.pos)
+            if not self._lex_consume_word("then"):
+                raise ParseError(
+                    "Expected 'then' after elif condition", pos=self._lex_peek_token().pos
+                )
 
             elif_then_body = self.parse_list_until({"elif", "else", "fi"})
             if elif_then_body is None:
-                raise ParseError("Expected commands after 'then'", pos=self.pos)
+                raise ParseError("Expected commands after 'then'", pos=self._lex_peek_token().pos)
 
             # Recursively handle more elif/else/fi
             self.skip_whitespace_and_newlines()
-            inner_next = self.peek_word()
 
             inner_else = None
-            if inner_next == "elif":
+            if self._lex_is_at_reserved_word("elif"):
                 # More elif - recurse by creating a fake "if" and parsing
                 # Actually, let's just recursively call a helper
                 inner_else = self._parse_elif_chain()
-            elif inner_next == "else":
-                self.consume_word("else")
+            elif self._lex_is_at_reserved_word("else"):
+                self._lex_consume_word("else")
                 inner_else = self.parse_list_until({"fi"})
                 if inner_else is None:
-                    raise ParseError("Expected commands after 'else'", pos=self.pos)
+                    raise ParseError(
+                        "Expected commands after 'else'", pos=self._lex_peek_token().pos
+                    )
 
             else_body = If(elif_condition, elif_then_body, inner_else)
 
-        elif next_word == "else":
-            self.consume_word("else")
+        elif self._lex_is_at_reserved_word("else"):
+            self._lex_consume_word("else")
             else_body = self.parse_list_until({"fi"})
             if else_body is None:
-                raise ParseError("Expected commands after 'else'", pos=self.pos)
+                raise ParseError("Expected commands after 'else'", pos=self._lex_peek_token().pos)
 
         # Expect 'fi'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("fi"):
-            raise ParseError("Expected 'fi' to close if statement", pos=self.pos)
+        if not self._lex_consume_word("fi"):
+            raise ParseError("Expected 'fi' to close if statement", pos=self._lex_peek_token().pos)
         return If(condition, then_body, else_body, self._collect_redirects())
 
     def _parse_elif_chain(self) -> If:
         """Parse elif chain (after seeing 'elif' keyword)."""
-        self.consume_word("elif")
+        self._lex_consume_word("elif")
 
         condition = self.parse_list_until({"then"})
         if condition is None:
-            raise ParseError("Expected condition after 'elif'", pos=self.pos)
+            raise ParseError("Expected condition after 'elif'", pos=self._lex_peek_token().pos)
 
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("then"):
-            raise ParseError("Expected 'then' after elif condition", pos=self.pos)
+        if not self._lex_consume_word("then"):
+            raise ParseError("Expected 'then' after elif condition", pos=self._lex_peek_token().pos)
 
         then_body = self.parse_list_until({"elif", "else", "fi"})
         if then_body is None:
-            raise ParseError("Expected commands after 'then'", pos=self.pos)
+            raise ParseError("Expected commands after 'then'", pos=self._lex_peek_token().pos)
 
         self.skip_whitespace_and_newlines()
-        next_word = self.peek_word()
 
         else_body = None
-        if next_word == "elif":
+        if self._lex_is_at_reserved_word("elif"):
             else_body = self._parse_elif_chain()
-        elif next_word == "else":
-            self.consume_word("else")
+        elif self._lex_is_at_reserved_word("else"):
+            self._lex_consume_word("else")
             else_body = self.parse_list_until({"fi"})
             if else_body is None:
-                raise ParseError("Expected commands after 'else'", pos=self.pos)
+                raise ParseError("Expected commands after 'else'", pos=self._lex_peek_token().pos)
 
         return If(condition, then_body, else_body)
 
     def parse_while(self) -> While | None:
         """Parse a while loop: while list; do list; done."""
-        if not self.consume_word("while"):
+        self.skip_whitespace()
+        if not self._lex_consume_word("while"):
             return None
 
         # Parse condition (ends at 'do')
         condition = self.parse_list_until({"do"})
         if condition is None:
-            raise ParseError("Expected condition after 'while'", pos=self.pos)
+            raise ParseError("Expected condition after 'while'", pos=self._lex_peek_token().pos)
 
         # Expect 'do'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("do"):
-            raise ParseError("Expected 'do' after while condition", pos=self.pos)
+        if not self._lex_consume_word("do"):
+            raise ParseError("Expected 'do' after while condition", pos=self._lex_peek_token().pos)
 
         # Parse body (ends at 'done')
         body = self.parse_list_until({"done"})
         if body is None:
-            raise ParseError("Expected commands after 'do'", pos=self.pos)
+            raise ParseError("Expected commands after 'do'", pos=self._lex_peek_token().pos)
 
         # Expect 'done'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("done"):
-            raise ParseError("Expected 'done' to close while loop", pos=self.pos)
+        if not self._lex_consume_word("done"):
+            raise ParseError("Expected 'done' to close while loop", pos=self._lex_peek_token().pos)
         return While(condition, body, self._collect_redirects())
 
     def parse_until(self) -> Until | None:
         """Parse an until loop: until list; do list; done."""
-        if not self.consume_word("until"):
+        self.skip_whitespace()
+        if not self._lex_consume_word("until"):
             return None
 
         # Parse condition (ends at 'do')
         condition = self.parse_list_until({"do"})
         if condition is None:
-            raise ParseError("Expected condition after 'until'", pos=self.pos)
+            raise ParseError("Expected condition after 'until'", pos=self._lex_peek_token().pos)
 
         # Expect 'do'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("do"):
-            raise ParseError("Expected 'do' after until condition", pos=self.pos)
+        if not self._lex_consume_word("do"):
+            raise ParseError("Expected 'do' after until condition", pos=self._lex_peek_token().pos)
 
         # Parse body (ends at 'done')
         body = self.parse_list_until({"done"})
         if body is None:
-            raise ParseError("Expected commands after 'do'", pos=self.pos)
+            raise ParseError("Expected commands after 'do'", pos=self._lex_peek_token().pos)
 
         # Expect 'done'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("done"):
-            raise ParseError("Expected 'done' to close until loop", pos=self.pos)
+        if not self._lex_consume_word("done"):
+            raise ParseError("Expected 'done' to close until loop", pos=self._lex_peek_token().pos)
         return Until(condition, body, self._collect_redirects())
 
     def parse_for(self) -> For | ForArith | None:
         """Parse a for loop: for name [in words]; do list; done or C-style for ((;;))."""
-        if not self.consume_word("for"):
+        self.skip_whitespace()
+        if not self._lex_consume_word("for"):
             return None
         self.skip_whitespace()
 
         # Check for C-style for loop: for ((init; cond; incr))
-        if (
-            self.peek() == "("
-            and self.pos + 1 < self.length
-            and self.source[self.pos + 1] == "("
-        ):
+        if self.peek() == "(" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
             return self._parse_for_arith()
 
         # Parse variable name (bash allows reserved words and command substitutions as variable names)
@@ -7071,12 +9521,16 @@ class Parser:
             # Command substitution as variable name: for $(echo i) in ...
             var_word = self.parse_word()
             if var_word is None:
-                raise ParseError("Expected variable name after 'for'", pos=self.pos)
+                raise ParseError(
+                    "Expected variable name after 'for'", pos=self._lex_peek_token().pos
+                )
             var_name = var_word.value
         else:
             var_name = self.peek_word()
             if var_name is None:
-                raise ParseError("Expected variable name after 'for'", pos=self.pos)
+                raise ParseError(
+                    "Expected variable name after 'for'", pos=self._lex_peek_token().pos
+                )
             self.consume_word(var_name)
 
         self.skip_whitespace()
@@ -7088,11 +9542,17 @@ class Parser:
 
         # Check for optional 'in' clause
         words = None
-        if self.peek_word() == "in":
-            self.consume_word("in")
-            self.skip_whitespace_and_newlines()  # Allow newlines after 'in'
+        if self._lex_is_at_reserved_word("in"):
+            self._lex_consume_word("in")
+            self.skip_whitespace()  # Only skip whitespace, not newlines
 
-            # Parse words until semicolon, newline, or 'do'
+            # Check for immediate delimiter (;, newline) after 'in'
+            saw_delimiter = _is_semicolon_or_newline(self.peek())
+            if self.peek() == ";":
+                self.advance()
+            self.skip_whitespace_and_newlines()
+
+            # Parse words until semicolon or newline (not 'do' directly)
             words = []
             while True:
                 self.skip_whitespace()
@@ -7100,11 +9560,18 @@ class Parser:
                 if self.at_end():
                     break
                 if _is_semicolon_or_newline(self.peek()):
+                    saw_delimiter = True
                     if self.peek() == ";":
                         self.advance()  # consume semicolon
                     break
-                if self.peek_word() == "do":
-                    break
+                # 'do' only terminates if preceded by delimiter
+                if self._lex_is_at_reserved_word("do"):
+                    if saw_delimiter:
+                        break
+                    # 'for x in do' or 'for x in a b c do' is invalid
+                    raise ParseError(
+                        "Expected ';' or newline before 'do'", pos=self._lex_peek_token().pos
+                    )
 
                 word = self.parse_word()
                 if word is None:
@@ -7119,22 +9586,22 @@ class Parser:
             # Bash allows: for x in a b; { cmd; }
             brace_group = self.parse_brace_group()
             if brace_group is None:
-                raise ParseError("Expected brace group in for loop", pos=self.pos)
+                raise ParseError("Expected brace group in for loop", pos=self._lex_peek_token().pos)
             return For(var_name, words, brace_group.body, self._collect_redirects())
 
         # Expect 'do'
-        if not self.consume_word("do"):
-            raise ParseError("Expected 'do' in for loop", pos=self.pos)
+        if not self._lex_consume_word("do"):
+            raise ParseError("Expected 'do' in for loop", pos=self._lex_peek_token().pos)
 
         # Parse body (ends at 'done')
         body = self.parse_list_until({"done"})
         if body is None:
-            raise ParseError("Expected commands after 'do'", pos=self.pos)
+            raise ParseError("Expected commands after 'do'", pos=self._lex_peek_token().pos)
 
         # Expect 'done'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("done"):
-            raise ParseError("Expected 'done' to close for loop", pos=self.pos)
+        if not self._lex_consume_word("done"):
+            raise ParseError("Expected 'done' to close for loop", pos=self._lex_peek_token().pos)
         return For(var_name, words, body, self._collect_redirects())
 
     def _parse_for_arith(self) -> ForArith:
@@ -7162,7 +9629,7 @@ class Parser:
                     # Check for closing ))
                     if self.pos + 1 < self.length and self.source[self.pos + 1] == ")":
                         # End of ((...)) - preserve trailing whitespace
-                        parts.append("".join(current).lstrip())
+                        parts.append("".join(current).lstrip(" \t"))
                         self.advance()  # consume first )
                         self.advance()  # consume second )
                         break
@@ -7170,7 +9637,7 @@ class Parser:
                         current.append(self.advance())
             elif ch == ";" and paren_depth == 0:
                 # Preserve trailing whitespace in expressions
-                parts.append("".join(current).lstrip())
+                parts.append("".join(current).lstrip(" \t"))
                 current = []
                 self.advance()  # consume ;
             else:
@@ -7195,14 +9662,17 @@ class Parser:
 
     def parse_select(self) -> Select | None:
         """Parse a select statement: select name [in words]; do list; done."""
-        if not self.consume_word("select"):
+        self.skip_whitespace()
+        if not self._lex_consume_word("select"):
             return None
         self.skip_whitespace()
 
         # Parse variable name
         var_name = self.peek_word()
         if var_name is None:
-            raise ParseError("Expected variable name after 'select'", pos=self.pos)
+            raise ParseError(
+                "Expected variable name after 'select'", pos=self._lex_peek_token().pos
+            )
         self.consume_word(var_name)
 
         self.skip_whitespace()
@@ -7214,8 +9684,8 @@ class Parser:
 
         # Check for optional 'in' clause
         words = None
-        if self.peek_word() == "in":
-            self.consume_word("in")
+        if self._lex_is_at_reserved_word("in"):
+            self._lex_consume_word("in")
             self.skip_whitespace_and_newlines()  # Allow newlines after 'in'
 
             # Parse words until semicolon, newline, 'do', or '{'
@@ -7229,7 +9699,7 @@ class Parser:
                     if self.peek() == ";":
                         self.advance()  # consume semicolon
                     break
-                if self.peek_word() == "do":
+                if self._lex_is_at_reserved_word("do"):
                     break
 
                 word = self.parse_word()
@@ -7244,62 +9714,43 @@ class Parser:
         body = self._parse_loop_body("select")
         return Select(var_name, words, body, self._collect_redirects())
 
-    def _is_case_terminator(self) -> bool:
-        """Check if we're at a case pattern terminator (;;, ;&, or ;;&)."""
-        if self.at_end() or self.peek() != ";":
-            return False
-        if self.pos + 1 >= self.length:
-            return False
-        next_ch = self.source[self.pos + 1]
-        # ;; or ;& or ;;& (which is actually ;;&)
-        return _is_semicolon_or_amp(next_ch)
-
     def _consume_case_terminator(self) -> str:
         """Consume and return case pattern terminator (;;, ;&, or ;;&)."""
-        if self.at_end() or self.peek() != ";":
-            return ";;"  # default
-        self.advance()  # consume first ;
-        if self.at_end():
-            return ";;"
-        ch = self.peek()
-        if ch == ";":
-            self.advance()  # consume second ;
-            # Check for ;;&
-            if not self.at_end() and self.peek() == "&":
-                self.advance()  # consume &
-                return ";;&"
-            return ";;"
-        elif ch == "&":
-            self.advance()  # consume &
-            return ";&"
-        return ";;"
+        term = self._lex_peek_case_terminator()
+        if term is not None:
+            self._lex_next_token()
+            return term
+        return ";;"  # default
 
     def parse_case(self) -> Case | None:
         """Parse a case statement: case word in pattern) commands;; ... esac."""
+        # Use consume_word for initial keyword to handle leading } in process subs
         if not self.consume_word("case"):
             return None
+        self._set_state(ParserStateFlags.PST_CASESTMT)
         self.skip_whitespace()
 
         # Parse the word to match
         word = self.parse_word()
         if word is None:
-            raise ParseError("Expected word after 'case'", pos=self.pos)
+            raise ParseError("Expected word after 'case'", pos=self._lex_peek_token().pos)
 
         self.skip_whitespace_and_newlines()
 
         # Expect 'in'
-        if not self.consume_word("in"):
-            raise ParseError("Expected 'in' after case word", pos=self.pos)
+        if not self._lex_consume_word("in"):
+            raise ParseError("Expected 'in' after case word", pos=self._lex_peek_token().pos)
 
         self.skip_whitespace_and_newlines()
 
         # Parse pattern clauses until 'esac'
         patterns = []
+        self._set_state(ParserStateFlags.PST_CASEPAT)
         while True:
             self.skip_whitespace_and_newlines()
 
             # Check if we're at 'esac' (but not 'esac)' which is esac as a pattern)
-            if self.peek_word() == "esac":
+            if self._lex_is_at_reserved_word("esac"):
                 # Look ahead to see if esac is a pattern (esac followed by ) then body/;;)
                 # or the closing keyword (esac followed by ) that closes containing construct)
                 saved = self.pos
@@ -7315,17 +9766,21 @@ class Parser:
                 # Check for ) and what follows
                 is_pattern = False
                 if not self.at_end() and self.peek() == ")":
-                    self.advance()  # consume )
-                    self.skip_whitespace()
-                    # esac is a pattern if there's body content or ;; after )
-                    # Not a pattern if ) is followed by end, newline, or another )
-                    if not self.at_end():
-                        next_ch = self.peek()
-                        # If followed by ;; or actual command content, it's a pattern
-                        if next_ch == ";":
-                            is_pattern = True
-                        elif not _is_newline_or_right_paren(next_ch):
-                            is_pattern = True
+                    # If we're at the EOF token delimiter (command sub closer), esac is keyword
+                    if self._eof_token == ")":
+                        is_pattern = False
+                    else:
+                        self.advance()  # consume )
+                        self.skip_whitespace()
+                        # esac is a pattern if there's body content or ;; after )
+                        # Not a pattern if ) is followed by end, newline, or another )
+                        if not self.at_end():
+                            next_ch = self.peek()
+                            # If followed by ;; or actual command content, it's a pattern
+                            if next_ch == ";":
+                                is_pattern = True
+                            elif not _is_newline_or_right_paren(next_ch):
+                                is_pattern = True
                 self.pos = saved
                 if not is_pattern:
                     break
@@ -7363,11 +9818,7 @@ class Parser:
                         pattern_chars.append(self.advance())
                         if not self.at_end():
                             pattern_chars.append(self.advance())
-                elif (
-                    ch == "$"
-                    and self.pos + 1 < self.length
-                    and self.source[self.pos + 1] == "("
-                ):
+                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
                     # $( or $(( - command sub or arithmetic
                     pattern_chars.append(self.advance())  # $
                     pattern_chars.append(self.advance())  # (
@@ -7390,7 +9841,8 @@ class Parser:
                     pattern_chars.append(self.advance())
                     extglob_depth += 1
                 elif (
-                    _is_extglob_prefix(ch)
+                    self._extglob
+                    and _is_extglob_prefix(ch)
                     and self.pos + 1 < self.length
                     and self.source[self.pos + 1] == "("
                 ):
@@ -7406,9 +9858,7 @@ class Parser:
                     scan_depth = 0
                     has_first_bracket_literal = False
                     # Skip [! or [^ at start
-                    if scan_pos < self.length and _is_caret_or_bang(
-                        self.source[scan_pos]
-                    ):
+                    if scan_pos < self.length and _is_caret_or_bang(self.source[scan_pos]):
                         scan_pos += 1
                     # Skip ] as first char (literal in char class) only if there's another ]
                     if scan_pos < self.length and self.source[scan_pos] == "]":
@@ -7426,8 +9876,8 @@ class Parser:
                         elif sc == ")" and scan_depth == 0:
                             # Hit pattern/extglob closer before finding ]
                             break
-                        elif sc == "|" and scan_depth == 0 and extglob_depth > 0:
-                            # Hit alternation in extglob - ] must be in this branch
+                        elif sc == "|" and scan_depth == 0:
+                            # Hit pattern separator (| in case pattern or extglob alternation)
                             break
                         scan_pos += 1
                     if is_char_class:
@@ -7436,11 +9886,7 @@ class Parser:
                         if not self.at_end() and _is_caret_or_bang(self.peek()):
                             pattern_chars.append(self.advance())
                         # Handle ] as first char (literal) only if we detected it in scan
-                        if (
-                            has_first_bracket_literal
-                            and not self.at_end()
-                            and self.peek() == "]"
-                        ):
+                        if has_first_bracket_literal and not self.at_end() and self.peek() == "]":
                             pattern_chars.append(self.advance())
                         # Consume until closing ]
                         while not self.at_end() and self.peek() != "]":
@@ -7477,7 +9923,9 @@ class Parser:
 
             pattern = "".join(pattern_chars)
             if not pattern:
-                raise ParseError("Expected pattern in case statement", pos=self.pos)
+                raise ParseError(
+                    "Expected pattern in case statement", pos=self._lex_peek_token().pos
+                )
 
             # Parse commands until ;;, ;&, ;;&, or esac
             # Commands are optional (can have empty body)
@@ -7485,14 +9933,14 @@ class Parser:
 
             body = None
             # Check for empty body: terminator right after pattern
-            is_empty_body = self._is_case_terminator()
+            is_empty_body = self._lex_peek_case_terminator() is not None
 
             if not is_empty_body:
                 # Skip newlines and check if there's content before terminator or esac
                 self.skip_whitespace_and_newlines()
-                if not self.at_end() and self.peek_word() != "esac":
+                if not self.at_end() and not self._lex_is_at_reserved_word("esac"):
                     # Check again for terminator after whitespace/newlines
-                    is_at_terminator = self._is_case_terminator()
+                    is_at_terminator = self._lex_peek_case_terminator() is not None
                     if not is_at_terminator:
                         body = self.parse_list_until({"esac"})
                         self.skip_whitespace()
@@ -7504,10 +9952,15 @@ class Parser:
 
             patterns.append(CasePattern(pattern, body, terminator))
 
+        self._clear_state(ParserStateFlags.PST_CASEPAT)
         # Expect 'esac'
         self.skip_whitespace_and_newlines()
-        if not self.consume_word("esac"):
-            raise ParseError("Expected 'esac' to close case statement", pos=self.pos)
+        if not self._lex_consume_word("esac"):
+            self._clear_state(ParserStateFlags.PST_CASESTMT)
+            raise ParseError(
+                "Expected 'esac' to close case statement", pos=self._lex_peek_token().pos
+            )
+        self._clear_state(ParserStateFlags.PST_CASESTMT)
         return Case(word, patterns, self._collect_redirects())
 
     def parse_coproc(self) -> Coproc | None:
@@ -7517,7 +9970,8 @@ class Parser:
         - For compound commands (brace group, if, while, etc.), extract NAME if present
         - For simple commands, don't extract NAME (treat everything as the command)
         """
-        if not self.consume_word("coproc"):
+        self.skip_whitespace()
+        if not self._lex_consume_word("coproc"):
             return None
         self.skip_whitespace()
 
@@ -7541,8 +9995,8 @@ class Parser:
                 return Coproc(body, name)
 
         # Check for reserved word compounds directly
-        next_word = self.peek_word()
-        if next_word in COMPOUND_KEYWORDS:
+        next_word = self._lex_peek_reserved_word()
+        if next_word is not None and next_word in COMPOUND_KEYWORDS:
             body = self.parse_compound_command()
             if body is not None:
                 return Coproc(body, name)
@@ -7553,9 +10007,7 @@ class Parser:
         if potential_name:
             # Skip past the potential name
             while (
-                not self.at_end()
-                and not _is_metachar(self.peek())
-                and not _is_quote(self.peek())
+                not self.at_end() and not _is_metachar(self.peek()) and not _is_quote(self.peek())
             ):
                 self.advance()
             self.skip_whitespace()
@@ -7564,29 +10016,28 @@ class Parser:
             ch = None
             if not self.at_end():
                 ch = self.peek()
-            next_word = self.peek_word()
+            next_word = self._lex_peek_reserved_word()
 
-            if ch == "{":
-                # NAME { ... } - extract name
-                name = potential_name
-                body = self.parse_brace_group()
-                if body is not None:
-                    return Coproc(body, name)
-            elif ch == "(":
-                # NAME ( ... ) - extract name
-                name = potential_name
-                if self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
-                    body = self.parse_arithmetic_command()
-                else:
-                    body = self.parse_subshell()
-                if body is not None:
-                    return Coproc(body, name)
-            elif next_word in COMPOUND_KEYWORDS:
-                # NAME followed by reserved compound - extract name
-                name = potential_name
-                body = self.parse_compound_command()
-                if body is not None:
-                    return Coproc(body, name)
+            if _is_valid_identifier(potential_name):
+                # Valid identifier followed by compound command - extract name
+                if ch == "{":
+                    name = potential_name
+                    body = self.parse_brace_group()
+                    if body is not None:
+                        return Coproc(body, name)
+                elif ch == "(":
+                    name = potential_name
+                    if self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                        body = self.parse_arithmetic_command()
+                    else:
+                        body = self.parse_subshell()
+                    if body is not None:
+                        return Coproc(body, name)
+                elif next_word is not None and next_word in COMPOUND_KEYWORDS:
+                    name = potential_name
+                    body = self.parse_compound_command()
+                    if body is not None:
+                        return Coproc(body, name)
 
             # Not followed by compound - restore position and parse as simple command
             self.pos = word_start
@@ -7613,8 +10064,8 @@ class Parser:
         saved_pos = self.pos
 
         # Check for 'function' keyword form
-        if self.peek_word() == "function":
-            self.consume_word("function")
+        if self._lex_is_at_reserved_word("function"):
+            self._lex_consume_word("function")
             self.skip_whitespace()
 
             # Get function name
@@ -7649,8 +10100,8 @@ class Parser:
         if name is None or name in RESERVED_WORDS:
             return None
 
-        # Assignment words (containing =) are not function definitions
-        if _str_contains(name, "="):
+        # Assignment words (NAME=...) are not function definitions
+        if _looks_like_assignment(name):
             return None
 
         # Save position after the name
@@ -7671,8 +10122,34 @@ class Parser:
             self.pos = saved_pos
             return None
 
+        # Check if name contains unclosed parameter expansion ${...}
+        # If so, () is inside the expansion, not function definition syntax
+        brace_depth = 0
+        i = 0
+        while i < len(name):
+            if i + 1 < len(name) and name[i] == "$" and name[i + 1] == "{":
+                brace_depth += 1
+                i += 2
+                continue
+            if name[i] == "}":
+                brace_depth -= 1
+            i += 1
+        if brace_depth > 0:
+            self.pos = saved_pos
+            return None
+
         # Check for () - whitespace IS allowed between name and (
+        # But if name ends with extglob prefix (*?@+!) and () is adjacent,
+        # it's an extglob pattern, not a function definition
+        # Similarly, if name ends with $ and () is adjacent, it's a command
+        # substitution, not a function definition
+        pos_after_name = self.pos
         self.skip_whitespace()
+        has_whitespace = self.pos > pos_after_name
+        if not has_whitespace and name and name[len(name) - 1] in "*?@+!$":
+            self.pos = saved_pos
+            return None
+
         if self.at_end() or self.peek() != "(":
             self.pos = saved_pos
             return None
@@ -7699,6 +10176,17 @@ class Parser:
         result = self.parse_brace_group()
         if result:
             return result
+
+        # Arithmetic command ((...)) - check before subshell
+        if (
+            not self.at_end()
+            and self.peek() == "("
+            and self.pos + 1 < self.length
+            and self.source[self.pos + 1] == "("
+        ):
+            result = self.parse_arithmetic_command()
+            if result is not None:
+                return result
 
         result = self.parse_subshell()
         if result:
@@ -7734,11 +10222,30 @@ class Parser:
 
         return None
 
+    def _at_list_until_terminator(self, stop_words: set[str]) -> bool:
+        """Check if we're at a terminator for parse_list_until context."""
+        if self.at_end():
+            return True
+        if self.peek() == ")":
+            return True
+        # Check for standalone } (closing brace), not } as part of a word
+        if self.peek() == "}":
+            next_pos = self.pos + 1
+            if next_pos >= self.length or _is_word_end_context(self.source[next_pos]):
+                return True
+        reserved = self._lex_peek_reserved_word()
+        if reserved is not None and reserved in stop_words:
+            return True
+        if self._lex_peek_case_terminator() is not None:
+            return True
+        return False
+
     def parse_list_until(self, stop_words: set[str]) -> Node | None:
         """Parse a list that stops before certain reserved words."""
         # Check if we're already at a stop word
         self.skip_whitespace_and_newlines()
-        if self.peek_word() in stop_words:
+        reserved = self._lex_peek_reserved_word()
+        if reserved is not None and reserved in stop_words:
             return None
 
         pipeline = self.parse_pipeline()
@@ -7748,78 +10255,55 @@ class Parser:
         parts = [pipeline]
 
         while True:
-            # Check for newline as implicit command separator
+            # Check for explicit operator FIRST (without consuming newlines)
             self.skip_whitespace()
-            has_newline = False
-            while not self.at_end() and self.peek() == "\n":
-                has_newline = True
-                self.advance()
-                # Skip past any pending heredoc content after newline
-                if (
-                    self._pending_heredoc_end is not None
-                    and self._pending_heredoc_end > self.pos
-                ):
-                    self.pos = self._pending_heredoc_end
-                    self._pending_heredoc_end = None
-                self.skip_whitespace()
-
             op = self.parse_list_operator()
 
-            # Newline acts as implicit semicolon if followed by more commands
-            if op is None and has_newline:
-                # Check if there's another command (not a stop word)
-                if (
-                    not self.at_end()
-                    and self.peek_word() not in stop_words
-                    and not _is_right_bracket(self.peek())
-                ):
-                    op = "\n"  # Newline separator (distinct from explicit ;)
+            if op is None:
+                # No explicit operator - check for newline as implicit separator
+                if not self.at_end() and self.peek() == "\n":
+                    # compound_list context: newline acts as separator
+                    self.advance()  # consume \n
+                    self._gather_heredoc_bodies()
+                    if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                        self.pos = self._cmdsub_heredoc_end
+                        self._cmdsub_heredoc_end = None
+                    self.skip_whitespace_and_newlines()
+                    if self._at_list_until_terminator(stop_words):
+                        break
+                    # Validate next thing is a command start, not bare operator
+                    next_op = self._peek_list_operator()
+                    if next_op in ("&", ";"):
+                        # Bare & or ; after newline - newline terminated the list
+                        break
+                    op = "\n"
+                else:
+                    break  # no operator, no newline - done
 
             if op is None:
                 break
 
-            # For & at end of list, don't require another command
-            if op == "&":
-                parts.append(Operator(op))
-                self.skip_whitespace_and_newlines()
-                if (
-                    self.at_end()
-                    or self.peek_word() in stop_words
-                    or _is_newline_or_right_bracket(self.peek())
-                ):
-                    break
-
-            # For ; - check if it's a terminator before a stop word (don't include it)
+            # For ; - check if it's a terminator (don't include trailing semicolons)
             if op == ";":
                 self.skip_whitespace_and_newlines()
-                # Also check for ;;, ;&, or ;;& (case terminators)
-                at_case_terminator = (
-                    self.peek() == ";"
-                    and self.pos + 1 < self.length
-                    and _is_semicolon_or_amp(self.source[self.pos + 1])
-                )
-                if (
-                    self.at_end()
-                    or self.peek_word() in stop_words
-                    or _is_newline_or_right_bracket(self.peek())
-                    or at_case_terminator
-                ):
+                if self._at_list_until_terminator(stop_words):
                     # Don't include trailing semicolon - it's just a terminator
                     break
                 parts.append(Operator(op))
-            elif op != "&":
+            elif op == "&":
+                parts.append(Operator(op))
+                self.skip_whitespace_and_newlines()
+                if self._at_list_until_terminator(stop_words):
+                    break
+            elif op in ("&&", "||"):
+                parts.append(Operator(op))
+                self.skip_whitespace_and_newlines()
+            else:
+                # op == "\n" - already handled above
                 parts.append(Operator(op))
 
             # Check for stop words before parsing next pipeline
-            self.skip_whitespace_and_newlines()
-            # Also check for ;;, ;&, or ;;& (case terminators)
-            if self.peek_word() in stop_words:
-                break
-            if (
-                self.peek() == ";"
-                and self.pos + 1 < self.length
-                and _is_semicolon_or_amp(self.source[self.pos + 1])
-            ):
+            if self._at_list_until_terminator(stop_words):
                 break
 
             pipeline = self.parse_pipeline()
@@ -7840,11 +10324,7 @@ class Parser:
         ch = self.peek()
 
         # Arithmetic command ((...)) - check before subshell
-        if (
-            ch == "("
-            and self.pos + 1 < self.length
-            and self.source[self.pos + 1] == "("
-        ):
+        if ch == "(" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
             result = self.parse_arithmetic_command()
             if result is not None:
                 return result
@@ -7862,50 +10342,67 @@ class Parser:
             # Fall through to simple command if not a brace group
 
         # Conditional expression [[ ]] - check before reserved words
-        if (
-            ch == "["
-            and self.pos + 1 < self.length
-            and self.source[self.pos + 1] == "["
-        ):
-            return self.parse_conditional_expr()
+        if ch == "[" and self.pos + 1 < self.length and self.source[self.pos + 1] == "[":
+            result = self.parse_conditional_expr()
+            if result is not None:
+                return result
+            # Fall through to simple command if [[ is not a conditional keyword
 
-        # Check for reserved words
-        word = self.peek_word()
+        # Check for reserved words using Lexer
+        reserved = self._lex_peek_reserved_word()
+
+        # In command substitutions, handle leading } for keyword matching
+        # (fallback for edge cases like "$(}case x in x)esac)")
+        if reserved is None and self._in_process_sub:
+            word = self.peek_word()
+            if word is not None and len(word) > 1 and word[0] == "}":
+                keyword_word = word[1:]
+                if keyword_word in RESERVED_WORDS or keyword_word in (
+                    "{",
+                    "}",
+                    "[[",
+                    "]]",
+                    "!",
+                    "time",
+                ):
+                    reserved = keyword_word
 
         # Reserved words that cannot start a statement (only valid in specific contexts)
-        if word in ("fi", "then", "elif", "else", "done", "esac", "do", "in"):
-            raise ParseError(f"Unexpected reserved word '{word}'", pos=self.pos)
+        if reserved in ("fi", "then", "elif", "else", "done", "esac", "do", "in"):
+            raise ParseError(
+                f"Unexpected reserved word '{reserved}'", pos=self._lex_peek_token().pos
+            )
 
         # If statement
-        if word == "if":
+        if reserved == "if":
             return self.parse_if()
 
         # While loop
-        if word == "while":
+        if reserved == "while":
             return self.parse_while()
 
         # Until loop
-        if word == "until":
+        if reserved == "until":
             return self.parse_until()
 
         # For loop
-        if word == "for":
+        if reserved == "for":
             return self.parse_for()
 
         # Select statement
-        if word == "select":
+        if reserved == "select":
             return self.parse_select()
 
         # Case statement
-        if word == "case":
+        if reserved == "case":
             return self.parse_case()
 
         # Function definition (function keyword form)
-        if word == "function":
+        if reserved == "function":
             return self.parse_function()
 
         # Coproc
-        if word == "coproc":
+        if reserved == "coproc":
             return self.parse_coproc()
 
         # Try POSIX function definition (name() form) before simple command
@@ -7925,8 +10422,8 @@ class Parser:
         time_posix = False
 
         # Check for 'time' prefix first
-        if self.peek_word() == "time":
-            self.consume_word("time")
+        if self._lex_is_at_reserved_word("time"):
+            self._lex_consume_word("time")
             prefix_order = "time"
             self.skip_whitespace()
             # Check for -p flag
@@ -7935,7 +10432,7 @@ class Parser:
                 self.advance()
                 if not self.at_end() and self.peek() == "p":
                     self.advance()
-                    if self.at_end() or _is_whitespace(self.peek()):
+                    if self.at_end() or _is_metachar(self.peek()):
                         time_posix = True
                     else:
                         self.pos = saved
@@ -7944,16 +10441,14 @@ class Parser:
             self.skip_whitespace()
             # Check for -- (end of options) - implies -p per bash-oracle
             if not self.at_end() and _starts_with_at(self.source, self.pos, "--"):
-                if self.pos + 2 >= self.length or _is_whitespace(
-                    self.source[self.pos + 2]
-                ):
+                if self.pos + 2 >= self.length or _is_whitespace(self.source[self.pos + 2]):
                     self.advance()
                     self.advance()
                     time_posix = True
                     self.skip_whitespace()
             # Skip nested time keywords (time time X collapses to time X)
-            while self.peek_word() == "time":
-                self.consume_word("time")
+            while self._lex_is_at_reserved_word("time"):
+                self._lex_consume_word("time")
                 self.skip_whitespace()
                 # Check for -p after nested time
                 if not self.at_end() and self.peek() == "-":
@@ -7961,25 +10456,27 @@ class Parser:
                     self.advance()
                     if not self.at_end() and self.peek() == "p":
                         self.advance()
-                        if self.at_end() or _is_whitespace(self.peek()):
+                        if self.at_end() or _is_metachar(self.peek()):
                             time_posix = True
                         else:
                             self.pos = saved
                     else:
                         self.pos = saved
-                self.skip_whitespace()
+            self.skip_whitespace()
             # Check for ! after time
             if not self.at_end() and self.peek() == "!":
-                if self.pos + 1 >= self.length or _is_whitespace(
-                    self.source[self.pos + 1]
-                ):
+                if (
+                    self.pos + 1 >= self.length or _is_negation_boundary(self.source[self.pos + 1])
+                ) and not self._is_bang_followed_by_procsub():
                     self.advance()
                     prefix_order = "time_negation"
                     self.skip_whitespace()
 
         # Check for '!' negation prefix (if no time yet)
         elif not self.at_end() and self.peek() == "!":
-            if self.pos + 1 >= self.length or _is_whitespace(self.source[self.pos + 1]):
+            if (
+                self.pos + 1 >= self.length or _is_negation_boundary(self.source[self.pos + 1])
+            ) and not self._is_bang_followed_by_procsub():
                 self.advance()
                 self.skip_whitespace()
                 # Recursively parse pipeline to handle ! ! cmd, ! time cmd, etc.
@@ -8026,19 +10523,15 @@ class Parser:
 
         while True:
             self.skip_whitespace()
-            if self.at_end() or self.peek() != "|":
+            op = self._lex_peek_operator()
+            if op is None:
                 break
-            # Check it's not ||
-            if self.pos + 1 < self.length and self.source[self.pos + 1] == "|":
+            token_type, value = op
+            if token_type != TokenType.PIPE and token_type != TokenType.PIPE_AMP:
                 break
 
-            self.advance()  # consume |
-
-            # Check for |& (pipe stderr)
-            is_pipe_both = False
-            if not self.at_end() and self.peek() == "&":
-                self.advance()  # consume &
-                is_pipe_both = True
+            self._lex_next_token()  # consume pipe operator
+            is_pipe_both = token_type == TokenType.PIPE_AMP
 
             self.skip_whitespace_and_newlines()  # Allow command on next line after pipe
 
@@ -8058,38 +10551,30 @@ class Parser:
     def parse_list_operator(self) -> str | None:
         """Parse a list operator (&&, ||, ;, &)."""
         self.skip_whitespace()
-        if self.at_end():
+        op = self._lex_peek_operator()
+        if op is None:
             return None
-
-        ch = self.peek()
-
-        if ch == "&":
-            # Check if this is &> or &>> (redirect), not background operator
-            if self.pos + 1 < self.length and self.source[self.pos + 1] == ">":
-                return None  # Let redirect parser handle &> and &>>
-            self.advance()
-            if not self.at_end() and self.peek() == "&":
-                self.advance()
-                return "&&"
-            return "&"
-
-        if ch == "|":
-            if self.pos + 1 < self.length and self.source[self.pos + 1] == "|":
-                self.advance()
-                self.advance()
-                return "||"
-            return None  # single | is pipe, not list operator
-
-        if ch == ";":
-            # Don't treat ;;, ;&, or ;;& as a single semicolon (they're case terminators)
-            if self.pos + 1 < self.length and _is_semicolon_or_amp(
-                self.source[self.pos + 1]
-            ):
-                return None
-            self.advance()
+        token_type, value = op
+        if token_type == TokenType.AND_AND:
+            self._lex_next_token()
+            return "&&"
+        if token_type == TokenType.OR_OR:
+            self._lex_next_token()
+            return "||"
+        if token_type == TokenType.SEMI:
+            self._lex_next_token()
             return ";"
-
+        if token_type == TokenType.AMP:
+            self._lex_next_token()
+            return "&"
         return None
+
+    def _peek_list_operator(self) -> str | None:
+        """Peek at next list operator without consuming."""
+        saved_pos = self.pos
+        op = self.parse_list_operator()
+        self.pos = saved_pos
+        return op
 
     def parse_list(self, newline_as_separator: bool = True) -> Node | None:
         """Parse a command list (pipelines separated by &&, ||, ;, &).
@@ -8108,80 +10593,78 @@ class Parser:
 
         parts = [pipeline]
 
+        # Grammar-level EOF token check (like Bash's simple_list rule)
+        if self._in_state(ParserStateFlags.PST_EOFTOKEN) and self._at_eof_token():
+            return parts[0] if len(parts) == 1 else List(parts)
+
         while True:
-            # Check for newline as implicit command separator
+            # Check for explicit operator FIRST (without consuming newlines)
             self.skip_whitespace()
-            has_newline = False
-            while not self.at_end() and self.peek() == "\n":
-                has_newline = True
-                # If not treating newlines as separators, stop here
-                if not newline_as_separator:
-                    break
-                self.advance()
-                # Skip past any pending heredoc content after newline
-                if (
-                    self._pending_heredoc_end is not None
-                    and self._pending_heredoc_end > self.pos
-                ):
-                    self.pos = self._pending_heredoc_end
-                    self._pending_heredoc_end = None
-                self.skip_whitespace()
-
-            # If we hit a newline and not treating them as separators, stop
-            if has_newline and not newline_as_separator:
-                break
-
             op = self.parse_list_operator()
 
-            # Newline acts as implicit semicolon if followed by more commands
-            if op is None and has_newline:
-                if not self.at_end() and not _is_right_bracket(self.peek()):
-                    op = "\n"  # Newline separator (distinct from explicit ;)
+            if op is None:
+                # No explicit operator - check for newline as implicit separator
+                if not self.at_end() and self.peek() == "\n":
+                    if not newline_as_separator:
+                        break  # top-level: newline ends this parse
+                    # compound_list: newline acts as separator
+                    self.advance()  # consume \n
+                    self._gather_heredoc_bodies()
+                    if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                        self.pos = self._cmdsub_heredoc_end
+                        self._cmdsub_heredoc_end = None
+                    self.skip_whitespace_and_newlines()
+                    if self.at_end() or self._at_list_terminating_bracket():
+                        break
+                    # Validate next thing is a command start, not bare operator
+                    next_op = self._peek_list_operator()
+                    if next_op in ("&", ";"):
+                        # Bare & or ; after newline - newline terminated the list
+                        break
+                    op = "\n"
+                else:
+                    break  # no operator, no newline - done
 
             if op is None:
                 break
 
-            # Don't add duplicate semicolon (e.g., explicit ; followed by newline)
-            if not (
-                op == ";"
-                and parts
-                and parts[len(parts) - 1].kind == "operator"
-                and parts[len(parts) - 1].op == ";"
-            ):
-                parts.append(Operator(op))
+            parts.append(Operator(op))
 
-            # For & at end of list, don't require another command
-            if op == "&":
+            # Handle trailing newlines AFTER the operator
+            if op in ("&&", "||"):
+                self.skip_whitespace_and_newlines()  # always allowed
+            elif op == "&":
                 self.skip_whitespace()
-                if self.at_end() or _is_right_bracket(self.peek()):
-                    break
-                # Newline after & - in compound commands, skip it (& acts as separator)
-                # At top level, newline terminates (separate commands)
+                if self.at_end() or self._at_list_terminating_bracket():
+                    break  # & at end - backgrounds last command
                 if self.peek() == "\n":
                     if newline_as_separator:
                         self.skip_whitespace_and_newlines()
-                        if self.at_end() or _is_right_bracket(self.peek()):
+                        if self.at_end() or self._at_list_terminating_bracket():
                             break
                     else:
-                        break  # Top-level: newline ends this list
-
-            # For ; at end of list, don't require another command
-            if op == ";":
+                        break  # simple_list: newline ends
+            elif op == ";":
                 self.skip_whitespace()
-                if self.at_end() or _is_right_bracket(self.peek()):
+                if self.at_end() or self._at_list_terminating_bracket():
                     break
-                # Newline after ; means continue to see if more commands follow
                 if self.peek() == "\n":
-                    continue
-
-            # For && and ||, allow newlines before the next command
-            if op == "&&" or op == "||":
-                self.skip_whitespace_and_newlines()
+                    if newline_as_separator:
+                        self.skip_whitespace_and_newlines()
+                        if self.at_end() or self._at_list_terminating_bracket():
+                            break
+                    else:
+                        break  # simple_list: newline ends
+            # op == "\n" already handled above (newlines consumed in the no-op branch)
 
             pipeline = self.parse_pipeline()
             if pipeline is None:
                 raise ParseError("Expected command after " + op, pos=self.pos)
             parts.append(pipeline)
+
+            # Grammar-level EOF token check after each command
+            if self._in_state(ParserStateFlags.PST_EOFTOKEN) and self._at_eof_token():
+                break
 
         if len(parts) == 1:
             return parts[0]
@@ -8231,31 +10714,93 @@ class Parser:
             while not self.at_end() and self.peek() == "\n":
                 found_newline = True
                 self.advance()
-                # Skip past any pending heredoc content after newline
-                if (
-                    self._pending_heredoc_end is not None
-                    and self._pending_heredoc_end > self.pos
-                ):
-                    self.pos = self._pending_heredoc_end
-                    self._pending_heredoc_end = None
+                # Gather pending heredoc content after newline
+                self._gather_heredoc_bodies()
+                if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                    self.pos = self._cmdsub_heredoc_end
+                    self._cmdsub_heredoc_end = None
                 self.skip_whitespace()
 
             # If no newline and not at end, we have unparsed content
             if not found_newline and not self.at_end():
-                raise ParseError("Parser not fully implemented yet", pos=self.pos)
+                raise ParseError("Syntax error", pos=self.pos)
 
         if not results:
             return [Empty()]
 
+        # bash-oracle strips trailing backslash at EOF when there was a newline
+        # inside single quotes and the last word is on the same line as other content
+        # (not on its own line after a newline)
+        # Exception: keep backslash if it's on a continuation line (preceded by \<newline>)
+        if (
+            self._saw_newline_in_single_quote
+            and self.source
+            and self.source[len(self.source) - 1] == "\\"
+            and not (
+                len(self.source) >= 3
+                and self.source[len(self.source) - 3 : len(self.source) - 1] == "\\\n"
+            )
+        ):
+            # Check if the last word started on its own line (after a newline)
+            # If so, keep the backslash. Otherwise, strip it as line continuation.
+            if not self._last_word_on_own_line(results):
+                self._strip_trailing_backslash_from_last_word(results)
+
         return results
 
+    def _last_word_on_own_line(self, nodes: list[Node]) -> bool:
+        """Check if the last word is on its own line (after a newline with no other content)."""
+        # If we have multiple top-level nodes, they were separated by newlines,
+        # so the last node is on its own line
+        return len(nodes) >= 2
 
-def parse(source: str) -> list[Node]:
+    def _strip_trailing_backslash_from_last_word(self, nodes: list[Node]) -> None:
+        """Strip trailing backslash from the last word in the AST."""
+        if not nodes:
+            return
+        last_node = nodes[len(nodes) - 1]
+        # Find the last Word in the structure
+        last_word = self._find_last_word(last_node)
+        if last_word and last_word.value.endswith("\\"):
+            last_word.value = _substring(last_word.value, 0, len(last_word.value) - 1)
+            # If the word is now empty, remove it from the command
+            if not last_word.value and isinstance(last_node, Command) and last_node.words:
+                last_node.words.pop()
+
+    def _find_last_word(self, node: Node) -> Word | None:
+        """Recursively find the last Word in a node structure."""
+        if isinstance(node, Word):
+            return node
+        if isinstance(node, Command):
+            # For trailing backslash stripping, prioritize words ending with backslash
+            # since that's the word we need to strip from
+            if node.words:
+                last_word = node.words[len(node.words) - 1]
+                if last_word.value.endswith("\\"):
+                    return last_word
+            # Redirects come after words in s-expression output, so check redirects first
+            if node.redirects:
+                last_redirect = node.redirects[len(node.redirects) - 1]
+                if isinstance(last_redirect, Redirect):
+                    return last_redirect.target
+            if node.words:
+                return node.words[len(node.words) - 1]
+        if isinstance(node, Pipeline):
+            if node.commands:
+                return self._find_last_word(node.commands[len(node.commands) - 1])
+        if isinstance(node, List):
+            if node.parts:
+                return self._find_last_word(node.parts[len(node.parts) - 1])
+        return None
+
+
+def parse(source: str, extglob: bool = False) -> list[Node]:
     """
     Parse bash source code and return a list of AST nodes.
 
     Args:
         source: The bash source code to parse.
+        extglob: Enable extended glob patterns (@, ?, *, +, ! followed by parentheses).
 
     Returns:
         A list of AST nodes representing the parsed code.
@@ -8263,5 +10808,5 @@ def parse(source: str) -> list[Node]:
     Raises:
         ParseError: If the source code cannot be parsed.
     """
-    parser = Parser(source)
+    parser = Parser(source, False, extglob)
     return parser.parse()
