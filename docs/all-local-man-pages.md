@@ -40,7 +40,7 @@ Families:
 | tabs             | done       | mac | Already in SIMPLE_SAFE                    |
 | locale           | done       | mac | Already in SIMPLE_SAFE                    |
 | plutil           | done       | mac | Has handler (flag-check: -convert writes) |
-| defaults         | subcommand | mac | read safe, write/delete unsafe            |
+| defaults         | done       | mac | Has handler (subcommand)                  |
 | pbcopy           | done       | mac | Defaults to ask (modifies clipboard)      |
 | pbpaste          | done       | mac | Already in SIMPLE_SAFE                    |
 | open             | done       | mac | Has handler (flag-check: -R safe)         |
@@ -50,8 +50,8 @@ Families:
 | pstree           | n/a        | mac | Not available on macOS                    |
 | osascript        | done       | mac | Defaults to ask (executes scripts)        |
 | textutil         | done       | mac | Has handler (flag-check: -convert writes) |
-| dscl             | subcommand | mac | read/list safe, create/delete unsafe      |
-| scutil           | subcommand | mac | --get safe, --set unsafe                  |
+| dscl             | done       | mac | Has handler (subcommand)                  |
+| scutil           | done       | mac | Has handler (subcommand)                  |
 | ditto            | done       | mac | Defaults to ask (copies/archives)         |
 | getconf          | done       | mac | Already in SIMPLE_SAFE                    |
 | afplay           | done       | mac | Already in SIMPLE_SAFE                    |
