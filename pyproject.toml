@@ -62,6 +62,10 @@ exclude_lines = [
     "raise NotImplementedError",
 ]
 
+[tool.dippy.vendor]
+parable-commit = "668cee26a0f2dde024e2ec7f5da7733a28e0ba0d"
+parable-sha256 = "cfe56887282f36d2b9d9cd6360ec2ec369ae4020862973d95f69b0413faef7ce"
+
 [tool.ruff]
 exclude = ["src/dippy/vendor"]
 

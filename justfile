@@ -46,6 +46,37 @@ lint *ARGS:
 fmt *ARGS:
     uv run ruff format {{ if ARGS == "--fix" { "" } else { "--check" } }} 2>&1 | sed -u "s/^/[fmt] /" | tee /tmp/{{project}}-fmt.log
 
+# Update vendored parable.py from GitHub
+update-parable:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    commit=$(git ls-remote https://github.com/ldayton/Parable.git refs/heads/main | cut -f1)
+    curl -sS "https://raw.githubusercontent.com/ldayton/Parable/$commit/src/parable.py" -o src/dippy/vendor/parable.py
+    checksum=$(shasum -a 256 src/dippy/vendor/parable.py | cut -d' ' -f1)
+    sed "s/^parable-commit = .*/parable-commit = \"$commit\"/" pyproject.toml > pyproject.toml.tmp && mv pyproject.toml.tmp pyproject.toml
+    sed "s/^parable-sha256 = .*/parable-sha256 = \"$checksum\"/" pyproject.toml > pyproject.toml.tmp && mv pyproject.toml.tmp pyproject.toml
+    echo "Updated parable.py to $commit ($checksum)"
+
+# Verify vendored parable.py matches pyproject.toml checksum
+check-parable:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    expected=$(grep '^parable-sha256' pyproject.toml | cut -d'"' -f2)
+    actual=$(shasum -a 256 src/dippy/vendor/parable.py | cut -d' ' -f1)
+    commit=$(grep '^parable-commit' pyproject.toml | cut -d'"' -f2)
+    if [[ "$expected" != "$actual" ]]; then
+        echo "parable.py checksum mismatch"
+        echo "  expected: $expected"
+        echo "  actual:   $actual"
+        exit 1
+    fi
+    latest=$(git ls-remote https://github.com/ldayton/Parable.git refs/heads/main | cut -f1)
+    if [[ "$commit" == "$latest" ]]; then
+        echo "parable.py @ $commit (latest)"
+    else
+        echo "parable.py @ $commit (latest: $latest)"
+    fi
+
 # Install VS Code syntax highlighting extension
 vscode:
     #!/usr/bin/env bash
