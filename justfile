@@ -30,9 +30,13 @@ test-all: test-py38 test-py39 test-py310 test-py311 test-py312 test-py313 test-p
 lock-check:
     uv lock --check 2>&1 | sed -u "s/^/[lock] /" | tee /tmp/{{project}}-lock.log
 
-# Run all checks (tests, lint, format, lock) in parallel
+# Check for banned Python constructions
+check-style:
+    python3 tools/check_style.py src 2>&1 | sed -u "s/^/[style] /" | tee /tmp/{{project}}-style.log
+
+# Run all checks (tests, lint, format, lock, style) in parallel
 [parallel]
-check: test-all lint fmt lock-check
+check: test-all lint fmt lock-check check-style
 
 # Lint (--fix to apply changes)
 lint *ARGS:
