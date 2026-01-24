@@ -45,14 +45,20 @@ def check_file(filepath):
             for alias in node.names:
                 if alias.name in BANNED_MODULES:
                     errors.append(
-                        (lineno, f"import {alias.name}: banned, use parable for parsing")
+                        (
+                            lineno,
+                            f"import {alias.name}: banned, use parable for parsing",
+                        )
                     )
 
         # from shlex import ...
         if isinstance(node, ast.ImportFrom):
             if node.module in BANNED_MODULES:
                 errors.append(
-                    (lineno, f"from {node.module} import: banned, use parable for parsing")
+                    (
+                        lineno,
+                        f"from {node.module} import: banned, use parable for parsing",
+                    )
                 )
 
     return errors
