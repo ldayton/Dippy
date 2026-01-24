@@ -13,3 +13,4 @@ allow just check
 allow just fmt
 allow just lint
 allow just test
+deny just -C "Don't use -C, use the target directly"
