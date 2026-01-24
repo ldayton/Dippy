@@ -73,7 +73,7 @@ Families:
 | openssl          | done       | mac | Has handler (subcommand)                  |
 | otool            | done       | mac | Already in SIMPLE_SAFE                    |
 | launchctl        | done       | mac | Has handler (subcommand)                  |
-| security         | subcommand | mac | find-* safe, add-*/delete-* unsafe        |
+| security         | done       | mac | Has handler (subcommand)                  |
 | tmutil           | subcommand | mac | listbackups safe, restore unsafe          |
 | osacompile       | done       | mac | Defaults to ask (creates output files)    |
 | pkgutil          | done       | mac | Has handler (subcommand: --forget unsafe) |
