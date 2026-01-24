@@ -55,9 +55,7 @@ def classify(ctx: HandlerContext) -> Classification:
             "-line",
             "-list",
             "-markdown",
-            "-newline",
             "-no-stdin",
-            "-nullvalue",
             "-quote",
             "-readonly",
             "-safe",
@@ -71,7 +69,15 @@ def classify(ctx: HandlerContext) -> Classification:
             i += 1
             continue
         # Skip option flags that take one argument
-        if token in ("-cmd", "-init", "-separator", "-vfs", "-storage-version"):
+        if token in (
+            "-cmd",
+            "-init",
+            "-separator",
+            "-vfs",
+            "-storage-version",
+            "-newline",
+            "-nullvalue",
+        ):
             if token == "-cmd" and i + 1 < len(tokens):
                 sql_parts.append(tokens[i + 1])
             i += 2

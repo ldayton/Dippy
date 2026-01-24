@@ -53,6 +53,12 @@ TESTS = [
     # File input - unsafe (unknown content)
     ("sqlite3 mydb.db < script.sql", False),
     ("sqlite3 -init script.sql mydb.db", False),
+    # Options with arguments - should parse correctly
+    ("sqlite3 -separator '|' mydb.db 'SELECT 1'", True),
+    ("sqlite3 -nullvalue NULL mydb.db 'SELECT 1'", True),
+    ("sqlite3 -newline '\\n' mydb.db 'SELECT 1'", True),
+    # -lookaside takes TWO arguments (SIZE N)
+    ("sqlite3 -lookaside 100 50 mydb.db 'SELECT 1'", True),
 ]
 
 

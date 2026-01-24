@@ -76,7 +76,6 @@ def classify(ctx: HandlerContext) -> Classification:
             "-key",
             "-hexkey",
             "-textkey",
-            "-lookaside",
             "-maxsize",
             "-newline",
             "-nonce",
@@ -90,6 +89,10 @@ def classify(ctx: HandlerContext) -> Classification:
             if token == "-cmd" and i + 1 < len(tokens):
                 sql_parts.append(tokens[i + 1])
             i += 2
+            continue
+        # -lookaside takes TWO arguments: SIZE N
+        if token == "-lookaside":
+            i += 3
             continue
         # This should be either filename or SQL
         if token.startswith("-"):

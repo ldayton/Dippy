@@ -58,6 +58,13 @@ TESTS = [
     ("duckdb mydb.db 'SELECT 1; SELECT 2'", False),
     # File input - unsafe
     ("duckdb -init script.sql mydb.db", False),
+    ("duckdb -f script.sql", False),
+    # Options with arguments - should parse correctly
+    ("duckdb -separator '|' mydb.db 'SELECT 1'", True),
+    # -newline takes ONE argument (SEP)
+    ("duckdb -newline '\\n' mydb.db 'SELECT 1'", True),
+    # -nullvalue takes ONE argument (TEXT)
+    ("duckdb -nullvalue NULL mydb.db 'SELECT 1'", True),
 ]
 
 
