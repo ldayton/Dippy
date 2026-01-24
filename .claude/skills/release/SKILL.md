@@ -1,8 +1,11 @@
-# Release
+---
+name: release
+description: Create a release PR with version bump and changelog
+disable-model-invocation: true
+argument-hint: [version]
+---
 
-User provides the version number.
-
-Create a PR with branch name `release/v<version>` containing only these changes:
+Create a PR with branch name `release/v$ARGUMENTS` containing only these changes:
 
 1. Update version in `pyproject.toml` and `src/dippy/__init__.py`
 2. Run `uv sync -U` to update dependencies
@@ -25,13 +28,13 @@ Focus on what matters to users:
 
 Put the changelog in the PR body. The workflow extracts it for the GitHub release.
 
-Run `just check` before pushing. PR title: `Release v<version>`
+Run `just check` before pushing. PR title: `Release v$ARGUMENTS`
 
 ## After merge
 
 Tag and push:
 ```
-git tag v<version> && git push --tags
+git tag v$ARGUMENTS && git push --tags
 ```
 
 The tag triggers a workflow that creates the GitHub release and updates the Homebrew tap.
