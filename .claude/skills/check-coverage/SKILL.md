@@ -1,6 +1,6 @@
 ---
 name: check-coverage
-description: Ensure a CLI handler has comprehensive test coverage
+description: Ensure comprehensive test coverage for a CLI handler. Use when adding a new command or auditing existing handler coverage.
 argument-hint: <tool>
 ---
 
@@ -12,8 +12,8 @@ Find documentation for the tool (need at least one source):
 
 **tldr:**
 ```
-ls ~/tldr/pages/*/$ARGUMENTS*.md
-cat ~/tldr/pages/*/$ARGUMENTS.md
+ls ~/source/tldr/pages/*/$ARGUMENTS*.md
+cat ~/source/tldr/pages/*/$ARGUMENTS.md
 ```
 
 **Local CLI:**

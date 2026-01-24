@@ -1,6 +1,7 @@
 ---
 name: debug
 description: Debug incorrect Dippy approval or block behavior
+disable-model-invocation: true
 ---
 
 Debug a Dippy issue based on user-provided context.
