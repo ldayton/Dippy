@@ -72,7 +72,7 @@ Families:
 | ifconfig         | done       | mac | Has handler (arg-count)                   |
 | openssl          | done       | mac | Has handler (subcommand)                  |
 | otool            | done       | mac | Already in SIMPLE_SAFE                    |
-| launchctl        | subcommand | mac | list/print safe, load/start unsafe        |
+| launchctl        | done       | mac | Has handler (subcommand)                  |
 | security         | subcommand | mac | find-* safe, add-*/delete-* unsafe        |
 | tmutil           | subcommand | mac | listbackups safe, restore unsafe          |
 | osacompile       | done       | mac | Defaults to ask (creates output files)    |
