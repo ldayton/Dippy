@@ -23,10 +23,26 @@ jobs:
             exit 1
           fi
 
+      - name: Get release notes from PR
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body=$(gh pr list --state merged --head "release/v${{ steps.version.outputs.version }}" --json body --jq '.[0].body // empty')
+          if [ -z "$body" ]; then
+            echo "No release PR found, using auto-generated notes"
+            echo "auto=true" >> $GITHUB_OUTPUT
+          else
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            echo "$body" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body: ${{ steps.notes.outputs.body }}
+          generate_release_notes: ${{ steps.notes.outputs.auto == 'true' }}
 
       - name: Get tarball SHA256
         id: sha
