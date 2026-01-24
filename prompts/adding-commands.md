@@ -94,21 +94,22 @@ Create `src/dippy/cli/<command>.py`:
 <Brief description of what makes commands safe/unsafe>
 """
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["<command>"]
 
 SAFE_ACTIONS = frozenset({"list", "show", "get", "describe"})
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify <command> for approval."""
+    tokens = ctx.tokens
     if not tokens:
         return Classification("ask", description="<command>")
 
     action = tokens[1] if len(tokens) > 1 else None
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=f"<command> {action}")
+        return Classification("allow", description=f"<command> {action}")
 
     return Classification("ask", description="<command>")
 ```
@@ -138,7 +139,7 @@ This runs all tests on all Python versions plus lint and format checks. Do not p
 
 ## Handler Patterns
 
-All patterns below assume `from dippy.cli import Classification` is imported.
+All patterns below assume `from dippy.cli import Classification, HandlerContext` is imported.
 
 ### Simple Action-Based
 
@@ -148,10 +149,11 @@ For CLIs with flat subcommand structure (e.g., `git`, `docker`):
 SAFE_ACTIONS = frozenset({"status", "list", "show"})
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
+    tokens = ctx.tokens
     action = tokens[1] if len(tokens) > 1 else None
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=f"cmd {action}")
+        return Classification("allow", description=f"cmd {action}")
     return Classification("ask", description="cmd")
 ```
 
@@ -160,13 +162,14 @@ def classify(tokens: list[str]) -> Classification:
 For CLIs with nested structure (e.g., `aws s3 ls`, `kubectl get pods`):
 
 ```python
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
+    tokens = ctx.tokens
     if len(tokens) < 3:
         return Classification("ask", description="cmd")
 
     action = tokens[2]
     if action in {"list", "describe", "get"}:
-        return Classification("approve", description=f"cmd {tokens[1]} {action}")
+        return Classification("allow", description=f"cmd {tokens[1]} {action}")
     return Classification("ask", description=f"cmd {tokens[1]}")
 ```
 
@@ -175,9 +178,10 @@ def classify(tokens: list[str]) -> Classification:
 When flags determine safety (e.g., `git apply --check`):
 
 ```python
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
+    tokens = ctx.tokens
     if "--check" in tokens or "--dry-run" in tokens:
-        return Classification("approve", description="cmd --dry-run")
+        return Classification("allow", description="cmd --dry-run")
     return Classification("ask", description="cmd")
 ```
 
@@ -186,7 +190,8 @@ def classify(tokens: list[str]) -> Classification:
 For wrappers like `xargs`, `env`, use delegation:
 
 ```python
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
+    tokens = ctx.tokens
     inner_cmd = extract_inner_command(tokens)
     if not inner_cmd:
         return Classification("ask", description="wrapper")

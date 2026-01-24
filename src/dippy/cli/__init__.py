@@ -3,7 +3,7 @@ CLI-specific command handlers for Dippy.
 
 Each handler module exports:
 - COMMANDS: list[str] - command names this handler supports
-- classify(tokens: list[str]) -> Classification - classify command for approval
+- classify(ctx: HandlerContext) -> Classification - classify command for approval
 """
 
 from __future__ import annotations
