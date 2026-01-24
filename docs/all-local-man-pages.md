@@ -17,7 +17,7 @@ Families:
 | banner           | done       | mac | Already in SIMPLE_SAFE                    |
 | apropos          | done       | mac | Already in SIMPLE_SAFE                    |
 | whatis           | done       | mac | Already in SIMPLE_SAFE                    |
-| arch             | delegate   | mac | With args runs programs                   |
+| arch             | done       | mac | Has handler (delegate)                    |
 | getopt           | done       | mac | Already in SIMPLE_SAFE                    |
 | logname          | done       | mac | Already in SIMPLE_SAFE                    |
 | ioreg            | done       | mac | Already in SIMPLE_SAFE                    |
