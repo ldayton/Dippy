@@ -40,7 +40,7 @@ Families:
 | tabs             | done       | mac | Already in SIMPLE_SAFE                    |
 | locale           | done       | mac | Already in SIMPLE_SAFE                    |
 | plutil           | done       | mac | Has handler (flag-check: -convert writes) |
-| defaults         | subcommand | mac | read safe, write/delete unsafe            |
+| defaults         | done       | mac | Has handler (subcommand)                  |
 | pbcopy           | done       | mac | Defaults to ask (modifies clipboard)      |
 | pbpaste          | done       | mac | Already in SIMPLE_SAFE                    |
 | open             | done       | mac | Has handler (flag-check: -R safe)         |
@@ -50,8 +50,8 @@ Families:
 | pstree           | n/a        | mac | Not available on macOS                    |
 | osascript        | done       | mac | Defaults to ask (executes scripts)        |
 | textutil         | done       | mac | Has handler (flag-check: -convert writes) |
-| dscl             | subcommand | mac | read/list safe, create/delete unsafe      |
-| scutil           | subcommand | mac | --get safe, --set unsafe                  |
+| dscl             | done       | mac | Has handler (subcommand)                  |
+| scutil           | done       | mac | Has handler (subcommand)                  |
 | ditto            | done       | mac | Defaults to ask (copies/archives)         |
 | getconf          | done       | mac | Already in SIMPLE_SAFE                    |
 | afplay           | done       | mac | Already in SIMPLE_SAFE                    |
@@ -60,21 +60,21 @@ Families:
 | rev              | done       | mac | Already in SIMPLE_SAFE                    |
 | tac              | done       | mac | Already in SIMPLE_SAFE                    |
 | codesign         | done       | mac | Has handler (flag-check: -s signs)        |
-| spctl            | subcommand | mac | --assess safe, --enable/--add unsafe      |
+| spctl            | done       | mac | Has handler (subcommand)                  |
 | caffeinate       | done       | mac | Has handler (delegate)                    |
 | sqlite3          | subcommand | mac | Query safe, .dump/.import varies          |
 | qlmanage         | done       | mac | Has handler (flag-check: -r resets)       |
 | mdimport         | done       | mac | Has handler (flag-check: -t/-L/-A/-X)     |
-| diskutil         | subcommand | mac | list/info safe, mount/erase unsafe        |
-| hdiutil          | subcommand | mac | info/verify safe, create/attach unsafe    |
+| diskutil         | done       | mac | Has handler (subcommand)                  |
+| hdiutil          | done       | mac | Has handler (subcommand)                  |
 | sips             | done       | mac | Has handler (flag-check: -s/-o modify)    |
-| networksetup     | subcommand | mac | -get* safe, -set* unsafe                  |
+| networksetup     | done       | mac | Has handler (subcommand)                  |
 | ifconfig         | done       | mac | Has handler (arg-count)                   |
 | openssl          | done       | mac | Has handler (subcommand)                  |
 | otool            | done       | mac | Already in SIMPLE_SAFE                    |
-| launchctl        | subcommand | mac | list/print safe, load/start unsafe        |
-| security         | subcommand | mac | find-* safe, add-*/delete-* unsafe        |
-| tmutil           | subcommand | mac | listbackups safe, restore unsafe          |
+| launchctl        | done       | mac | Has handler (subcommand)                  |
+| security         | done       | mac | Has handler (subcommand)                  |
+| tmutil           | done       | mac | Has handler (subcommand)                  |
 | osacompile       | done       | mac | Defaults to ask (creates output files)    |
 | pkgutil          | done       | mac | Has handler (subcommand: --forget unsafe) |
 | lsbom            | done       | mac | Already in SIMPLE_SAFE                    |
@@ -85,7 +85,7 @@ Families:
 | system_profiler  | done       | mac | Already in SIMPLE_SAFE                    |
 | mdfind           | done       | mac | Already in SIMPLE_SAFE                    |
 | mdls             | done       | mac | Already in SIMPLE_SAFE                    |
-| profiles         | subcommand | mac | show safe, remove/renew unsafe            |
+| profiles         | done       | mac | Has handler (subcommand)                  |
 | units            | done       | mac | Already in SIMPLE_SAFE                    |
 | column           | done       | mac | Already in SIMPLE_SAFE                    |
 | cal              | done       | mac | Already in SIMPLE_SAFE                    |
