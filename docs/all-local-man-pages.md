@@ -60,13 +60,13 @@ Families:
 | rev              | done       | mac | Already in SIMPLE_SAFE                    |
 | tac              | done       | mac | Already in SIMPLE_SAFE                    |
 | codesign         | done       | mac | Has handler (flag-check: -s signs)        |
-| spctl            | subcommand | mac | --assess safe, --enable/--add unsafe      |
+| spctl            | done       | mac | Has handler (subcommand)                  |
 | caffeinate       | done       | mac | Has handler (delegate)                    |
 | sqlite3          | subcommand | mac | Query safe, .dump/.import varies          |
 | qlmanage         | done       | mac | Has handler (flag-check: -r resets)       |
 | mdimport         | done       | mac | Has handler (flag-check: -t/-L/-A/-X)     |
-| diskutil         | subcommand | mac | list/info safe, mount/erase unsafe        |
-| hdiutil          | subcommand | mac | info/verify safe, create/attach unsafe    |
+| diskutil         | done       | mac | Has handler (subcommand)                  |
+| hdiutil          | done       | mac | Has handler (subcommand)                  |
 | sips             | done       | mac | Has handler (flag-check: -s/-o modify)    |
 | networksetup     | subcommand | mac | -get* safe, -set* unsafe                  |
 | ifconfig         | done       | mac | Has handler (arg-count)                   |
