@@ -2,6 +2,7 @@
 name: check-coverage
 description: Ensure comprehensive test coverage for a CLI handler. Use when adding a new command or auditing existing handler coverage.
 argument-hint: <tool>
+disable-model-invocation: true
 ---
 
 Ensure the handler and tests for `$ARGUMENTS` provide comprehensive coverage.
