@@ -221,6 +221,7 @@ SIMPLE_SAFE = frozenset(
         # === Shell Builtins & Utilities ===
         "true",  # return success
         "false",  # return failure
+        "shopt",  # set/unset shell options (session-local)
         "sleep",  # delay for specified time
         "read",  # read line from stdin
         # === Terminal ===
