@@ -7,13 +7,14 @@ By default it writes to /tmp which is safe; custom paths need approval.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["sample"]
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify sample command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
         return Classification("ask", description="sample (no target)")
 
@@ -25,10 +26,10 @@ def classify(tokens: list[str]) -> Classification:
             filepath = tokens[i + 1]
             # /tmp writes are safe (default behavior)
             if filepath.startswith("/tmp/") or filepath.startswith("/tmp"):
-                return Classification("approve", description="sample -file /tmp/...")
+                return Classification("allow", description="sample -file /tmp/...")
             # Custom paths need approval
             return Classification("ask", description=f"sample -file {filepath}")
         i += 1
 
     # No -file flag means default /tmp output, which is safe
-    return Classification("approve", description="sample (default /tmp output)")
+    return Classification("allow", description="sample (default /tmp output)")

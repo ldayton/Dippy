@@ -10,7 +10,7 @@ installing plugins, and modifying template files.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["packer"]
 
@@ -51,19 +51,20 @@ UNSAFE_PLUGINS_SUBCOMMANDS = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify packer command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "packer"
     if len(tokens) < 2:
         return Classification("ask", description=base)
 
     # Check for help flags anywhere
     if "--help" in tokens or "-help" in tokens or "-h" in tokens:
-        return Classification("approve", description=f"{base} --help")
+        return Classification("allow", description=f"{base} --help")
 
     # Check for version flag
     if "--version" in tokens or "-version" in tokens:
-        return Classification("approve", description=f"{base} --version")
+        return Classification("allow", description=f"{base} --version")
 
     # Find action (skip global flags)
     action = None
@@ -91,7 +92,7 @@ def classify(tokens: list[str]) -> Classification:
         if subcommand:
             desc = f"{desc} {subcommand}"
         if subcommand in SAFE_PLUGINS_SUBCOMMANDS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         if subcommand in UNSAFE_PLUGINS_SUBCOMMANDS:
             return Classification("ask", description=desc)
         return Classification("ask", description=desc)
@@ -99,12 +100,12 @@ def classify(tokens: list[str]) -> Classification:
     # Handle fmt - safe only with -check, -diff, or -write=false
     if action == "fmt":
         if _is_fmt_safe(rest):
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     return Classification("ask", description=desc)
 

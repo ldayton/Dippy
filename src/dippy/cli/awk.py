@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["awk", "gawk", "mawk", "nawk"]
 
@@ -48,8 +48,9 @@ PIPE_PATTERN = re.compile(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify awk command (no script files or output redirects is safe)."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "awk"
     # Check for -f/--file flag (runs script file)
     for t in tokens[1:]:
@@ -81,7 +82,7 @@ def classify(tokens: list[str]) -> Classification:
         break
 
     if not program:
-        return Classification("approve", description=base)
+        return Classification("allow", description=base)
 
     # Check for system() calls
     if "system(" in program:
@@ -98,7 +99,7 @@ def classify(tokens: list[str]) -> Classification:
         if literal_targets:
             # All redirects are to literal paths - let analyzer check them
             return Classification(
-                "approve",
+                "allow",
                 description=f"{base} redirect",
                 redirect_targets=literal_targets,
             )
@@ -106,4 +107,4 @@ def classify(tokens: list[str]) -> Classification:
             # Dynamic redirects (variables, expressions) - must ask
             return Classification("ask", description=f"{base} redirect")
 
-    return Classification("approve", description=base)
+    return Classification("allow", description=base)

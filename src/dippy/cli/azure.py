@@ -6,7 +6,7 @@ Handles az commands.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["az"]
 
@@ -160,8 +160,9 @@ def get_description(tokens: list[str]) -> str:
     return f"az {' '.join(parts[:3])}"
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify az command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "az"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -174,7 +175,7 @@ def classify(tokens: list[str]) -> Classification:
 
     # Help is always safe
     if "help" in parts or "-h" in tokens or "--help" in tokens:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Check first part for unsafe groups
     if parts[0] in UNSAFE_GROUPS:
@@ -182,27 +183,27 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check first part for safe groups
     if parts[0] in SAFE_GROUPS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle account specially
     if parts[0] == "account":
         if len(parts) > 1:
             if parts[1] in ACCOUNT_SAFE_COMMANDS:
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
             if parts[1] in ACCOUNT_UNSAFE_COMMANDS:
                 return Classification("ask", description=desc)
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle devops configure --list
     if parts[0] == "devops" and len(parts) > 1 and parts[1] == "configure":
         if "--list" in tokens:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # Check commands with safe subcommands (e.g., az bicep version)
     if parts[0] in SAFE_SUBCOMMANDS and len(parts) > 1:
         if parts[1] in SAFE_SUBCOMMANDS[parts[0]]:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
 
     # Check unsafe keywords FIRST (they take precedence)
     for part in parts:
@@ -216,10 +217,10 @@ def classify(tokens: list[str]) -> Classification:
     # Check if any part is a safe action keyword
     for part in parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         for prefix in SAFE_ACTION_PREFIXES:
             if part.startswith(prefix):
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
 
     return Classification("ask", description=desc)
 

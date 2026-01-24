@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import shlex
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["kubectl", "k"]
 
@@ -109,8 +109,9 @@ def _extract_exec_inner_command(tokens: list[str]) -> list[str] | None:
         return None  # No -- separator
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify kubectl command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "kubectl"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -154,7 +155,7 @@ def classify(tokens: list[str]) -> Classification:
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return Classification("approve", description=f"{desc} {token}")
+                    return Classification("allow", description=f"{desc} {token}")
                 break
 
     if action in UNSAFE_SUBCOMMANDS and rest:
@@ -166,7 +167,7 @@ def classify(tokens: list[str]) -> Classification:
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle exec - delegate to inner command with remote mode
     if action == "exec":

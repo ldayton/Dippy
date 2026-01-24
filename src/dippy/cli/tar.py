@@ -8,7 +8,7 @@ Only listing (-t/--list) is safe.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["tar"]
 
@@ -63,8 +63,9 @@ def _extract_to_command(tokens: list[str]) -> str | None:
     return None
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify tar command (list mode only is safe)."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "tar"
 
     # Check for --to-command first - delegates to inner command
@@ -78,7 +79,7 @@ def classify(tokens: list[str]) -> Classification:
 
     operation = _detect_operation(tokens)
     if operation == "list":
-        return Classification("approve", description=f"{base} list")
+        return Classification("allow", description=f"{base} list")
     if operation:
         return Classification("ask", description=f"{base} {operation}")
     return Classification("ask", description=base)

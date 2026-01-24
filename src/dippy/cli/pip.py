@@ -6,7 +6,7 @@ Handles pip, pip3, and uv commands.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["pip", "pip3"]
 
@@ -60,8 +60,9 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify pip command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
         base = tokens[0] if tokens else "pip"
         return Classification("ask", description=base)
@@ -85,14 +86,14 @@ def classify(tokens: list[str]) -> Classification:
                 "ask", description=desc
             )  # uv-specific unsafe commands
         elif action in {"version", "--version", "-V", "help", "--help"}:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
 
     # Check subcommands
     if action in SAFE_SUBCOMMANDS and rest:
         for token in rest:
             if not token.startswith("-"):
                 if token in SAFE_SUBCOMMANDS[action]:
-                    return Classification("approve", description=f"{desc} {token}")
+                    return Classification("allow", description=f"{desc} {token}")
                 break
 
     if action in UNSAFE_SUBCOMMANDS and rest:
@@ -103,6 +104,6 @@ def classify(tokens: list[str]) -> Classification:
                 break
 
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     return Classification("ask", description=desc)

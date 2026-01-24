@@ -6,13 +6,14 @@ but -i/--inplace modifies files in place.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["yq"]
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify yq command."""
+    tokens = ctx.tokens
     if not tokens:
         return Classification("ask", description="yq")
 
@@ -24,4 +25,4 @@ def classify(tokens: list[str]) -> Classification:
         if token.startswith("-i=") or token.startswith("--inplace="):
             return Classification("ask", description="yq -i")
 
-    return Classification("approve", description="yq")
+    return Classification("allow", description="yq")

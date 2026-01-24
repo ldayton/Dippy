@@ -7,7 +7,7 @@ Output flags (-o, --output) return redirect_targets for config rule checking.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["curl"]
 
@@ -88,8 +88,9 @@ def _extract_output_file(tokens: list[str]) -> str | None:
     return None
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify curl command (GET/HEAD without data flags is safe)."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "curl"
     for i, t in enumerate(tokens):
         # Block always-unsafe flags
@@ -133,9 +134,9 @@ def classify(tokens: list[str]) -> Classification:
     output_file = _extract_output_file(tokens)
     if output_file and output_file not in ("-", "/dev/null"):
         return Classification(
-            "approve",
+            "allow",
             description=base,
             redirect_targets=(output_file,),
         )
 
-    return Classification("approve", description=base)
+    return Classification("allow", description=base)

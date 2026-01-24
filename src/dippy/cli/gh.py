@@ -6,7 +6,7 @@ Approves read-only gh operations, blocks mutations.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["gh"]
 
@@ -156,8 +156,9 @@ def _get_subcommand(tokens: list[str]) -> str | None:
     return None
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify gh command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "gh"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -170,15 +171,15 @@ def classify(tokens: list[str]) -> Classification:
 
     if subcommand == "api":
         if _check_api(tokens):
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     if subcommand in {"status", "browse", "search"}:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     action = _get_action(tokens)
     if action:
         desc = f"{base} {subcommand} {action}"
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
     return Classification("ask", description=desc)

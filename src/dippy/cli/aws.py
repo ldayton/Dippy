@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 # SQL read-only detection for Athena queries
 _SKIP_PATTERN = re.compile(r"\s+|--[^\n]*|/\*.*?\*/", re.DOTALL)
@@ -357,8 +357,9 @@ def get_description(tokens: list[str]) -> str:
     return "aws"
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify AWS CLI command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "aws"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -367,7 +368,7 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check for --help anywhere (makes command safe)
     if "--help" in tokens or "-h" in tokens:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Find the service and action
     service = None
@@ -415,22 +416,22 @@ def classify(tokens: list[str]) -> Classification:
 
     # Help is always safe
     if service == "help" or action == "help":
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Always-safe services
     if service in ALWAYS_SAFE_SERVICES:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # STS special handling
     if service == "sts":
         if action in STS_SAFE_ACTIONS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # Configure special handling
     if service == "configure":
         if action in {"list", "list-profiles", "get"}:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # SSM special handling - --with-decryption exposes sensitive data
@@ -443,7 +444,7 @@ def classify(tokens: list[str]) -> Classification:
         if query_string is not None:
             readonly = is_readonly_sql(query_string)
             if readonly is True:
-                return Classification("approve", description=f"{desc} (read-only)")
+                return Classification("allow", description=f"{desc} (read-only)")
             if readonly is False:
                 return Classification("ask", description=f"{desc} (write)")
         # Couldn't determine - ask
@@ -451,7 +452,7 @@ def classify(tokens: list[str]) -> Classification:
 
     # Check specific safe commands
     if action and (service, action) in SAFE_COMMANDS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Check action patterns
     if action:
@@ -461,12 +462,12 @@ def classify(tokens: list[str]) -> Classification:
 
         # Exact safe actions
         if action in SAFE_ACTIONS_EXACT:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
 
         # Safe prefixes
         for prefix in SAFE_ACTION_PREFIXES:
             if action.startswith(prefix):
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
 
         # Unsafe keywords
         for keyword in UNSAFE_ACTION_KEYWORDS:

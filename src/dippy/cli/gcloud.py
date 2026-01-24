@@ -6,7 +6,7 @@ Handles gcloud, gsutil, and bq commands.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["gcloud", "gsutil"]
 
@@ -97,8 +97,9 @@ def get_description(tokens: list[str]) -> str:
     return f"{base} {' '.join(parts[:3])}"
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify gcloud command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
         base = tokens[0] if tokens else "gcloud"
         return Classification("ask", description=base)
@@ -109,7 +110,7 @@ def classify(tokens: list[str]) -> Classification:
     # Handle gsutil separately
     if base == "gsutil":
         if _check_gsutil(tokens):
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     parts = _extract_parts(tokens[1:])
@@ -118,11 +119,11 @@ def classify(tokens: list[str]) -> Classification:
 
     # Help is always safe
     if "help" in parts or "--help" in tokens or "-h" in tokens:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # gcloud version/info/topic are safe
     if parts[0] in {"version", "info", "topic"}:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle config group
     if parts[0] == "config":
@@ -132,15 +133,15 @@ def classify(tokens: list[str]) -> Classification:
             if parts[1] == "configurations" and len(parts) > 2:
                 if parts[2] in {"create", "activate", "delete"}:
                     return Classification("ask", description=desc)
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
             if parts[1] in CONFIG_SAFE_COMMANDS:
-                return Classification("approve", description=desc)
-        return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle auth group - most commands modify state
     if parts[0] == "auth":
         if len(parts) > 1 and parts[1] in AUTH_SAFE_COMMANDS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # Handle projects group
@@ -148,13 +149,13 @@ def classify(tokens: list[str]) -> Classification:
         if len(parts) > 1:
             action = parts[1]
             if action in PROJECTS_SAFE_COMMANDS:
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
             if action in PROJECTS_UNSAFE_COMMANDS:
                 return Classification("ask", description=desc)
             if "iam-policy-binding" in action or "iam-policy" in action:
                 return Classification("ask", description=desc)
             return Classification("ask", description=desc)
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Skip beta/alpha prefix for action checking
     action_parts = [p for p in parts if p not in {"beta", "alpha"}]
@@ -173,10 +174,10 @@ def classify(tokens: list[str]) -> Classification:
     # Check all parts for safe keywords
     for part in action_parts:
         if part in SAFE_ACTION_KEYWORDS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         for prefix in SAFE_ACTION_PREFIXES:
             if part.startswith(prefix):
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
 
     return Classification("ask", description=desc)
 

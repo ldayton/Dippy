@@ -7,7 +7,7 @@ Most commands modify infrastructure, only a few are safe.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["cdk"]
 
@@ -30,8 +30,9 @@ SAFE_ACTIONS = frozenset(
 )
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify CDK command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "cdk"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -43,8 +44,8 @@ def classify(tokens: list[str]) -> Classification:
     if action == "context":
         if any(t in {"--reset", "--clear"} for t in tokens):
             return Classification("ask", description=desc)
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
     return Classification("ask", description=desc)

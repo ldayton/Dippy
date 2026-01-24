@@ -13,7 +13,7 @@ import ast
 from pathlib import Path
 from typing import NamedTuple
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["python", "python3"] + [f"python3.{v}" for v in range(8, 20)]
 
@@ -761,9 +761,8 @@ def get_description(tokens: list[str]) -> str:
     return tokens[0]
 
 
-def classify(tokens: list[str], cwd: Path | None = None) -> Classification:
-    """
-    Classify Python command for approval.
+def classify(ctx: HandlerContext) -> Classification:
+    """Classify Python command for approval.
 
     Auto-approves:
     - Version/help flags
@@ -775,8 +774,8 @@ def classify(tokens: list[str], cwd: Path | None = None) -> Classification:
     - Scripts that fail analysis or can't be read
     - Interactive mode
     """
-    if cwd is None:
-        cwd = Path.cwd()
+    tokens = ctx.tokens
+    cwd = Path.cwd()
 
     desc = get_description(tokens)
 
@@ -787,7 +786,7 @@ def classify(tokens: list[str], cwd: Path | None = None) -> Classification:
     # Check for safe flags first
     for token in tokens[1:]:
         if token in SAFE_FLAGS:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
 
     # Check for -c (inline code) - too hard to analyze reliably
     if "-c" in tokens:
@@ -803,7 +802,7 @@ def classify(tokens: list[str], cwd: Path | None = None) -> Classification:
             # - json.tool: reads files
             # - pydoc: imports modules (executes top-level code)
             if module == "calendar":
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # Check for -i (interactive after script)
@@ -821,7 +820,7 @@ def classify(tokens: list[str], cwd: Path | None = None) -> Classification:
     is_safe, reason = analyze_python_file(script_path)
 
     if is_safe:
-        return Classification("approve", description=f"{desc} (analyzed)")
+        return Classification("allow", description=f"{desc} (analyzed)")
     else:
         # Include reason in description so user knows why
         return Classification("ask", description=f"{desc}: {reason}")

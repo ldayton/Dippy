@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["tee"]
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify tee command by extracting target files."""
+    tokens = ctx.tokens
     base = "tee"
     targets = []
     i = 1
@@ -26,12 +27,12 @@ def classify(tokens: list[str]) -> Classification:
         i += 1
     if not targets:
         # tee with no files just copies stdin to stdout
-        return Classification("approve", description=base)
+        return Classification("allow", description=base)
     desc = (
         f"{base} {targets[0]}" if len(targets) == 1 else f"{base} {len(targets)} files"
     )
     return Classification(
-        "approve",
+        "allow",
         description=desc,
         redirect_targets=tuple(targets),
     )

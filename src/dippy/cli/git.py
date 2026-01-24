@@ -6,7 +6,7 @@ Approves read-only git operations, blocks mutations.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["git"]
 
@@ -184,8 +184,9 @@ def get_description(tokens: list[str], include_context: bool = False) -> str:
     return "git"
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify git command."""
+    tokens = ctx.tokens
     if len(tokens) < 2:
         return Classification("ask", description="git")
 
@@ -237,7 +238,7 @@ def classify(tokens: list[str]) -> Classification:
         safe = False
 
     desc = get_description(tokens, include_context=not safe)
-    return Classification("approve" if safe else "ask", description=desc)
+    return Classification("allow" if safe else "ask", description=desc)
 
 
 def _check_branch(rest: list[str]) -> bool:

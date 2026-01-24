@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["sed"]
 
@@ -165,8 +165,9 @@ def _extract_inplace_files(tokens: list[str]) -> list[str]:
     return files
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify sed command for safety."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "sed"
 
     # Extract scripts for analysis
@@ -203,7 +204,7 @@ def classify(tokens: list[str]) -> Classification:
     if redirect_targets:
         desc = f"{base} -i" if has_inplace else f"{base} w"
         return Classification(
-            "approve",
+            "allow",
             description=desc,
             redirect_targets=tuple(redirect_targets),
         )
@@ -213,4 +214,4 @@ def classify(tokens: list[str]) -> Classification:
     if has_inplace:
         return Classification("ask", description=f"{base} -i")
 
-    return Classification("approve", description=base)
+    return Classification("allow", description=base)

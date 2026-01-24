@@ -5,15 +5,16 @@ xxd is a hex dump tool. Safe for reading, but -r (revert) mode writes files.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["xxd"]
 
 UNSAFE_FLAGS = frozenset({"-r", "-revert"})
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify xxd command."""
+    tokens = ctx.tokens
     if not tokens:
         return Classification("ask", description="xxd (no args)")
 
@@ -21,4 +22,4 @@ def classify(tokens: list[str]) -> Classification:
         if token in UNSAFE_FLAGS:
             return Classification("ask", description="xxd -r (write binary)")
 
-    return Classification("approve", description="xxd")
+    return Classification("allow", description="xxd")

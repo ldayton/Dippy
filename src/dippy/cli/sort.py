@@ -6,7 +6,7 @@ Sort is safe for text processing, but -o flag writes to a file.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["sort"]
 
@@ -38,17 +38,18 @@ def _extract_output_file(tokens: list[str]) -> str | None:
     return None
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify sort command (no output to file is safe)."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "sort"
 
     output_file = _extract_output_file(tokens)
 
     if output_file:
         return Classification(
-            "approve",
+            "allow",
             description=f"{base} -o (write to file)",
             redirect_targets=(output_file,),
         )
 
-    return Classification("approve", description=base)
+    return Classification("allow", description=base)

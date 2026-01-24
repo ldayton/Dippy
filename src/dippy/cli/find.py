@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import shlex
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["find"]
 
@@ -22,8 +22,9 @@ FLAG_CONTEXT = {
 }
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify find command by examining exec flags and delegating inner commands."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "find"
 
     for i, token in enumerate(tokens):
@@ -55,4 +56,4 @@ def classify(tokens: list[str]) -> Classification:
                 description=f"{base} {token} {inner_name}",
             )
 
-    return Classification("approve", description=base)
+    return Classification("allow", description=base)

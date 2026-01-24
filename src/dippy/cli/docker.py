@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import shlex
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["docker", "docker-compose", "podman", "podman-compose"]
 
@@ -235,8 +235,9 @@ def _get_description(tokens: list[str]) -> str:
     return f"{tokens[0]} {action}"
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify docker command."""
+    tokens = ctx.tokens
     base = tokens[0]  # "docker", "podman", "docker-compose", etc.
     desc = _get_description(tokens)
 
@@ -254,7 +255,7 @@ def classify(tokens: list[str]) -> Classification:
     # Handle docker-compose / docker compose
     if action == "compose" or tokens[0] in {"docker-compose", "podman-compose"}:
         safe = _check_compose(tokens, action_idx, base)
-        return Classification("approve" if safe else "ask", description=desc)
+        return Classification("allow" if safe else "ask", description=desc)
 
     # Check subcommands for multi-level commands
     if action in SAFE_SUBCOMMANDS or action in UNSAFE_SUBCOMMANDS:
@@ -267,7 +268,7 @@ def classify(tokens: list[str]) -> Classification:
                 )
                 imagetools_action = _find_subcommand(sub_rest)
                 safe = imagetools_action == "inspect"
-                return Classification("approve" if safe else "ask", description=desc)
+                return Classification("allow" if safe else "ask", description=desc)
 
             if subcommand in SAFE_SUBCOMMANDS.get(action, set()):
                 # Special case: image save -o writes to file
@@ -277,7 +278,7 @@ def classify(tokens: list[str]) -> Classification:
                     and _has_output_flag(rest)
                 ):
                     return Classification("ask", description=desc)
-                return Classification("approve", description=desc)
+                return Classification("allow", description=desc)
             if subcommand in UNSAFE_SUBCOMMANDS.get(action, set()):
                 return Classification("ask", description=desc)
 
@@ -286,7 +287,7 @@ def classify(tokens: list[str]) -> Classification:
         # export/save without -o writes to stdout (safe)
         if action in {"export", "save"} and _has_output_flag(rest):
             return Classification("ask", description=desc)
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle exec - delegate to inner command with remote mode
     if action == "exec":

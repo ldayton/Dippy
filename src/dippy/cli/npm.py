@@ -6,7 +6,7 @@ Handles npm, yarn, and pnpm commands.
 
 from __future__ import annotations
 
-from dippy.cli import Classification
+from dippy.cli import Classification, HandlerContext
 
 COMMANDS = ["npm", "yarn", "pnpm"]
 
@@ -160,8 +160,9 @@ ACTION_ALIASES = {
 }
 
 
-def classify(tokens: list[str]) -> Classification:
+def classify(ctx: HandlerContext) -> Classification:
     """Classify npm/yarn/pnpm command."""
+    tokens = ctx.tokens
     base = tokens[0] if tokens else "npm"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -174,34 +175,34 @@ def classify(tokens: list[str]) -> Classification:
 
     # Handle "npm run" without arguments (just lists scripts)
     if action == "run" and not rest:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle "npm run --list" (safe)
     if action == "run" and "--list" in rest:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle "npm version" - without arguments shows version, with args modifies
     if action == "version":
         if not rest:
-            return Classification("approve", description=desc)
+            return Classification("allow", description=desc)
         return Classification("ask", description=desc)
 
     # Handle "npm audit" - safe for viewing, but "audit fix" is unsafe
     if action == "audit":
         if rest and rest[0] == "fix":
             return Classification("ask", description=f"{desc} fix")
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     # Handle "npm config" / "npm c"
     if action in ("config", "c"):
         if rest:
             subaction = rest[0]
             if subaction in SAFE_SUBCOMMANDS.get("config", set()):
-                return Classification("approve", description=f"{desc} {subaction}")
+                return Classification("allow", description=f"{desc} {subaction}")
             if subaction in UNSAFE_SUBCOMMANDS.get("config", set()):
                 return Classification("ask", description=f"{desc} {subaction}")
         return Classification(
-            "approve", description=desc
+            "allow", description=desc
         )  # "npm config" alone shows help
 
     # Check commands with safe/unsafe subcommands
@@ -209,19 +210,17 @@ def classify(tokens: list[str]) -> Classification:
         if rest:
             subaction = rest[0]
             if subaction in SAFE_SUBCOMMANDS[action]:
-                return Classification("approve", description=f"{desc} {subaction}")
+                return Classification("allow", description=f"{desc} {subaction}")
             if action in UNSAFE_SUBCOMMANDS and subaction in UNSAFE_SUBCOMMANDS[action]:
                 return Classification("ask", description=f"{desc} {subaction}")
         if action in ("owner",):
-            return Classification(
-                "approve", description=desc
-            )  # "npm owner" alone lists
+            return Classification("allow", description=desc)  # "npm owner" alone lists
         return Classification("ask", description=desc)
 
     if action in UNSAFE_SUBCOMMANDS and action not in SAFE_SUBCOMMANDS:
         return Classification("ask", description=desc)
 
     if action in SAFE_ACTIONS:
-        return Classification("approve", description=desc)
+        return Classification("allow", description=desc)
 
     return Classification("ask", description=desc)
