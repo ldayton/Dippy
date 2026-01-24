@@ -61,7 +61,7 @@ Families:
 | tac              | done       | mac | Already in SIMPLE_SAFE                    |
 | codesign         | done       | mac | Has handler (flag-check: -s signs)        |
 | spctl            | subcommand | mac | --assess safe, --enable/--add unsafe      |
-| caffeinate       | delegate   | mac | Can run utilities with args               |
+| caffeinate       | done       | mac | Has handler (delegate)                    |
 | sqlite3          | subcommand | mac | Query safe, .dump/.import varies          |
 | qlmanage         | done       | mac | Has handler (flag-check: -r resets)       |
 | mdimport         | ask        | mac | Always imports to Spotlight               |
