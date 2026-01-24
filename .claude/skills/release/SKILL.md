@@ -32,9 +32,9 @@ Run `just check` before pushing. PR title: `Release v$ARGUMENTS`
 
 ## After merge
 
-Tag and push:
+Tag, push, and clean up:
 ```
-git tag v$ARGUMENTS && git push --tags
+git checkout main && git pull && git tag v$ARGUMENTS && git push --tags && git push origin --delete release/v$ARGUMENTS
 ```
 
 The tag triggers a workflow that creates the GitHub release and updates the Homebrew tap.
