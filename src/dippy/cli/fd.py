@@ -6,9 +6,8 @@ delegate to inner commands for safety checks.
 
 from __future__ import annotations
 
-import shlex
-
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_quote
 
 COMMANDS = ["fd"]
 
@@ -55,9 +54,7 @@ def classify(ctx: HandlerContext) -> Classification:
         return Classification("ask", description=f"fd {flag_desc} (no command)")
 
     # Delegate to inner command check
-    inner_cmd = " ".join(
-        shlex.quote(t) if " " in t or not t else t for t in inner_tokens
-    )
+    inner_cmd = " ".join(bash_quote(t) for t in inner_tokens)
     flag_desc = FLAG_DISPLAY.get(exec_flag, exec_flag)
     return Classification(
         "delegate",

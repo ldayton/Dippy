@@ -9,9 +9,8 @@ Find is mostly safe for searching, but has dangerous flags:
 
 from __future__ import annotations
 
-import shlex
-
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_join
 
 COMMANDS = ["find"]
 
@@ -48,7 +47,7 @@ def classify(ctx: HandlerContext) -> Classification:
             if not inner_tokens:
                 return Classification("ask", description=f"{base} {token}")
 
-            inner_cmd = shlex.join(inner_tokens)
+            inner_cmd = bash_join(inner_tokens)
             inner_name = inner_tokens[0]
             return Classification(
                 "delegate",
