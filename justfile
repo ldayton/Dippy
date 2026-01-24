@@ -36,7 +36,7 @@ check-style:
 
 # Run all checks (tests, lint, format, lock, style) in parallel
 [parallel]
-check: test-all lint fmt lock-check check-style
+check: test-all lint fmt lock-check check-style check-parable
 
 # Lint (--fix to apply changes)
 lint *ARGS:
