@@ -31,28 +31,28 @@ Families:
 | xargs            | done       | mac | Has handler (delegate)                    |
 | test             | done       | mac | Already in SIMPLE_SAFE                    |
 | [                | n/a        | mac | Handled as AST visitation                 |
-| mktemp           | ask        | mac | Always creates files/directories          |
+| mktemp           | done       | mac | Has handler (flag-check: -u dry run)      |
 | dirname          | done       | mac | Already in SIMPLE_SAFE                    |
 | basename         | done       | mac | Already in SIMPLE_SAFE                    |
-| logger           | ask        | mac | Always writes to system log               |
+| logger           | done       | mac | Defaults to ask (writes to system log)    |
 | uuidgen          | done       | mac | Already in SIMPLE_SAFE                    |
-| csplit           | ask        | mac | Always creates output files               |
+| csplit           | done       | mac | Defaults to ask (creates output files)    |
 | tabs             | done       | mac | Already in SIMPLE_SAFE                    |
 | locale           | done       | mac | Already in SIMPLE_SAFE                    |
 | plutil           | done       | mac | Has handler (flag-check: -convert writes) |
 | defaults         | subcommand | mac | read safe, write/delete unsafe            |
-| pbcopy           | ask        | mac | Always modifies clipboard                 |
+| pbcopy           | done       | mac | Defaults to ask (modifies clipboard)      |
 | pbpaste          | done       | mac | Already in SIMPLE_SAFE                    |
 | open             | done       | mac | Has handler (flag-check: -R safe)         |
 | sw_vers          | done       | mac | Already in SIMPLE_SAFE                    |
 | xxd              | done       | mac | Has handler (flag-check: -r writes)       |
 | lipo             | done       | mac | Has handler (flag-check: -create writes)  |
 | pstree           | n/a        | mac | Not available on macOS                    |
-| osascript        | ask        | mac | Executes arbitrary scripts                |
+| osascript        | done       | mac | Defaults to ask (executes scripts)        |
 | textutil         | done       | mac | Has handler (flag-check: -convert writes) |
 | dscl             | subcommand | mac | read/list safe, create/delete unsafe      |
 | scutil           | subcommand | mac | --get safe, --set unsafe                  |
-| ditto            | ask        | mac | Always copies/archives                    |
+| ditto            | done       | mac | Defaults to ask (copies/archives)         |
 | getconf          | done       | mac | Already in SIMPLE_SAFE                    |
 | afplay           | done       | mac | Already in SIMPLE_SAFE                    |
 | fmt              | done       | mac | Already in SIMPLE_SAFE                    |
@@ -64,7 +64,7 @@ Families:
 | caffeinate       | done       | mac | Has handler (delegate)                    |
 | sqlite3          | subcommand | mac | Query safe, .dump/.import varies          |
 | qlmanage         | done       | mac | Has handler (flag-check: -r resets)       |
-| mdimport         | ask        | mac | Always imports to Spotlight               |
+| mdimport         | done       | mac | Has handler (flag-check: -t/-L/-A/-X)     |
 | diskutil         | subcommand | mac | list/info safe, mount/erase unsafe        |
 | hdiutil          | subcommand | mac | info/verify safe, create/attach unsafe    |
 | sips             | done       | mac | Has handler (flag-check: -s/-o modify)    |
@@ -75,12 +75,12 @@ Families:
 | launchctl        | subcommand | mac | list/print safe, load/start unsafe        |
 | security         | subcommand | mac | find-* safe, add-*/delete-* unsafe        |
 | tmutil           | subcommand | mac | listbackups safe, restore unsafe          |
-| osacompile       | ask        | mac | Always creates output files               |
+| osacompile       | done       | mac | Defaults to ask (creates output files)    |
 | pkgutil          | done       | mac | Has handler (subcommand: --forget unsafe) |
 | lsbom            | done       | mac | Already in SIMPLE_SAFE                    |
 | fuser            | done       | mac | Already in SIMPLE_SAFE                    |
 | bc               | done       | mac | Already in SIMPLE_SAFE                    |
-| asr              | ask        | mac | Always restores/copies                    |
+| asr              | done       | mac | Defaults to ask (restores/copies)         |
 | sysctl           | done       | mac | Has handler (arg-count)                   |
 | system_profiler  | done       | mac | Already in SIMPLE_SAFE                    |
 | mdfind           | done       | mac | Already in SIMPLE_SAFE                    |
