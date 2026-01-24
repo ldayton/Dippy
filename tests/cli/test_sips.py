@@ -34,6 +34,9 @@ TESTS = [
     # Output to different file - needs confirmation (redirect target)
     ("sips -s format jpeg -o output.jpg image.png", False),
     ("sips --out output.png -z 100 100 image.png", False),
+    # Extract profile to file - needs confirmation (redirect target)
+    ("sips -x profile.icc image.png", False),
+    ("sips --extractProfile profile.icc image.png", False),
 ]
 
 
@@ -57,3 +60,23 @@ def test_sips_output_has_redirect_target():
         )
     )
     assert "output.jpg" in result.redirect_targets
+
+
+def test_sips_extract_profile_has_redirect_target():
+    """Verify -x flag returns redirect_targets for config rule checking."""
+    from dippy.cli import HandlerContext
+    from dippy.cli.sips import classify
+
+    result = classify(HandlerContext(["sips", "-x", "profile.icc", "image.png"]))
+    assert "profile.icc" in result.redirect_targets
+
+
+def test_sips_extract_profile_long_has_redirect_target():
+    """Verify --extractProfile flag returns redirect_targets for config rule checking."""
+    from dippy.cli import HandlerContext
+    from dippy.cli.sips import classify
+
+    result = classify(
+        HandlerContext(["sips", "--extractProfile", "profile.icc", "image.png"])
+    )
+    assert "profile.icc" in result.redirect_targets

@@ -19,6 +19,8 @@ TESTS = [
     ("symbols -w /usr/bin/ls", True),
     # Save signature to file - needs confirmation (redirect target)
     ("symbols -saveSignature /tmp/sig.txt /usr/bin/ls", False),
+    # Symbols package dir - needs confirmation (redirect target)
+    ("symbols -symbolsPackageDir /tmp/pkg /usr/bin/ls", False),
 ]
 
 
@@ -40,3 +42,14 @@ def test_symbols_save_has_redirect_target():
         HandlerContext(["symbols", "-saveSignature", "/tmp/sig.txt", "/usr/bin/ls"])
     )
     assert "/tmp/sig.txt" in result.redirect_targets
+
+
+def test_symbols_package_dir_has_redirect_target():
+    """Verify -symbolsPackageDir flag returns redirect_targets for config rule checking."""
+    from dippy.cli import HandlerContext
+    from dippy.cli.symbols import classify
+
+    result = classify(
+        HandlerContext(["symbols", "-symbolsPackageDir", "/tmp/pkg", "/usr/bin/ls"])
+    )
+    assert "/tmp/pkg" in result.redirect_targets

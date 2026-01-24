@@ -4,8 +4,8 @@ Sips command handler for Dippy.
 macOS scriptable image processing system.
 - -g/--getProperty, --verify are safe read operations
 - Most other flags modify images: -s, -d, -e, -r, -f, -c, -p, -z, -Z, -i, etc.
-- -o/--out specifies output file
-- -x/--extractProfile writes profile to file
+- -o/--out specifies output file for modifications
+- -x/--extractProfile extracts embedded profile to specified file
 """
 
 from __future__ import annotations
@@ -73,6 +73,14 @@ def _extract_output_file(tokens: list[str]) -> str | None:
     return None
 
 
+def _extract_profile_file(tokens: list[str]) -> str | None:
+    """Extract the profile file from -x/--extractProfile flag."""
+    for i, t in enumerate(tokens):
+        if t in {"-x", "--extractProfile"} and i + 1 < len(tokens):
+            return tokens[i + 1]
+    return None
+
+
 def _is_read_only(tokens: list[str]) -> bool:
     """Check if command only uses read-only flags."""
     i = 1
@@ -98,6 +106,14 @@ def classify(ctx: HandlerContext) -> Classification:
     tokens = ctx.tokens
     if _is_read_only(tokens):
         return Classification("allow", description="sips")
+    # Check for extractProfile (writes to specified file)
+    profile_file = _extract_profile_file(tokens)
+    if profile_file:
+        return Classification(
+            "allow",
+            description="sips -x",
+            redirect_targets=(profile_file,),
+        )
     # Check for output file
     output_file = _extract_output_file(tokens)
     if output_file:
