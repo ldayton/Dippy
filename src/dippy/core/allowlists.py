@@ -171,7 +171,6 @@ SIMPLE_SAFE = frozenset(
         "pgrep",  # find processes by name
         "powermetrics",  # power and performance metrics
         "ps",  # list processes
-        "sample",  # profile a process
         "system_profiler",  # system hardware/software report
         "top",  # display process activity
         "vm_stat",  # virtual memory statistics
