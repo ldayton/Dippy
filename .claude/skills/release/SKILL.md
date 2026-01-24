@@ -9,6 +9,7 @@ Create a PR with branch name `release/v$ARGUMENTS` containing only these changes
 
 1. Update version in `pyproject.toml` and `src/dippy/__init__.py`
 2. Run `uv sync -U` to update dependencies
+3. Run `/verify-counts` and update any STALE or FAIL claims
 
 No other changes—no refactors, no fixes, no documentation updates.
 
