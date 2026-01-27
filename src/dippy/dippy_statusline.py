@@ -227,7 +227,7 @@ def get_mcp_servers() -> str | None:
         mtime = os.path.getmtime(MCP_CACHE_PATH)
         age = time.time() - mtime
         with open(MCP_CACHE_PATH) as f:
-            cached = f.read().strip()
+            cached = f.read().strip().replace("claude.ai ", "")
         log.debug("mcp_cache_read", age=age, has_cached=bool(cached))
     except FileNotFoundError:
         log.debug("mcp_cache_not_found", path=MCP_CACHE_PATH)
@@ -242,7 +242,7 @@ def get_mcp_servers() -> str | None:
             os.makedirs(CACHE_DIR, exist_ok=True)
             tmp = f"{MCP_CACHE_PATH}.tmp.{os.getpid()}"
             disc_r, disc_g, disc_b = hex_to_rgb(MOLOKAI[STYLES["mcp_disconnected"][0]])
-            cmd = f'timeout 10 claude mcp list 2>/dev/null | awk -F: \'NF>1 {{if (/Connected/) print "\\033[38;2;{conn_r};{conn_g};{conn_b}m" $1 "\\033[0m"; else print "\\033[38;2;{disc_r};{disc_g};{disc_b}m!" $1 "\\033[0m"}}\' | paste -sd, | sed \'s/,/, /g\' > {tmp} && mv {tmp} {MCP_CACHE_PATH}'
+            cmd = f'timeout 10 claude mcp list 2>/dev/null | awk -F: \'NF>1 {{if (/Connected/) print "\\033[38;2;{conn_r};{conn_g};{conn_b}m" $1 "\\033[0m"; else print "\\033[38;2;{disc_r};{disc_g};{disc_b}m!" $1 "\\033[0m"}}\' | paste -sd, | sed -e \'s/,/, /g\' -e \'s/claude\\.ai //g\' > {tmp} && mv {tmp} {MCP_CACHE_PATH}'
             subprocess.Popen(
                 cmd,
                 shell=True,

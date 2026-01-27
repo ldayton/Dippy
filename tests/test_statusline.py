@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from dippy.dippy_statusline import get_mcp_servers
+
 DIPPY_STATUSLINE = REPO_ROOT / "bin" / "dippy-statusline"
 SYSTEM_PYTHON = "/usr/bin/python3"
 
@@ -166,6 +171,18 @@ class TestGitEdgeCases:
         }
         result = run_statusline(input_data)
         assert result.returncode == 0
+
+
+class TestMcpServerNames:
+    """Tests for MCP server name formatting."""
+
+    def test_strips_claude_ai_prefix(self):
+        """Server names should strip 'claude.ai ' prefix for cleaner display."""
+        output = get_mcp_servers()
+        if output and "claude.ai " in output:
+            raise AssertionError(
+                f"MCP output contains 'claude.ai ' prefix that should be stripped: {output!r}"
+            )
 
 
 class TestOutputFormat:
