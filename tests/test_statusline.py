@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from dippy.dippy_statusline import get_mcp_servers
+from dippy.dippy_statusline import get_mcp_servers  # noqa: E402
 
 DIPPY_STATUSLINE = REPO_ROOT / "bin" / "dippy-statusline"
 SYSTEM_PYTHON = "/usr/bin/python3"
