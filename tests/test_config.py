@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import importlib
+import io
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
+
+import dippy.core.config
+import dippy.dippy
 
 from dippy.core.config import (
     Config,
@@ -28,6 +34,8 @@ from dippy.core.config import (
     match_command,
     match_mcp,
     match_redirect,
+    match_after_web,
+    match_web,
     parse_config,
 )
 
@@ -1925,3 +1933,590 @@ class TestAlias:
         m = match_command(c, cfg, tmp_path)
         assert m is not None
         assert m.decision == "allow"
+
+
+class TestParseConfigWebRules:
+    """Test parsing of WebSearch tool rules."""
+
+    def test_allow_web(self):
+        cfg = parse_config("allow-web")
+        assert len(cfg.web_rules) == 1
+        assert cfg.web_rules[0].decision == "allow"
+        assert cfg.web_rules[0].pattern == "*"
+
+    def test_allow_web_with_pattern(self):
+        cfg = parse_config("allow-web *framework*")
+        assert len(cfg.web_rules) == 1
+        assert cfg.web_rules[0].decision == "allow"
+        assert cfg.web_rules[0].pattern == "*framework*"
+
+    def test_ask_web_with_pattern_and_message(self):
+        cfg = parse_config('ask-web *password* "Sensitive search"')
+        assert len(cfg.web_rules) == 1
+        assert cfg.web_rules[0].decision == "ask"
+        assert cfg.web_rules[0].pattern == "*password*"
+        assert cfg.web_rules[0].message == "Sensitive search"
+
+    def test_ask_web_pattern_only(self):
+        cfg = parse_config("ask-web *secret*")
+        assert len(cfg.web_rules) == 1
+        assert cfg.web_rules[0].decision == "ask"
+        assert cfg.web_rules[0].pattern == "*secret*"
+        assert cfg.web_rules[0].message is None
+
+    def test_deny_web_with_pattern_and_message(self):
+        cfg = parse_config('deny-web *hack* "Blocked search"')
+        assert len(cfg.web_rules) == 1
+        assert cfg.web_rules[0].decision == "deny"
+        assert cfg.web_rules[0].pattern == "*hack*"
+        assert cfg.web_rules[0].message == "Blocked search"
+
+    def test_ask_web_no_pattern_skipped(self):
+        cfg = parse_config("ask-web")
+        assert cfg.web_rules == []
+
+    def test_deny_web_no_pattern_skipped(self):
+        cfg = parse_config("deny-web")
+        assert cfg.web_rules == []
+
+    def test_web_rules_mixed_with_other_rules(self):
+        cfg = parse_config("""
+allow git *
+allow-web
+deny rm -rf /*
+ask-web *password* "Review sensitive search"
+deny-web *malware* "Blocked"
+""")
+        assert len(cfg.rules) == 2
+        assert len(cfg.web_rules) == 3
+        assert cfg.web_rules[0].decision == "allow"
+        assert cfg.web_rules[0].pattern == "*"
+        assert cfg.web_rules[1].decision == "ask"
+        assert cfg.web_rules[1].pattern == "*password*"
+        assert cfg.web_rules[2].decision == "deny"
+        assert cfg.web_rules[2].pattern == "*malware*"
+
+
+class TestMergeConfigsWebRules:
+    """Test WebSearch rules merging."""
+
+    def test_web_rules_concatenate(self):
+        base = Config(web_rules=[Rule("allow", "*")])
+        overlay = Config(web_rules=[Rule("ask", "*password*")])
+        merged = _merge_configs(base, overlay)
+        assert len(merged.web_rules) == 2
+        assert merged.web_rules[0].pattern == "*"
+        assert merged.web_rules[1].pattern == "*password*"
+
+
+class TestTagRulesWeb:
+    """Test origin tagging for WebSearch rules."""
+
+    def test_tags_web_rules_with_source_and_scope(self):
+        config = Config(web_rules=[Rule("allow", "*")])
+        tagged = _tag_rules(config, "/path/to/config", SCOPE_USER)
+        assert tagged.web_rules[0].source == "/path/to/config"
+        assert tagged.web_rules[0].scope == SCOPE_USER
+
+
+class TestMatchWeb:
+    """Test WebSearch query matching against config rules."""
+
+    def test_allow_all_matches_any_query(self):
+        cfg = Config(web_rules=[Rule("allow", "*")])
+        m = match_web("python documentation 2026", cfg)
+        assert m is not None
+        assert m.decision == "allow"
+        assert m.pattern == "*"
+
+    def test_pattern_match(self):
+        cfg = Config(web_rules=[Rule("ask", "*password*", message="Sensitive")])
+        m = match_web("how to reset password", cfg)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.message == "Sensitive"
+
+    def test_no_match_returns_none(self):
+        cfg = Config(web_rules=[Rule("ask", "*password*")])
+        m = match_web("python docs", cfg)
+        assert m is None
+
+    def test_empty_rules_returns_none(self):
+        cfg = Config(web_rules=[])
+        m = match_web("any query", cfg)
+        assert m is None
+
+    def test_last_match_wins(self):
+        cfg = Config(
+            web_rules=[
+                Rule("allow", "*"),
+                Rule("ask", "*secret*", message="Review this"),
+            ]
+        )
+        # First rule matches but second is more specific and wins
+        m = match_web("company secret policy", cfg)
+        assert m is not None
+        assert m.decision == "ask"
+        assert m.message == "Review this"
+
+    def test_deny_with_message(self):
+        cfg = Config(web_rules=[Rule("deny", "*hack*", message="Blocked")])
+        m = match_web("hacking tutorials", cfg)
+        assert m is not None
+        assert m.decision == "deny"
+        assert m.message == "Blocked"
+
+    def test_match_object_fields(self):
+        cfg = Config(
+            web_rules=[
+                Rule(
+                    "ask",
+                    "*api*",
+                    message="API search",
+                    source="/path/to/config",
+                    scope="user",
+                )
+            ]
+        )
+        m = match_web("rest api tutorial", cfg)
+        assert m.decision == "ask"
+        assert m.pattern == "*api*"
+        assert m.message == "API search"
+        assert m.source == "/path/to/config"
+        assert m.scope == "user"
+
+    def test_complex_pattern_priority(self):
+        """Test that the most specific matching rule (last) wins."""
+        cfg = Config(
+            web_rules=[
+                Rule("allow", "*"),  # allow everything
+                Rule("ask", "*sensitive*"),  # ask for sensitive
+                Rule("deny", "*password*"),  # deny password searches
+            ]
+        )
+        # Normal query - should be allowed
+        m = match_web("python docs", cfg)
+        assert m.decision == "allow"
+        # Sensitive query - should ask
+        m = match_web("sensitive data handling", cfg)
+        assert m.decision == "ask"
+        # Password query - should be denied
+        m = match_web("how to store password", cfg)
+        assert m.decision == "deny"
+
+
+class TestWebEndToEnd:
+    """End-to-end tests simulating actual hook JSON input/output for WebSearch."""
+
+    def test_websearch_tool_routed_correctly(self, tmp_path, monkeypatch):
+        """Test that main() routes WebSearch tools through web rules."""
+        import io
+        import json
+        import sys
+
+        # Create config with web rule
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web\n")
+
+        # Simulate Claude Code hook input for WebSearch tool
+        hook_input = {
+            "tool_name": "WebSearch",
+            "tool_input": {"query": "python documentation"},
+            "hook_event_name": "PreToolUse",
+        }
+
+        # Capture stdout and mock stdin
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        # Reload and run
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        # Verify output
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_websearch_tool_no_match_defers(self, tmp_path, monkeypatch):
+        """Test that WebSearch tool with no matching rules returns empty (defer)."""
+        import io
+        import json
+        import sys
+
+        import dippy.core.config
+
+        # Isolate from user's ~/.dippy/config
+        monkeypatch.setattr(
+            dippy.core.config, "USER_CONFIG", tmp_path / "no-such-config"
+        )
+
+        # Config with rule that won't match (empty - no web rules)
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow git *\n")
+
+        hook_input = {
+            "tool_name": "WebSearch",
+            "tool_input": {"query": "python docs"},
+            "hook_event_name": "PreToolUse",
+        }
+
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        output = json.loads(captured_output.getvalue())
+        assert output == {}  # Empty = defer to Claude's default
+
+    def test_websearch_tool_deny_blocks(self, tmp_path, monkeypatch):
+        """Test that deny-web rule actually blocks the search."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *hack* "Blocked search"\n')
+
+        hook_input = {
+            "tool_name": "WebSearch",
+            "tool_input": {"query": "hacking tutorials"},
+            "hook_event_name": "PreToolUse",
+        }
+
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+        assert (
+            "Blocked search" in output["hookSpecificOutput"]["permissionDecisionReason"]
+        )
+
+    def test_bash_tool_not_affected_by_web_rules(self, tmp_path, monkeypatch):
+        """Test that Bash commands still work and aren't affected by web rules."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("deny-web *\n")  # Deny all web searches
+
+        # Bash tool, not WebSearch
+        hook_input = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "hook_event_name": "PreToolUse",
+        }
+
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+
+        import importlib
+
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+
+        output = json.loads(captured_output.getvalue())
+        # ls is safe, should be approved (not affected by web deny rule)
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+
+class TestParseConfigAfterWebRules:
+    """Test parsing of after-web rules for PostToolUse."""
+
+    def test_after_web_with_message(self):
+        cfg = parse_config('after-web *api* "Check API version compatibility"')
+        assert len(cfg.after_web_rules) == 1
+        assert cfg.after_web_rules[0].decision == "after"
+        assert cfg.after_web_rules[0].pattern == "*api*"
+        assert cfg.after_web_rules[0].message == "Check API version compatibility"
+
+    def test_after_web_pattern_only(self):
+        cfg = parse_config("after-web *docs*")
+        assert len(cfg.after_web_rules) == 1
+        assert cfg.after_web_rules[0].pattern == "*docs*"
+        assert cfg.after_web_rules[0].message is None
+
+    def test_after_web_no_pattern_skipped(self):
+        cfg = parse_config("after-web")
+        assert cfg.after_web_rules == []
+
+    def test_after_web_mixed_with_other_rules(self):
+        cfg = parse_config("""
+allow-web
+after-web *api* "Check version"
+deny-web *hack*
+""")
+        assert len(cfg.web_rules) == 2
+        assert len(cfg.after_web_rules) == 1
+
+
+class TestMergeConfigsAfterWebRules:
+    """Test after-web rules merging."""
+
+    def test_after_web_rules_concatenate(self):
+        base = Config(after_web_rules=[Rule("after", "*api*", message="msg1")])
+        overlay = Config(after_web_rules=[Rule("after", "*docs*", message="msg2")])
+        merged = _merge_configs(base, overlay)
+        assert len(merged.after_web_rules) == 2
+
+
+class TestTagRulesAfterWeb:
+    """Test origin tagging for after-web rules."""
+
+    def test_tags_after_web_rules_with_source_and_scope(self):
+        config = Config(after_web_rules=[Rule("after", "*api*")])
+        tagged = _tag_rules(config, "/path/to/config", SCOPE_USER)
+        assert tagged.after_web_rules[0].source == "/path/to/config"
+        assert tagged.after_web_rules[0].scope == SCOPE_USER
+
+
+class TestMatchAfterWeb:
+    """Test after-web rule matching for PostToolUse feedback."""
+
+    def test_basic_match(self):
+        cfg = Config(after_web_rules=[Rule("after", "*api*", message="Check version")])
+        result = match_after_web("rest api tutorial", cfg)
+        assert result == "Check version"
+
+    def test_no_match(self):
+        cfg = Config(after_web_rules=[Rule("after", "*api*", message="Check version")])
+        result = match_after_web("python basics", cfg)
+        assert result is None
+
+    def test_last_match_wins(self):
+        cfg = Config(
+            after_web_rules=[
+                Rule("after", "*", message="General feedback"),
+                Rule("after", "*api*", message="API-specific feedback"),
+            ]
+        )
+        result = match_after_web("rest api docs", cfg)
+        assert result == "API-specific feedback"
+
+    def test_pattern_only_is_silent(self):
+        cfg = Config(after_web_rules=[Rule("after", "*docs*")])
+        result = match_after_web("python docs", cfg)
+        assert result == ""
+
+    def test_empty_message_is_silent(self):
+        cfg = Config(after_web_rules=[Rule("after", "*docs*", message="")])
+        result = match_after_web("python docs", cfg)
+        assert result == ""
+
+
+class TestWebFetchEndToEnd:
+    """End-to-end tests verifying WebFetch uses the same web_rules as WebSearch."""
+
+    def test_webfetch_tool_uses_web_rules(self, tmp_path, monkeypatch):
+        """Test that WebFetch tools are routed through web rules using URL."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web\n")
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {
+                "url": "https://docs.python.org/3/",
+                "prompt": "extract info",
+            },
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        import importlib
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_webfetch_url_pattern_matching(self, tmp_path, monkeypatch):
+        """Test that URL patterns work for WebFetch."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web *github.com*\n")
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {
+                "url": "https://github.com/user/repo",
+                "prompt": "get readme",
+            },
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        import importlib
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_webfetch_deny_blocks_url(self, tmp_path, monkeypatch):
+        """Test that deny-web blocks WebFetch by URL pattern."""
+        import io
+        import json
+        import sys
+
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *malicious* "Blocked URL"\n')
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {
+                "url": "https://malicious-site.com/payload",
+                "prompt": "fetch",
+            },
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        import importlib
+        import dippy.dippy
+
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+        assert "Blocked URL" in output["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_webfetch_no_match_defers(self, tmp_path, monkeypatch):
+        """Test that WebFetch with no matching rules returns empty (defer)."""
+        import io
+        import json
+        import sys
+        import dippy.core.config
+
+        monkeypatch.setattr(
+            dippy.core.config, "USER_CONFIG", tmp_path / "no-such-config"
+        )
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow git *\n")  # No web rules
+        hook_input = {
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://example.com", "prompt": "fetch"},
+            "hook_event_name": "PreToolUse",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output == {}  # Empty = defer to Claude's default
+
+
+class TestGeminiWebToolsEndToEnd:
+    """End-to-end tests verifying Gemini CLI web tools use web_rules."""
+
+    def test_google_web_search_uses_web_rules(self, tmp_path, monkeypatch):
+        """Test that Gemini's google_web_search routes through web rules."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web\n")
+        hook_input = {
+            "tool_name": "google_web_search",
+            "tool_input": {"query": "python documentation"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_gemini_web_fetch_uses_web_rules(self, tmp_path, monkeypatch):
+        """Test that Gemini's web_fetch routes through web rules."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text("allow-web *github.com*\n")
+        hook_input = {
+            "tool_name": "web_fetch",
+            "tool_input": {"url": "https://github.com/user/repo"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "allow"
+
+    def test_google_web_search_deny_blocks(self, tmp_path, monkeypatch):
+        """Test that deny-web blocks Gemini's google_web_search."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *hack* "Blocked"\n')
+        hook_input = {
+            "tool_name": "google_web_search",
+            "tool_input": {"query": "hacking tutorials"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
+
+    def test_gemini_web_fetch_deny_blocks(self, tmp_path, monkeypatch):
+        """Test that deny-web blocks Gemini's web_fetch by URL."""
+        config_file = tmp_path / ".dippy"
+        config_file.write_text('deny-web *malicious* "Blocked URL"\n')
+        hook_input = {
+            "tool_name": "web_fetch",
+            "tool_input": {"url": "https://malicious-site.com"},
+            "hook_event_name": "BeforeTool",
+        }
+        captured_output = io.StringIO()
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(hook_input)))
+        monkeypatch.setattr(sys, "stdout", captured_output)
+        monkeypatch.chdir(tmp_path)
+        importlib.reload(dippy.dippy)
+        dippy.dippy.main()
+        output = json.loads(captured_output.getvalue())
+        assert output.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
