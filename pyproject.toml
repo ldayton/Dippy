@@ -1,6 +1,6 @@
 [project]
 name = "dippy"
-version = "0.2.5"
+version = "0.2.6"
 description = "Approval autopilot for Claude Code — stay in the flow by automatically allowing safe commands"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -63,8 +63,8 @@ exclude_lines = [
 ]
 
 [tool.dippy.vendor]
-parable-commit = "668cee26a0f2dde024e2ec7f5da7733a28e0ba0d"
-parable-sha256 = "cfe56887282f36d2b9d9cd6360ec2ec369ae4020862973d95f69b0413faef7ce"
+parable-commit = "9f7e15734bd3e5bb9fe252d2491d6f61572f0e57"
+parable-sha256 = "34aef27c989befa67daf5b0036ff90432baac350c3d79f7add711d883bca05d1"
 
 [tool.ruff]
 exclude = ["src/dippy/vendor"]

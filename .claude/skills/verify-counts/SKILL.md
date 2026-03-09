@@ -11,8 +11,8 @@ Verify all count assertions in documentation against actual values.
 |----------|-------|--------------|
 | `README.md:14` | 14,000+ tests | Dippy + Parable combined |
 | `../Dippy.wiki/Reference/Security-Model.md:79` | Over 200 read-only commands | SIMPLE_SAFE count |
-| `../Dippy.wiki/Reference/Security-Model.md:94` | Over 45 tools | CLI handler count |
-| `../Dippy.wiki/Reference/Handler-Model.md:210` | 50+ handlers | CLI handler count |
+| `../Dippy.wiki/Reference/Security-Model.md:94` | Over 80 tools | CLI handler count |
+| `../Dippy.wiki/Reference/Handler-Model.md:210` | 80+ handlers | CLI handler count |
 
 ## Verification Commands
 

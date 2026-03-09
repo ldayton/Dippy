@@ -9,20 +9,23 @@ ast = parse("ps aux | grep python | awk '{print $2}'")
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Union
+
 
 class ParseError(Exception):
     """Raised when parsing fails."""
 
-    def __init__(self, message: str, pos: int = None, line: int = None):
+    def __init__(self, message: str, pos: int = 0, line: int = 0):
         self.message = message
-        self.pos = pos
-        self.line = line
+        self.pos = pos  # 0 = not specified
+        self.line = line  # 0 = not specified
         super().__init__(self._format_message())
 
     def _format_message(self) -> str:
-        if self.line is not None and self.pos is not None:
+        if self.line != 0 and self.pos != 0:
             return f"Parse error at line {self.line}, position {self.pos}: {self.message}"
-        elif self.pos is not None:
+        elif self.pos != 0:
             return f"Parse error at position {self.pos}: {self.message}"
         return f"Parse error: {self.message}"
 
@@ -71,6 +74,11 @@ def _is_whitespace(c: str) -> bool:
     return c == " " or c == "\t" or c == "\n"
 
 
+def _string_to_bytes(s: str) -> bytearray:
+    """Convert a string to a list of UTF-8 bytes."""
+    return list(s.encode("utf-8"))
+
+
 def _is_whitespace_no_newline(c: str) -> bool:
     return c == " " or c == "\t"
 
@@ -108,7 +116,20 @@ def _count_consecutive_dollars_before(s: str, pos: int) -> int:
     return count
 
 
-def _sublist(lst: list, start: int, end: int) -> list:
+def _is_expansion_start(s: str, pos: int, delimiter: str) -> bool:
+    """Check if s[pos:] starts a real expansion (not after $$).
+
+    Returns True if s starts with delimiter at pos AND the preceding
+    context indicates this is a real expansion (not $$ followed by
+    the delimiter's second character).
+    """
+    if not _starts_with_at(s, pos, delimiter):
+        return False
+    # If preceded by odd number of $, this $ pairs with previous to form $$
+    return _count_consecutive_dollars_before(s, pos) % 2 == 0
+
+
+def _sublist(lst: list[Node], start: int, end: int) -> list[Node]:
     """Extract sublist from start to end (exclusive)."""
     return lst[start:end]
 
@@ -195,20 +216,25 @@ class Token:
     """
 
     def __init__(
-        self, type_: int, value: str, pos: int, parts: list = None, word: Word | None = None
+        self,
+        type_: int,
+        value: str,
+        pos: int,
+        parts: list[Node] | None = None,
+        word: Word | None = None,
     ):
         self.type = type_
         self.value = value
         self.pos = pos
-        self.parts = parts if parts is not None else []
+        self.parts: list[Node] = parts if parts is not None else []
         self.word = word  # Parsed Word object for WORD tokens
 
     def __repr__(self) -> str:
         if self.word:
-            return f"Token({self.type}, {self.value!r}, {self.pos}, word={self.word!r})"
+            return f"Token({self.type}, {self.value}, {self.pos}, word={self.word})"
         if self.parts:
-            return f"Token({self.type}, {self.value!r}, {self.pos}, parts={len(self.parts)})"
-        return f"Token({self.type}, {self.value!r}, {self.pos})"
+            return f"Token({self.type}, {self.value}, {self.pos}, parts={len(self.parts)})"
+        return f"Token({self.type}, {self.value}, {self.pos})"
 
 
 class ParserStateFlags:
@@ -259,6 +285,9 @@ class MatchedPairFlags:
     ARITH = 0x08  # Inside arithmetic expression
     ALLOWESC = 0x10  # Allow backslash escapes (for $'...')
     EXTGLOB = 0x20  # Inside extglob pattern - don't parse ${ $( as constructs
+    FIRSTCLOSE = 0x40  # Bare open delimiter doesn't increment count (bash's P_FIRSTCLOSE)
+    ARRAYSUB = 0x80  # Inside [...] array subscript (bash's P_ARRAYSUB)
+    BACKQUOTE = 0x100  # Inside backtick substitution (bash's P_BACKQUOTE, reserved)
 
 
 class SavedParserState:
@@ -272,8 +301,8 @@ class SavedParserState:
         self,
         parser_state: int,
         dolbrace_state: int,
-        pending_heredocs: list,
-        ctx_stack: list,
+        pending_heredocs: list[Node],
+        ctx_stack: list[ParseContext],
         eof_token: str | None = None,
     ):
         self.parser_state = parser_state
@@ -348,7 +377,7 @@ class ParseContext:
         self.case_depth = 0  # Nested case statements
         self.arith_depth = 0  # Nested $((...)) expressions
         self.arith_paren_depth = 0  # Grouping parens inside arithmetic
-        self.quote = QuoteState()
+        self.quote: QuoteState = QuoteState()
 
     def copy(self) -> ParseContext:
         """Create a deep copy of this context."""
@@ -388,14 +417,14 @@ class ContextStack:
             return self._stack.pop()
         return self._stack[0]
 
-    def copy_stack(self) -> list:
+    def copy_stack(self) -> list[ParseContext]:
         """Return a deep copy of the context stack for state saving."""
         result = []
         for ctx in self._stack:
             result.append(ctx.copy())
         return result
 
-    def restore_from(self, saved_stack: list) -> None:
+    def restore_from(self, saved_stack: list[ParseContext]) -> None:
         """Restore the context stack from a saved copy."""
         result = []
         for ctx in saved_stack:
@@ -409,14 +438,14 @@ class Lexer:
     def __init__(self, source: str, extglob: bool = False):
         self.source = source
         self.pos = 0
-        self.length = len(source)
-        self.quote = QuoteState()
+        self.length: int = len(source)
+        self.quote: QuoteState = QuoteState()
         self._token_cache: Token | None = None
         # Parser state flags for context-sensitive tokenization
-        self._parser_state = ParserStateFlags.NONE
-        self._dolbrace_state = DolbraceState.NONE
+        self._parser_state: int = ParserStateFlags.NONE
+        self._dolbrace_state: int = DolbraceState.NONE
         # Pending heredocs tracked during word parsing
-        self._pending_heredocs: list = []
+        self._pending_heredocs: list[Node] = []
         # Extglob parsing enabled (bash shopt extglob)
         self._extglob = extglob
         # Reference to Parser for expansion parsing callbacks (set by Parser)
@@ -426,7 +455,7 @@ class Lexer:
         # Last token returned by next_token (for context-sensitive parsing)
         self._last_read_token: Token | None = None
         # Word parsing context (set by Parser before peeking)
-        self._word_context = WORD_CTX_NORMAL
+        self._word_context: int = WORD_CTX_NORMAL
         self._at_command_start = False
         self._in_array_literal = False
         self._in_assign_builtin = False
@@ -458,7 +487,7 @@ class Lexer:
 
     def lookahead(self, n: int) -> str:
         """Return next n characters without consuming."""
-        return self.source[self.pos : self.pos + n]
+        return _substring(self.source, self.pos, self.pos + n)
 
     def is_metachar(self, c: str) -> bool:
         """Return True if c is a shell metacharacter."""
@@ -655,7 +684,7 @@ class Lexer:
         return _is_metachar(ch) and bracket_depth == 0
 
     def _read_bracket_expression(
-        self, chars: list, parts: list, for_regex: bool = False, paren_depth: int = 0
+        self, chars: list[str], parts: list[Node], for_regex: bool = False, paren_depth: int = 0
     ) -> bool:
         """Scan [...] bracket expression. Returns True if consumed, False if [ is literal.
 
@@ -777,6 +806,7 @@ class Lexer:
         open_char: str,
         close_char: str,
         flags: int = 0,
+        initial_was_dollar: bool = False,
     ) -> str:
         """Parse a matched pair construct, handling quotes via recursion.
 
@@ -798,6 +828,8 @@ class Lexer:
         count = 1
         chars: list[str] = []
         pass_next = False
+        was_dollar = initial_was_dollar  # Track if previous char was $ (bash's LEX_WASDOL)
+        was_gtlt = False  # Track if previous char was < or > (bash's LEX_GTLT)
 
         while count > 0:
             if self.at_end():
@@ -817,6 +849,8 @@ class Lexer:
             if pass_next:
                 pass_next = False
                 chars.append(ch)
+                was_dollar = ch == "$"
+                was_gtlt = ch in "<>"
                 continue
 
             # Inside single quotes, almost everything is literal
@@ -829,6 +863,8 @@ class Lexer:
                 if ch == "\\" and (flags & MatchedPairFlags.ALLOWESC):
                     pass_next = True
                 chars.append(ch)
+                was_dollar = False
+                was_gtlt = False
                 continue
 
             # Backslash - set pass_next flag
@@ -836,9 +872,13 @@ class Lexer:
                 # Line continuation - skip \n
                 if not self.at_end() and self.peek() == "\n":
                     self.advance()
+                    was_dollar = False
+                    was_gtlt = False
                     continue
                 pass_next = True
                 chars.append(ch)
+                was_dollar = False
+                was_gtlt = False
                 continue
 
             # Closing delimiter
@@ -847,6 +887,8 @@ class Lexer:
                 if count == 0:
                     break
                 chars.append(ch)
+                was_dollar = False
+                was_gtlt = ch in "<>"
                 continue
 
             # Opening delimiter (only when open != close)
@@ -856,16 +898,22 @@ class Lexer:
                 if not (flags & MatchedPairFlags.DOLBRACE and open_char == "{"):
                     count += 1
                 chars.append(ch)
+                was_dollar = False
+                was_gtlt = ch in "<>"
                 continue
 
             # Quote characters trigger recursion (when not already in quote mode)
             if ch in "'\"`" and open_char != close_char:
                 if ch == "'":
                     # Single quote - recursively parse until matching '
+                    # If previous char was $, this is ANSI-C $'...' quoting with escapes
                     chars.append(ch)
-                    nested = self._parse_matched_pair("'", "'", flags)
+                    quote_flags = flags | MatchedPairFlags.ALLOWESC if was_dollar else flags
+                    nested = self._parse_matched_pair("'", "'", quote_flags)
                     chars.append(nested)
                     chars.append("'")
+                    was_dollar = False
+                    was_gtlt = False
                     continue
                 elif ch == '"':
                     # Double quote - recursively parse until matching "
@@ -873,6 +921,8 @@ class Lexer:
                     nested = self._parse_matched_pair('"', '"', flags | MatchedPairFlags.DQUOTE)
                     chars.append(nested)
                     chars.append('"')
+                    was_dollar = False
+                    was_gtlt = False
                     continue
                 elif ch == "`":
                     # Backtick - recursively parse until matching `
@@ -880,11 +930,20 @@ class Lexer:
                     nested = self._parse_matched_pair("`", "`", flags)
                     chars.append(nested)
                     chars.append("`")
+                    was_dollar = False
+                    was_gtlt = False
                     continue
 
             # ${ $( $[ trigger nested parsing (unless in extglob where they're just pattern chars)
             if ch == "$" and not self.at_end() and not (flags & MatchedPairFlags.EXTGLOB):
                 next_ch = self.peek()
+                # If previous char was $, this is the second $ in $$ - treat as unit
+                # Reset was_dollar so next char doesn't think it follows single $
+                if was_dollar:
+                    chars.append(ch)
+                    was_dollar = False  # $$ is a unit, next char is NOT preceded by single $
+                    was_gtlt = False
+                    continue
                 if next_ch == "{":
                     # In ARITH mode, only parse ${ if followed by funsub char (bash parse.y:4137-4145)
                     # Otherwise treat $ as literal
@@ -895,6 +954,8 @@ class Lexer:
                         ):
                             # Not funsub - treat $ as literal
                             chars.append(ch)
+                            was_dollar = True
+                            was_gtlt = False
                             continue
                     # ${ ... } parameter expansion - use full parsing
                     self.pos -= 1  # back up to before $
@@ -904,9 +965,13 @@ class Lexer:
                     self._sync_from_parser()
                     if param_node:
                         chars.append(param_text)
+                        was_dollar = False  # Ended with }
+                        was_gtlt = False
                     else:
                         # Parser failed - add $ as literal
                         chars.append(self.advance())  # $
+                        was_dollar = True
+                        was_gtlt = False
                     continue
                 elif next_ch == "(":
                     # Back up to before $ for Parser callback
@@ -919,6 +984,8 @@ class Lexer:
                         self._sync_from_parser()
                         if arith_node:
                             chars.append(arith_text)
+                            was_dollar = False  # Ended with ))
+                            was_gtlt = False
                         else:
                             # Arithmetic failed - try as command substitution fallback
                             self._sync_to_parser()
@@ -926,20 +993,28 @@ class Lexer:
                             self._sync_from_parser()
                             if cmd_node:
                                 chars.append(cmd_text)
+                                was_dollar = False  # Ended with )
+                                was_gtlt = False
                             else:
                                 # Both failed - add $( as literal
                                 chars.append(self.advance())  # $
                                 chars.append(self.advance())  # (
+                                was_dollar = False  # Ended with (
+                                was_gtlt = False
                     else:
                         # $( ... ) command substitution - use full parsing
                         cmd_node, cmd_text = self._parser._parse_command_substitution()
                         self._sync_from_parser()
                         if cmd_node:
                             chars.append(cmd_text)
+                            was_dollar = False  # Ended with )
+                            was_gtlt = False
                         else:
                             # Parser failed - add $( as literal
                             chars.append(self.advance())  # $
                             chars.append(self.advance())  # (
+                            was_dollar = False  # Ended with (
+                            was_gtlt = False
                     continue
                 elif next_ch == "[":
                     # Deprecated $[ ... ] arithmetic - use full parsing
@@ -949,21 +1024,55 @@ class Lexer:
                     self._sync_from_parser()
                     if arith_node:
                         chars.append(arith_text)
+                        was_dollar = False  # Ended with ]
+                        was_gtlt = False
                     else:
                         # Parser failed - add $ as literal
                         chars.append(self.advance())  # $
+                        was_dollar = True
+                        was_gtlt = False
                     continue
 
+            # Process substitution <(...) or >(...) inside ${...} or array subscripts
+            # (bash's LEX_GTLT check at parse.y:4151-4160)
+            if (
+                ch == "("
+                and was_gtlt
+                and (flags & (MatchedPairFlags.DOLBRACE | MatchedPairFlags.ARRAYSUB))
+            ):
+                # Back up: remove the < or > we already added to chars
+                direction = chars.pop()
+                self.pos -= 1  # Back up before (
+                self._sync_to_parser()
+                procsub_node, procsub_text = self._parser._parse_process_substitution()
+                self._sync_from_parser()
+                if procsub_node:
+                    chars.append(procsub_text)
+                    was_dollar = False
+                    was_gtlt = False
+                else:
+                    # Failed - restore the < or > and (
+                    chars.append(direction)
+                    chars.append(self.advance())  # (
+                    was_dollar = False
+                    was_gtlt = False
+                continue
+
             chars.append(ch)
+            was_dollar = ch == "$"
+            was_gtlt = ch in "<>"
 
         return "".join(chars)
 
-    def _collect_param_argument(self, flags: int = MatchedPairFlags.NONE) -> str:
+    def _collect_param_argument(
+        self, flags: int = MatchedPairFlags.NONE, was_dollar: bool = False
+    ) -> str:
         """Collect argument portion of ${...} until closing brace.
 
         Wraps _parse_matched_pair() with DOLBRACE flag for parameter expansion arguments.
+        was_dollar should be True if the param name ended with $ (for $$ handling).
         """
-        return self._parse_matched_pair("{", "}", flags | MatchedPairFlags.DOLBRACE)
+        return self._parse_matched_pair("{", "}", flags | MatchedPairFlags.DOLBRACE, was_dollar)
 
     def _read_word_internal(
         self,
@@ -980,7 +1089,7 @@ class Lexer:
         chars: list[str] = []
         parts: list[Node] = []
         bracket_depth = 0  # Track [...] for array subscripts (NORMAL only)
-        bracket_start_pos: int | None = None  # Position where bracket tracking started
+        bracket_start_pos: int = -1  # Position where bracket tracking started (-1 = not set)
         seen_equals = False  # Track if we've seen = (NORMAL only)
         paren_depth = 0  # Track regex grouping parens (REGEX only)
         while not self.at_end():
@@ -1274,7 +1383,7 @@ class Lexer:
             # Regular character
             chars.append(self.advance())
         # Check for unclosed bracket at EOF
-        if bracket_depth > 0 and bracket_start_pos is not None and self.at_end():
+        if bracket_depth > 0 and bracket_start_pos != -1 and self.at_end():
             raise MatchedPairError("unexpected EOF looking for `]'", pos=bracket_start_pos)
         if not chars:
             return None
@@ -1475,7 +1584,7 @@ class Lexer:
                     else:
                         content_chars.append(self.advance())
             # Handle command substitution $(...)
-            elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+            elif _is_expansion_start(self.source, self.pos, "$("):
                 self._sync_to_parser()
                 cmdsub_node, cmdsub_text = self._parser._parse_command_substitution()
                 self._sync_from_parser()
@@ -1669,8 +1778,9 @@ class Lexer:
                     if not self._param_subscript_has_close(self.pos):
                         break
                     # Array subscript - use _parse_matched_pair for bracket/quote handling
+                    # ARRAYSUB enables ${} and <() detection inside subscripts
                     name_chars.append(self.advance())  # [
-                    content = self._parse_matched_pair("[", "]")
+                    content = self._parse_matched_pair("[", "]", MatchedPairFlags.ARRAYSUB)
                     name_chars.append(content)
                     name_chars.append("]")
                     break
@@ -1867,9 +1977,11 @@ class Lexer:
         # Update dolbrace state based on operator
         self._update_dolbrace_for_op(op, len(param) > 0)
         # Parse argument (everything until closing brace)
+        # Pass was_dollar=True if param ends with $ (for $$ handling in nested expansions)
         try:
             flags = MatchedPairFlags.DQUOTE if in_dquote else MatchedPairFlags.NONE
-            arg = self._collect_param_argument(flags)
+            param_ends_with_dollar = param is not None and param.endswith("$")
+            arg = self._collect_param_argument(flags, param_ends_with_dollar)
         except MatchedPairError as e:
             self._dolbrace_state = saved_dolbrace
             raise e
@@ -1966,7 +2078,7 @@ def _strip_line_continuations_comment_aware(text: str) -> str:
     return "".join(result)
 
 
-def _append_redirects(base: str, redirects: list | None) -> str:
+def _append_redirects(base: str, redirects: list[Node] | None) -> str:
     """Append redirect sexp strings to a base sexp string."""
     if redirects:
         parts = []
@@ -1992,7 +2104,7 @@ class Word(Node):
     value: str
     parts: list[Node]
 
-    def __init__(self, value: str, parts: list[Node] = None):
+    def __init__(self, value: str, parts: list[Node] | None = None):
         self.kind = "word"
         self.value = value
         if parts is None:
@@ -2027,7 +2139,7 @@ class Word(Node):
         escaped = value.replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
         return '(word "' + escaped + '")'
 
-    def _append_with_ctlesc(self, result: bytearray, byte_val: int):
+    def _append_with_ctlesc(self, result: bytearray, byte_val: int) -> None:
         """Append byte to result (CTLESC doubling happens later in to_sexp)."""
         result.append(byte_val)
 
@@ -2080,7 +2192,7 @@ class Word(Node):
                 result.append(c)
                 i += 1
             # Check for ${ param expansion
-            elif c == "$" and i + 1 < len(value) and value[i + 1] == "{" and not quote.single:
+            elif _is_expansion_start(value, i, "${") and not quote.single:
                 result.append("$")
                 result.append("{")
                 i += 2
@@ -2124,145 +2236,146 @@ class Word(Node):
                 i += 1
         return "".join(result)
 
-    def _expand_ansi_c_escapes(self, value: str) -> str:
-        """Expand ANSI-C escape sequences in $'...' strings.
+    def _sh_single_quote(self, s: str) -> str:
+        """Shell-quote a string using single quotes (matches bash's sh_single_quote)."""
+        if not s:
+            return "''"
+        if s == "'":
+            return "\\'"
+        result = ["'"]
+        for c in s:
+            if c == "'":
+                result.append("'\\''")
+            else:
+                result.append(c)
+        result.append("'")
+        return "".join(result)
 
-        Uses bytes internally so \\x escapes can form valid UTF-8 sequences.
-        Invalid UTF-8 is replaced with U+FFFD.
-        """
-        if not (value.startswith("'") and value.endswith("'")):
-            return value
-        inner = _substring(value, 1, len(value) - 1)
+    def _ansi_c_to_bytes(self, inner: str) -> bytearray:
+        """Expand ANSI-C escapes to literal bytes (matches bash's ansicstr)."""
         result = bytearray()
         i = 0
         while i < len(inner):
             if inner[i] == "\\" and i + 1 < len(inner):
                 c = inner[i + 1]
-                # Check simple escapes first
                 simple = _get_ansi_escape(c)
                 if simple >= 0:
                     result.append(simple)
                     i += 2
                 elif c == "'":
-                    # bash-oracle outputs \' as '\'' (shell quoting trick)
-                    result.extend(b"'\\''")
+                    result.append(0x27)  # literal single quote
                     i += 2
                 elif c == "x":
-                    # Check for \x{...} brace syntax (bash 5.3+)
                     if i + 2 < len(inner) and inner[i + 2] == "{":
-                        # Find closing brace or end of hex digits
                         j = i + 3
                         while j < len(inner) and _is_hex_digit(inner[j]):
                             j += 1
                         hex_str = _substring(inner, i + 3, j)
                         if j < len(inner) and inner[j] == "}":
-                            j += 1  # consume }
-                        # If no hex digits, treat as NUL (truncates)
+                            j += 1
                         if not hex_str:
-                            return "'" + result.decode("utf-8", errors="replace") + "'"
-                        byte_val = int(hex_str, 16) & 0xFF  # Take low byte
+                            return result  # NUL truncates
+                        byte_val = int(hex_str, 16) & 0xFF
                         if byte_val == 0:
-                            return "'" + result.decode("utf-8", errors="replace") + "'"
+                            return result
                         self._append_with_ctlesc(result, byte_val)
                         i = j
                     else:
-                        # Hex escape \xHH (1-2 hex digits) - raw byte
                         j = i + 2
                         while j < len(inner) and j < i + 4 and _is_hex_digit(inner[j]):
                             j += 1
                         if j > i + 2:
                             byte_val = int(_substring(inner, i + 2, j), 16)
                             if byte_val == 0:
-                                # NUL truncates string
-                                return "'" + result.decode("utf-8", errors="replace") + "'"
+                                return result
                             self._append_with_ctlesc(result, byte_val)
                             i = j
                         else:
                             result.append(ord(inner[i]))
                             i += 1
                 elif c == "u":
-                    # Unicode escape \uHHHH (1-4 hex digits) - encode as UTF-8
                     j = i + 2
                     while j < len(inner) and j < i + 6 and _is_hex_digit(inner[j]):
                         j += 1
                     if j > i + 2:
                         codepoint = int(_substring(inner, i + 2, j), 16)
                         if codepoint == 0:
-                            # NUL truncates string
-                            return "'" + result.decode("utf-8", errors="replace") + "'"
+                            return result
                         result.extend(chr(codepoint).encode("utf-8"))
                         i = j
                     else:
                         result.append(ord(inner[i]))
                         i += 1
                 elif c == "U":
-                    # Unicode escape \UHHHHHHHH (1-8 hex digits) - encode as UTF-8
                     j = i + 2
                     while j < len(inner) and j < i + 10 and _is_hex_digit(inner[j]):
                         j += 1
                     if j > i + 2:
                         codepoint = int(_substring(inner, i + 2, j), 16)
                         if codepoint == 0:
-                            # NUL truncates string
-                            return "'" + result.decode("utf-8", errors="replace") + "'"
+                            return result
                         result.extend(chr(codepoint).encode("utf-8"))
                         i = j
                     else:
                         result.append(ord(inner[i]))
                         i += 1
                 elif c == "c":
-                    # Control character \cX - mask with 0x1f
                     if i + 3 <= len(inner):
                         ctrl_char = inner[i + 2]
-                        # POSIX: $'\c\\' consumes both backslashes
                         skip_extra = 0
                         if ctrl_char == "\\" and i + 4 <= len(inner) and inner[i + 3] == "\\":
                             skip_extra = 1
                         ctrl_val = ord(ctrl_char) & 0x1F
                         if ctrl_val == 0:
-                            # NUL truncates string
-                            return "'" + result.decode("utf-8", errors="replace") + "'"
+                            return result
                         self._append_with_ctlesc(result, ctrl_val)
                         i += 3 + skip_extra
                     else:
                         result.append(ord(inner[i]))
                         i += 1
                 elif c == "0":
-                    # Nul or octal \0 or \0NN (up to 3 digits total)
                     j = i + 2
                     while j < len(inner) and j < i + 4 and _is_octal_digit(inner[j]):
                         j += 1
                     if j > i + 2:
                         byte_val = int(_substring(inner, i + 1, j), 8) & 0xFF
                         if byte_val == 0:
-                            # NUL truncates string
-                            return "'" + result.decode("utf-8", errors="replace") + "'"
+                            return result
                         self._append_with_ctlesc(result, byte_val)
                         i = j
                     else:
-                        # Just \0 - NUL truncates string
-                        return "'" + result.decode("utf-8", errors="replace") + "'"
+                        return result  # Just \0 - NUL truncates
                 elif c >= "1" and c <= "7":
-                    # Octal escape \NNN (1-3 digits) - raw byte, wraps at 256
                     j = i + 1
                     while j < len(inner) and j < i + 4 and _is_octal_digit(inner[j]):
                         j += 1
                     byte_val = int(_substring(inner, i + 1, j), 8) & 0xFF
                     if byte_val == 0:
-                        # NUL truncates string
-                        return "'" + result.decode("utf-8", errors="replace") + "'"
+                        return result
                     self._append_with_ctlesc(result, byte_val)
                     i = j
                 else:
-                    # Unknown escape - preserve as-is
                     result.append(0x5C)
                     result.append(ord(c))
                     i += 2
             else:
                 result.extend(inner[i].encode("utf-8"))
                 i += 1
-        # Decode as UTF-8, replacing invalid sequences with U+FFFD
-        return "'" + result.decode("utf-8", errors="replace") + "'"
+        return result
+
+    def _expand_ansi_c_escapes(self, value: str) -> str:
+        """Expand ANSI-C escape sequences in $'...' strings.
+
+        Two-phase approach matching bash's architecture:
+        1. Expand escapes to literal bytes (ansicstr)
+        2. Apply shell quoting to result (sh_single_quote)
+        """
+        if not (value.startswith("'") and value.endswith("'")):
+            return value
+        inner = _substring(value, 1, len(value) - 1)
+        literal_bytes = self._ansi_c_to_bytes(inner)
+        literal_str = literal_bytes.decode("utf-8", errors="replace")
+        return self._sh_single_quote(literal_str)
 
     def _expand_all_ansi_c_quotes(self, value: str) -> str:
         """Find and expand ALL $'...' ANSI-C quoted strings in value."""
@@ -2291,7 +2404,7 @@ class Word(Node):
                 continue
             # Track brace depth for parameter expansions
             if not quote.single:
-                if _starts_with_at(value, i, "${"):
+                if _is_expansion_start(value, i, "${"):
                     brace_depth += 1
                     quote.push()
                     result.append("${")
@@ -2676,7 +2789,7 @@ class Word(Node):
                             dq_content.append(inner[j])
                             dq_content.append(inner[j + 1])
                             j += 2
-                    elif inner[j] == "$" and j + 1 < len(inner) and inner[j + 1] == "{":
+                    elif _is_expansion_start(inner, j, "${"):
                         # Start of ${...} expansion
                         dq_content.append("${")
                         dq_brace_depth += 1
@@ -2704,7 +2817,7 @@ class Word(Node):
                     in_whitespace = False
                     normalized.append(_substring(inner, i, i + 2))
                     i += 2
-            elif ch == "$" and i + 2 < len(inner) and inner[i + 1] == "(" and inner[i + 2] == "(":
+            elif _is_expansion_start(inner, i, "$(("):
                 # Arithmetic expansion $(( - find matching )) and preserve as-is
                 in_whitespace = False
                 j = i + 3
@@ -2720,7 +2833,7 @@ class Word(Node):
                         j += 1
                 normalized.append(_substring(inner, i, j))
                 i = j
-            elif ch == "$" and i + 1 < len(inner) and inner[i + 1] == "(":
+            elif _is_expansion_start(inner, i, "$("):
                 # Command substitution - find matching ) and preserve as-is
                 # (formatting is handled later by _format_command_substitutions)
                 in_whitespace = False
@@ -2776,7 +2889,7 @@ class Word(Node):
                 # Preserve process substitution as-is
                 normalized.append(_substring(inner, i, j))
                 i = j
-            elif ch == "$" and i + 1 < len(inner) and inner[i + 1] == "{":
+            elif _is_expansion_start(inner, i, "${"):
                 # Start of ${...} expansion
                 in_whitespace = False
                 normalized.append("${")
@@ -2823,20 +2936,20 @@ class Word(Node):
         i = 0
         while i < len(value):
             # Check for $(( arithmetic expression
-            if _starts_with_at(value, i, "$(("):
+            if _is_expansion_start(value, i, "$(("):
                 start = i
                 i += 3
                 depth = 2  # Track single parens: $(( starts at depth 2
                 arith_content = []
-                # Track position of first ) that brings depth 2→1
-                first_close_idx: int | None = None
+                # Track position of first ) that brings depth 2→1 (-1 = not set)
+                first_close_idx: int = -1
                 while i < len(value) and depth > 0:
                     if value[i] == "(":
                         arith_content.append("(")
                         depth += 1
                         i += 1
                         if depth > 1:
-                            first_close_idx = None  # Content after first close
+                            first_close_idx = -1  # Content after first close
                     elif value[i] == ")":
                         if depth == 2:
                             first_close_idx = len(arith_content)
@@ -2863,15 +2976,15 @@ class Word(Node):
                             # Skip backslash-newline (line continuation)
                             i += 2
                         if depth == 1:
-                            first_close_idx = None  # Content after first close
+                            first_close_idx = -1  # Content after first close
                     else:
                         arith_content.append(value[i])
                         i += 1
                         if depth == 1:
-                            first_close_idx = None  # Content after first close
-                if depth == 0 or (depth == 1 and first_close_idx is not None):
+                            first_close_idx = -1  # Content after first close
+                if depth == 0 or (depth == 1 and first_close_idx != -1):
                     content = "".join(arith_content)
-                    if first_close_idx is not None:
+                    if first_close_idx != -1:
                         # Standard close: trim content, add ))
                         content = content[:first_close_idx]
                         # If depth==1, we only found one closing paren, add )
@@ -2889,59 +3002,50 @@ class Word(Node):
                 i += 1
         return "".join(result)
 
-    def _collect_cmdsubs(self, node) -> list:
+    def _collect_cmdsubs(self, node: Node) -> list[Node]:
         """Recursively collect CommandSubstitution nodes from an AST node."""
-        result = []
-        node_kind = getattr(node, "kind", None)
-        if node_kind == "cmdsub":
+        result: list[Node] = []
+        if isinstance(node, CommandSubstitution):
             result.append(node)
-        elif node_kind == "array":
-            # Array node - collect from each element's parts
-            elements = getattr(node, "elements", [])
-            for elem in elements:
-                parts = getattr(elem, "parts", [])
-                for p in parts:
-                    if getattr(p, "kind", None) == "cmdsub":
+        elif isinstance(node, Array):
+            for elem in node.elements:
+                for p in elem.parts:
+                    if isinstance(p, CommandSubstitution):
                         result.append(p)
                     else:
                         result.extend(self._collect_cmdsubs(p))
-        else:
-            expr = getattr(node, "expression", None)
-            if expr is not None:
-                # ArithmeticExpansion, ArithBinaryOp, etc.
-                result.extend(self._collect_cmdsubs(expr))
-        left = getattr(node, "left", None)
-        if left is not None:
-            result.extend(self._collect_cmdsubs(left))
-        right = getattr(node, "right", None)
-        if right is not None:
-            result.extend(self._collect_cmdsubs(right))
-        operand = getattr(node, "operand", None)
-        if operand is not None:
-            result.extend(self._collect_cmdsubs(operand))
-        condition = getattr(node, "condition", None)
-        if condition is not None:
-            result.extend(self._collect_cmdsubs(condition))
-        true_value = getattr(node, "true_value", None)
-        if true_value is not None:
-            result.extend(self._collect_cmdsubs(true_value))
-        false_value = getattr(node, "false_value", None)
-        if false_value is not None:
-            result.extend(self._collect_cmdsubs(false_value))
+        elif isinstance(node, ArithmeticExpansion):
+            if node.expression is not None:
+                result.extend(self._collect_cmdsubs(node.expression))
+        elif isinstance(node, ArithBinaryOp) or isinstance(node, ArithComma):
+            result.extend(self._collect_cmdsubs(node.left))
+            result.extend(self._collect_cmdsubs(node.right))
+        elif (
+            isinstance(node, ArithUnaryOp)
+            or isinstance(node, ArithPreIncr)
+            or isinstance(node, ArithPostIncr)
+            or isinstance(node, ArithPreDecr)
+            or isinstance(node, ArithPostDecr)
+        ):
+            result.extend(self._collect_cmdsubs(node.operand))
+        elif isinstance(node, ArithTernary):
+            result.extend(self._collect_cmdsubs(node.condition))
+            result.extend(self._collect_cmdsubs(node.if_true))
+            result.extend(self._collect_cmdsubs(node.if_false))
+        elif isinstance(node, ArithAssign):
+            result.extend(self._collect_cmdsubs(node.target))
+            result.extend(self._collect_cmdsubs(node.value))
         return result
 
-    def _collect_procsubs(self, node) -> list:
+    def _collect_procsubs(self, node: Node) -> list[Node]:
         """Recursively collect ProcessSubstitution nodes from an AST node."""
-        result = []
-        node_kind = getattr(node, "kind", None)
-        if node_kind == "procsub":
+        result: list[Node] = []
+        if isinstance(node, ProcessSubstitution):
             result.append(node)
-        elif node_kind == "array":
-            elements = getattr(node, "elements", [])
-            for elem in elements:
-                parts = getattr(elem, "parts", [])
-                for p in parts:
-                    if getattr(p, "kind", None) == "procsub":
+        elif isinstance(node, Array):
+            for elem in node.elements:
+                for p in elem.parts:
+                    if isinstance(p, ProcessSubstitution):
                         result.append(p)
                     else:
                         result.extend(self._collect_procsubs(p))
@@ -3059,7 +3163,7 @@ class Word(Node):
             # Track $((...)) arithmetic - inside it, >( and <( are not process subs
             # But skip if this is actually $( ( (command substitution with subshell)
             if (
-                _starts_with_at(value, i, "$((")
+                _is_expansion_start(value, i, "$((")
                 and not _is_backslash_escaped(value, i)
                 and has_arith
             ):
@@ -3089,7 +3193,7 @@ class Word(Node):
                     continue
             # Check for $( command substitution (but not $(( arithmetic or escaped \$()
             # Special case: $(( without arithmetic nodes - preserve as-is
-            if _starts_with_at(value, i, "$((") and not has_arith:
+            if _is_expansion_start(value, i, "$((") and not has_arith:
                 # This looks like $(( but wasn't parsed as arithmetic
                 # It's actually $( ( ... ) ) - preserve original text
                 j = _find_cmdsub_end(value, i + 2)
@@ -3153,7 +3257,7 @@ class Word(Node):
                 i = j
             # Check for ${ brace command substitution (funsub)
             elif (
-                _starts_with_at(value, i, "${")
+                _is_expansion_start(value, i, "${")
                 and i + 2 < len(value)
                 and _is_funsub_char(value[i + 2])
                 and not _is_backslash_escaped(value, i)
@@ -3161,10 +3265,9 @@ class Word(Node):
                 # Find matching close brace
                 j = _find_funsub_end(value, i + 2)
                 # Check if we have a parsed node with brace=True
-                if cmdsub_idx < len(cmdsub_parts) and getattr(
-                    cmdsub_parts[cmdsub_idx], "brace", False
-                ):
-                    node = cmdsub_parts[cmdsub_idx]
+                cmdsub_node = cmdsub_parts[cmdsub_idx] if cmdsub_idx < len(cmdsub_parts) else None
+                if isinstance(cmdsub_node, CommandSubstitution) and cmdsub_node.brace:
+                    node = cmdsub_node
                     formatted = _format_cmdsub_node(node.command)
                     # Determine prefix: ${ or ${|
                     has_pipe = value[i + 2] == "|"
@@ -3303,10 +3406,10 @@ class Word(Node):
             # Check for ${ (space/tab/newline) or ${| brace command substitution
             # But not if the $ is escaped by a backslash
             elif (
-                _starts_with_at(value, i, "${ ")
-                or _starts_with_at(value, i, "${\t")
-                or _starts_with_at(value, i, "${\n")
-                or _starts_with_at(value, i, "${|")
+                _is_expansion_start(value, i, "${ ")
+                or _is_expansion_start(value, i, "${\t")
+                or _is_expansion_start(value, i, "${\n")
+                or _is_expansion_start(value, i, "${|")
             ) and not _is_backslash_escaped(value, i):
                 prefix = _substring(value, i, i + 3).replace("\t", " ").replace("\n", " ")
                 # Find matching close brace
@@ -3345,7 +3448,7 @@ class Word(Node):
                 i = j
             # Process regular ${...} parameter expansions (recursively format cmdsubs inside)
             # But not if the $ is escaped by a backslash
-            elif _starts_with_at(value, i, "${") and not _is_backslash_escaped(value, i):
+            elif _is_expansion_start(value, i, "${") and not _is_backslash_escaped(value, i):
                 # Find matching close brace, respecting nesting, quotes, and cmdsubs
                 j = i + 2
                 depth = 1
@@ -3361,7 +3464,9 @@ class Word(Node):
                         brace_quote.double = not brace_quote.double
                     elif not brace_quote.in_quotes():
                         # Skip over $(...) command substitutions
-                        if _starts_with_at(value, j, "$(") and not _starts_with_at(value, j, "$(("):
+                        if _is_expansion_start(value, j, "$(") and not _starts_with_at(
+                            value, j, "$(("
+                        ):
                             j = _find_cmdsub_end(value, j + 2)
                             continue
                         if c == "{":
@@ -3519,7 +3624,7 @@ class Command(Node):
     words: list[Word]
     redirects: list[Node]
 
-    def __init__(self, words: list[Word], redirects: list[Node] = None):
+    def __init__(self, words: list[Word], redirects: list[Node] | None = None):
         self.kind = "command"
         self.words = words
         if redirects is None:
@@ -3651,7 +3756,7 @@ class List(Node):
         # Process by precedence: first split on ; and &, then on && and ||
         return self._to_sexp_with_precedence(parts, op_names)
 
-    def _to_sexp_with_precedence(self, parts: list, op_names: dict) -> str:
+    def _to_sexp_with_precedence(self, parts: list[Node], op_names: dict[str, str]) -> str:
         # Process operators by precedence: ; (lowest), then &, then && and ||
         # Use iterative approach to avoid stack overflow on large lists
         # Find all ; or \n positions (may not be at regular intervals due to consecutive ops)
@@ -3688,7 +3793,7 @@ class List(Node):
         # No ; or \n, handle & and higher
         return self._to_sexp_amp_and_higher(parts, op_names)
 
-    def _to_sexp_amp_and_higher(self, parts: list, op_names: dict) -> str:
+    def _to_sexp_amp_and_higher(self, parts: list[Node], op_names: dict[str, str]) -> str:
         # Handle & operator iteratively
         if len(parts) == 1:
             return parts[0].to_sexp()
@@ -3718,7 +3823,7 @@ class List(Node):
         # No &, handle && and ||
         return self._to_sexp_and_or(parts, op_names)
 
-    def _to_sexp_and_or(self, parts: list, op_names: dict) -> str:
+    def _to_sexp_and_or(self, parts: list[Node], op_names: dict[str, str]) -> str:
         # Process && and || left-associatively (already iterative)
         if len(parts) == 1:
             return parts[0].to_sexp()
@@ -3790,13 +3895,13 @@ class Redirect(Node):
 
     op: str
     target: Word
-    fd: int | None = None
+    fd: int = -1  # -1 = no fd specified
 
-    def __init__(self, op: str, target: Word, fd: int = None):
+    def __init__(self, op: str, target: Word, fd: int = -1):
         self.kind = "redirect"
         self.op = op
         self.target = target
-        self.fd = fd
+        self.fd = fd  # -1 = no fd specified
 
     def to_sexp(self) -> str:
         # Strip fd prefix from operator (e.g., "2>" -> ">", "{fd}>" -> ">")
@@ -3876,7 +3981,7 @@ class HereDoc(Node):
     content: str
     strip_tabs: bool = False
     quoted: bool = False
-    fd: int | None = None
+    fd: int = -1  # -1 = no fd specified
     complete: bool = True
     _start_pos: int = -1  # Parser position where heredoc redirect started (for dedup)
 
@@ -3886,7 +3991,7 @@ class HereDoc(Node):
         content: str,
         strip_tabs: bool = False,
         quoted: bool = False,
-        fd: int = None,
+        fd: int = -1,
         complete: bool = True,
     ):
         self.kind = "heredoc"
@@ -3894,7 +3999,7 @@ class HereDoc(Node):
         self.content = content
         self.strip_tabs = strip_tabs
         self.quoted = quoted
-        self.fd = fd
+        self.fd = fd  # -1 = no fd specified
         self.complete = complete
         self._start_pos = -1
 
@@ -3948,7 +4053,11 @@ class If(Node):
     redirects: list[Node]
 
     def __init__(
-        self, condition: Node, then_body: Node, else_body: Node = None, redirects: list[Node] = None
+        self,
+        condition: Node,
+        then_body: Node,
+        else_body: Node | None = None,
+        redirects: list[Node] | None = None,
     ):
         self.kind = "if"
         self.condition = condition
@@ -3975,7 +4084,7 @@ class While(Node):
     body: Node
     redirects: list[Node]
 
-    def __init__(self, condition: Node, body: Node, redirects: list[Node] = None):
+    def __init__(self, condition: Node, body: Node, redirects: list[Node] | None = None):
         self.kind = "while"
         self.condition = condition
         self.body = body
@@ -3995,7 +4104,7 @@ class Until(Node):
     body: Node
     redirects: list[Node]
 
-    def __init__(self, condition: Node, body: Node, redirects: list[Node] = None):
+    def __init__(self, condition: Node, body: Node, redirects: list[Node] | None = None):
         self.kind = "until"
         self.condition = condition
         self.body = body
@@ -4017,7 +4126,7 @@ class For(Node):
     redirects: list[Node]
 
     def __init__(
-        self, var: str, words: list[Word] | None, body: Node, redirects: list[Node] = None
+        self, var: str, words: list[Word] | None, body: Node, redirects: list[Node] | None = None
     ):
         self.kind = "for"
         self.var = var
@@ -4069,6 +4178,17 @@ class For(Node):
             )
 
 
+def _format_arith_val(s: str) -> str:
+    """Format arithmetic value for sexp output."""
+    w = Word(s, [])
+    val = w._expand_all_ansi_c_quotes(s)
+    val = w._strip_locale_string_dollars(val)
+    val = w._format_command_substitutions(val)
+    val = val.replace("\\", "\\\\").replace('"', '\\"')
+    val = val.replace("\n", "\\n").replace("\t", "\\t")
+    return val
+
+
 class ForArith(Node):
     """A C-style for loop: for ((init; cond; incr)); do ... done."""
 
@@ -4078,7 +4198,9 @@ class ForArith(Node):
     body: Node
     redirects: list[Node]
 
-    def __init__(self, init: str, cond: str, incr: str, body: Node, redirects: list[Node] = None):
+    def __init__(
+        self, init: str, cond: str, incr: str, body: Node, redirects: list[Node] | None = None
+    ):
         self.kind = "for-arith"
         self.init = init
         self.cond = cond
@@ -4090,16 +4212,6 @@ class ForArith(Node):
 
     def to_sexp(self) -> str:
         # bash-oracle format: (arith-for (init (word "x")) (test (word "y")) (step (word "z")) body)
-        def format_arith_val(s: str) -> str:
-            # Use Word's methods to expand ANSI-C quotes and strip locale $
-            w = Word(s, [])
-            val = w._expand_all_ansi_c_quotes(s)
-            val = w._strip_locale_string_dollars(val)
-            val = w._format_command_substitutions(val)
-            val = val.replace("\\", "\\\\").replace('"', '\\"')
-            val = val.replace("\n", "\\n").replace("\t", "\\t")
-            return val
-
         suffix = ""
         if self.redirects:
             redirect_parts = []
@@ -4109,9 +4221,9 @@ class ForArith(Node):
         init_val = self.init if self.init else "1"
         cond_val = self.cond if self.cond else "1"
         incr_val = self.incr if self.incr else "1"
-        init_str = format_arith_val(init_val)
-        cond_str = format_arith_val(cond_val)
-        incr_str = format_arith_val(incr_val)
+        init_str = _format_arith_val(init_val)
+        cond_str = _format_arith_val(cond_val)
+        incr_str = _format_arith_val(incr_val)
         body_str = self.body.to_sexp()
         return f'(arith-for (init (word "{init_str}")) (test (word "{cond_str}")) (step (word "{incr_str}")) {body_str}){suffix}'
 
@@ -4125,7 +4237,7 @@ class Select(Node):
     redirects: list[Node]
 
     def __init__(
-        self, var: str, words: list[Word] | None, body: Node, redirects: list[Node] = None
+        self, var: str, words: list[Word] | None, body: Node, redirects: list[Node] | None = None
     ):
         self.kind = "select"
         self.var = var
@@ -4175,7 +4287,9 @@ class Case(Node):
     patterns: list[CasePattern]
     redirects: list[Node]
 
-    def __init__(self, word: Word, patterns: list[CasePattern], redirects: list[Node] = None):
+    def __init__(
+        self, word: Word, patterns: list[CasePattern], redirects: list[Node] | None = None
+    ):
         self.kind = "case"
         self.word = word
         self.patterns = patterns
@@ -4192,7 +4306,7 @@ class Case(Node):
         return _append_redirects(base, self.redirects)
 
 
-def _consume_single_quote(s: str, start: int) -> tuple:
+def _consume_single_quote(s: str, start: int) -> tuple[int, list[str]]:
     """Consume '...' from start. Returns (end_index, chars_list)."""
     chars = ["'"]
     i = start + 1
@@ -4205,7 +4319,7 @@ def _consume_single_quote(s: str, start: int) -> tuple:
     return (i, chars)
 
 
-def _consume_double_quote(s: str, start: int) -> tuple:
+def _consume_double_quote(s: str, start: int) -> tuple[int, list[str]]:
     """Consume "..." from start, handling escapes. Returns (end_index, chars_list)."""
     chars = ['"']
     i = start + 1
@@ -4233,7 +4347,7 @@ def _has_bracket_close(s: str, start: int, depth: int) -> bool:
     return False
 
 
-def _consume_bracket_class(s: str, start: int, depth: int) -> tuple:
+def _consume_bracket_class(s: str, start: int, depth: int) -> tuple[int, list[str], bool]:
     """Consume [...] bracket expression. Returns (end_index, chars_list, was_bracket)."""
     # First scan to see if this is a valid bracket expression
     scan_pos = start + 1
@@ -4314,7 +4428,7 @@ class CasePattern(Node):
                 current.append("(")
                 depth += 1
                 i += 2
-            elif ch == "$" and i + 1 < len(self.pattern) and self.pattern[i + 1] == "(":
+            elif _is_expansion_start(self.pattern, i, "$("):
                 # $( command sub or $(( arithmetic - track depth
                 current.append(ch)
                 current.append("(")
@@ -4385,7 +4499,7 @@ class ParamExpansion(Node):
     op: str | None = None
     arg: str | None = None
 
-    def __init__(self, param: str, op: str = None, arg: str = None):
+    def __init__(self, param: str, op: str | None = None, arg: str | None = None):
         self.kind = "param"
         self.param = param
         self.op = op
@@ -4464,9 +4578,9 @@ class CommandSubstitution(Node):
 class ArithmeticExpansion(Node):
     """An arithmetic expansion $((...)) with parsed internals."""
 
-    expression: Node | None  # Parsed arithmetic expression, or None for empty
+    expression: ArithNode | None  # Parsed arithmetic expression, or None for empty
 
-    def __init__(self, expression: Node | None):
+    def __init__(self, expression: ArithNode | None):
         self.kind = "arith"
         self.expression = expression
 
@@ -4479,12 +4593,15 @@ class ArithmeticExpansion(Node):
 class ArithmeticCommand(Node):
     """An arithmetic command ((...)) with parsed internals."""
 
-    expression: Node | None  # Parsed arithmetic expression, or None for empty
-    redirects: list[Node]
+    expression: ArithNode | None  # Parsed arithmetic expression, or None for empty
+    redirects: list[Redirect | HereDoc]
     raw_content: str  # Raw expression text for bash-oracle-compatible output
 
     def __init__(
-        self, expression: Node | None, redirects: list[Node] = None, raw_content: str = ""
+        self,
+        expression: ArithNode | None,
+        redirects: list[Redirect | HereDoc] | None = None,
+        raw_content: str = "",
     ):
         self.kind = "arith-cmd"
         self.expression = expression
@@ -4559,10 +4676,10 @@ class ArithBinaryOp(Node):
     """A binary operation in arithmetic."""
 
     op: str
-    left: Node
-    right: Node
+    left: ArithNode
+    right: ArithNode
 
-    def __init__(self, op: str, left: Node, right: Node):
+    def __init__(self, op: str, left: ArithNode, right: ArithNode):
         self.kind = "binary-op"
         self.op = op
         self.left = left
@@ -4578,9 +4695,9 @@ class ArithUnaryOp(Node):
     """A unary operation in arithmetic."""
 
     op: str
-    operand: Node
+    operand: ArithNode
 
-    def __init__(self, op: str, operand: Node):
+    def __init__(self, op: str, operand: ArithNode):
         self.kind = "unary-op"
         self.op = op
         self.operand = operand
@@ -4592,9 +4709,9 @@ class ArithUnaryOp(Node):
 class ArithPreIncr(Node):
     """Pre-increment ++var."""
 
-    operand: Node
+    operand: ArithNode
 
-    def __init__(self, operand: Node):
+    def __init__(self, operand: ArithNode):
         self.kind = "pre-incr"
         self.operand = operand
 
@@ -4605,9 +4722,9 @@ class ArithPreIncr(Node):
 class ArithPostIncr(Node):
     """Post-increment var++."""
 
-    operand: Node
+    operand: ArithNode
 
-    def __init__(self, operand: Node):
+    def __init__(self, operand: ArithNode):
         self.kind = "post-incr"
         self.operand = operand
 
@@ -4618,9 +4735,9 @@ class ArithPostIncr(Node):
 class ArithPreDecr(Node):
     """Pre-decrement --var."""
 
-    operand: Node
+    operand: ArithNode
 
-    def __init__(self, operand: Node):
+    def __init__(self, operand: ArithNode):
         self.kind = "pre-decr"
         self.operand = operand
 
@@ -4631,9 +4748,9 @@ class ArithPreDecr(Node):
 class ArithPostDecr(Node):
     """Post-decrement var--."""
 
-    operand: Node
+    operand: ArithNode
 
-    def __init__(self, operand: Node):
+    def __init__(self, operand: ArithNode):
         self.kind = "post-decr"
         self.operand = operand
 
@@ -4645,10 +4762,10 @@ class ArithAssign(Node):
     """Assignment operation (=, +=, -=, etc.)."""
 
     op: str
-    target: Node
-    value: Node
+    target: ArithNode
+    value: ArithNode
 
-    def __init__(self, op: str, target: Node, value: Node):
+    def __init__(self, op: str, target: ArithNode, value: ArithNode):
         self.kind = "assign"
         self.op = op
         self.target = target
@@ -4663,11 +4780,11 @@ class ArithAssign(Node):
 class ArithTernary(Node):
     """Ternary conditional expr ? expr : expr."""
 
-    condition: Node
-    if_true: Node
-    if_false: Node
+    condition: ArithNode
+    if_true: ArithNode
+    if_false: ArithNode
 
-    def __init__(self, condition: Node, if_true: Node, if_false: Node):
+    def __init__(self, condition: ArithNode, if_true: ArithNode, if_false: ArithNode):
         self.kind = "ternary"
         self.condition = condition
         self.if_true = if_true
@@ -4688,10 +4805,10 @@ class ArithTernary(Node):
 class ArithComma(Node):
     """Comma operator expr, expr."""
 
-    left: Node
-    right: Node
+    left: ArithNode
+    right: ArithNode
 
-    def __init__(self, left: Node, right: Node):
+    def __init__(self, left: ArithNode, right: ArithNode):
         self.kind = "comma"
         self.left = left
         self.right = right
@@ -4704,9 +4821,9 @@ class ArithSubscript(Node):
     """Array subscript arr[expr]."""
 
     array: str
-    index: Node
+    index: ArithNode
 
-    def __init__(self, array: str, index: Node):
+    def __init__(self, array: str, index: ArithNode):
         self.kind = "subscript"
         self.array = array
         self.index = index
@@ -4745,9 +4862,9 @@ class ArithDeprecated(Node):
 class ArithConcat(Node):
     """A concatenation of prefix + expansion in arithmetic (e.g., 0x$var)."""
 
-    parts: list[Node]
+    parts: list[ArithNode]
 
-    def __init__(self, parts: list[Node]):
+    def __init__(self, parts: list[ArithNode]):
         self.kind = "arith-concat"
         self.parts = parts
 
@@ -4843,10 +4960,10 @@ class Time(Node):
 class ConditionalExpr(Node):
     """A conditional expression [[ expression ]]."""
 
-    body: Node | str  # Parsed node or raw string for backwards compat
-    redirects: list[Node]
+    body: CondNode | str  # Parsed node or raw string for backwards compat
+    redirects: list[Redirect | HereDoc]
 
-    def __init__(self, body: Node | str, redirects: list[Node] = None):
+    def __init__(self, body: CondNode | str, redirects: list[Redirect | HereDoc] | None = None):
         self.kind = "cond-expr"
         self.body = body
         if redirects is None:
@@ -4856,13 +4973,12 @@ class ConditionalExpr(Node):
     def to_sexp(self) -> str:
         # bash-oracle format: (cond ...) not (cond-expr ...)
         # Redirects are siblings, not children: (cond ...) (redirect ...)
-        body_kind = getattr(self.body, "kind", None)
-        if body_kind is None:
-            # body is a string
-            escaped = self.body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        body = self.body
+        if isinstance(body, str):
+            escaped = body.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             result = '(cond "' + escaped + '")'
         else:
-            result = "(cond " + self.body.to_sexp() + ")"
+            result = "(cond " + body.to_sexp() + ")"
         if self.redirects:
             redirect_parts = []
             for r in self.redirects:
@@ -4922,10 +5038,10 @@ class BinaryTest(Node):
 class CondAnd(Node):
     """Logical AND in [[ ]], e.g., expr1 && expr2."""
 
-    left: Node
-    right: Node
+    left: CondNode
+    right: CondNode
 
-    def __init__(self, left: Node, right: Node):
+    def __init__(self, left: CondNode, right: CondNode):
         self.kind = "cond-and"
         self.left = left
         self.right = right
@@ -4937,10 +5053,10 @@ class CondAnd(Node):
 class CondOr(Node):
     """Logical OR in [[ ]], e.g., expr1 || expr2."""
 
-    left: Node
-    right: Node
+    left: CondNode
+    right: CondNode
 
-    def __init__(self, left: Node, right: Node):
+    def __init__(self, left: CondNode, right: CondNode):
         self.kind = "cond-or"
         self.left = left
         self.right = right
@@ -4952,9 +5068,9 @@ class CondOr(Node):
 class CondNot(Node):
     """Logical NOT in [[ ]], e.g., ! expr."""
 
-    operand: Node
+    operand: CondNode
 
-    def __init__(self, operand: Node):
+    def __init__(self, operand: CondNode):
         self.kind = "cond-not"
         self.operand = operand
 
@@ -4966,14 +5082,37 @@ class CondNot(Node):
 class CondParen(Node):
     """Parenthesized group in [[ ]], e.g., ( expr )."""
 
-    inner: Node
+    inner: CondNode
 
-    def __init__(self, inner: Node):
+    def __init__(self, inner: CondNode):
         self.kind = "cond-paren"
         self.inner = inner
 
     def to_sexp(self) -> str:
         return "(cond-expr " + self.inner.to_sexp() + ")"
+
+
+# Type aliases for AST node unions (Union required for Python 3.8/3.9 runtime)
+ArithNode = Union[  # noqa: UP007
+    ArithNumber,
+    ArithEmpty,
+    ArithVar,
+    ArithBinaryOp,
+    ArithUnaryOp,
+    ArithPreIncr,
+    ArithPostIncr,
+    ArithPreDecr,
+    ArithPostDecr,
+    ArithAssign,
+    ArithTernary,
+    ArithComma,
+    ArithSubscript,
+    ArithEscape,
+    ArithDeprecated,
+    ArithConcat,
+]
+
+CondNode = Union[UnaryTest, BinaryTest, CondAnd, CondOr, CondNot, CondParen]  # noqa: UP007
 
 
 class Array(Node):
@@ -5001,7 +5140,7 @@ class Coproc(Node):
     command: Node
     name: str | None = None
 
-    def __init__(self, command: Node, name: str = None):
+    def __init__(self, command: Node, name: str | None = None):
         self.kind = "coproc"
         self.command = command
         self.name = name
@@ -5077,7 +5216,7 @@ def _format_cmdsub_node(
             val = w._format_command_substitutions(val)
             parts.append(val)
         # Check for heredocs - their bodies need to come at the end
-        heredocs = []
+        heredocs: list[HereDoc] = []
         for r in node.redirects:
             if r.kind == "heredoc":
                 heredocs.append(r)
@@ -5097,7 +5236,7 @@ def _format_cmdsub_node(
         return result
     if node.kind == "pipeline":
         # Build list of (cmd, needs_pipe_both_redirect) filtering out PipeBoth markers
-        cmds = []
+        cmds: list[tuple[Node, bool]] = []
         i = 0
         while i < len(node.commands):
             cmd = node.commands[i]
@@ -5306,7 +5445,7 @@ def _format_cmdsub_node(
         var = node.var
         body = _format_cmdsub_node(node.body, indent + 4)
         if node.words is not None:
-            word_vals = []
+            word_vals: list[str] = []
             for w in node.words:
                 word_vals.append(w.value)
             words = " ".join(word_vals)
@@ -5361,7 +5500,7 @@ def _format_cmdsub_node(
         return result
     if node.kind == "case":
         word = node.word.value
-        patterns = []
+        patterns: list[str] = []
         i = 0
         while i < len(node.patterns):
             p = node.patterns[i]
@@ -5383,7 +5522,7 @@ def _format_cmdsub_node(
         pattern_str = ("\n" + _repeat_str(" ", indent + 4)).join(patterns)
         redirects = ""
         if node.redirects:
-            redirect_parts = []
+            redirect_parts: list[str] = []
             for r in node.redirects:
                 redirect_parts.append(_format_redirect(r))
             redirects = " " + " ".join(redirect_parts)
@@ -5398,7 +5537,7 @@ def _format_cmdsub_node(
         body = _format_cmdsub_node(node.body, indent, in_procsub, compact_redirects)
         redirects = ""
         if node.redirects:
-            redirect_parts = []
+            redirect_parts: list[str] = []
             for r in node.redirects:
                 redirect_parts.append(_format_redirect(r))
             redirects = " ".join(redirect_parts)
@@ -5417,7 +5556,7 @@ def _format_cmdsub_node(
         terminator = " }" if body.endswith(" &") else "; }"
         redirects = ""
         if node.redirects:
-            redirect_parts = []
+            redirect_parts: list[str] = []
             for r in node.redirects:
                 redirect_parts.append(_format_redirect(r))
             redirects = " ".join(redirect_parts)
@@ -5451,7 +5590,9 @@ def _format_redirect(
             op = "<<-"
         else:
             op = "<<"
-        if r.fd is not None and r.fd != 0:
+        # fd > 0: explicitly specified and non-default (0 is default for heredoc input)
+        # fd == -1 means "not specified" (sentinel value)
+        if r.fd > 0:
             op = str(r.fd) + op
         if r.quoted:
             delim = "'" + r.delimiter + "'"
@@ -5574,6 +5715,50 @@ def _skip_backtick(value: str, start: int) -> int:
     return i
 
 
+def _skip_single_quoted(s: str, start: int) -> int:
+    """Skip from after opening ' to after closing '. Mirrors bash skip_single_quoted()."""
+    i = start
+    while i < len(s) and s[i] != "'":
+        i += 1
+    return i + 1 if i < len(s) else i
+
+
+def _skip_double_quoted(s: str, start: int) -> int:
+    """Skip from after opening " to after closing ". Handles $(), ${}, backticks."""
+    i, n = start, len(s)
+    pass_next = backq = False
+    while i < n:
+        c = s[i]
+        if pass_next:
+            pass_next = False
+            i += 1
+            continue
+        if c == "\\":
+            pass_next = True
+            i += 1
+            continue
+        if backq:
+            if c == "`":
+                backq = False
+            i += 1
+            continue
+        if c == "`":
+            backq = True
+            i += 1
+            continue
+        if c == "$" and i + 1 < n:
+            if s[i + 1] == "(":
+                i = _find_cmdsub_end(s, i + 2)
+                continue
+            if s[i + 1] == "{":
+                i = _find_braced_param_end(s, i + 2)
+                continue
+        if c == '"':
+            return i + 1
+        i += 1
+    return i
+
+
 def _is_valid_arithmetic_start(value: str, start: int) -> bool:
     """Check if $(( at position starts a valid arithmetic expression.
 
@@ -5586,7 +5771,7 @@ def _is_valid_arithmetic_start(value: str, start: int) -> bool:
     while scan_i < len(value):
         scan_c = value[scan_i]
         # Skip over $( command subs - their parens shouldn't count
-        if scan_c == "$" and scan_i + 1 < len(value) and value[scan_i + 1] == "(":
+        if _is_expansion_start(value, scan_i, "$("):
             scan_i = _find_cmdsub_end(value, scan_i + 2)
             continue
         if scan_c == "(":
@@ -5645,38 +5830,22 @@ def _find_cmdsub_end(value: str, start: int) -> int:
     """
     depth = 1
     i = start
-    quote = QuoteState()
     case_depth = 0  # Track nested case statements
     in_case_patterns = False  # After 'in' but before first ;; or esac
     arith_depth = 0  # Track nested arithmetic expressions
     arith_paren_depth = 0  # Track grouping parens inside arithmetic
     while i < len(value) and depth > 0:
         c = value[i]
-        # Handle escapes
-        if c == "\\" and i + 1 < len(value) and not quote.single:
+        # Handle escapes (work everywhere except inside single quotes, which we delegate)
+        if c == "\\" and i + 1 < len(value):
             i += 2
             continue
-        # Handle quotes
-        if c == "'" and not quote.double:
-            quote.single = not quote.single
-            i += 1
+        # Handle quotes via delegation
+        if c == "'":
+            i = _skip_single_quoted(value, i + 1)
             continue
-        if c == '"' and not quote.single:
-            quote.double = not quote.double
-            i += 1
-            continue
-        if quote.single:
-            i += 1
-            continue
-        if quote.double:
-            # Inside double quotes, $() command substitution is still active
-            if _starts_with_at(value, i, "$(") and not _starts_with_at(value, i, "$(("):
-                # Recursively find end of nested command substitution
-                j = _find_cmdsub_end(value, i + 2)
-                i = j
-                continue
-            # Skip other characters inside double quotes
-            i += 1
+        if c == '"':
+            i = _skip_double_quoted(value, i + 1)
             continue
         # Handle comments - skip from # to end of line
         # Only treat # as comment if preceded by whitespace or at start
@@ -5727,7 +5896,7 @@ def _find_cmdsub_end(value: str, start: int) -> int:
                     i += 1
             continue
         # Handle arithmetic expressions $((
-        if _starts_with_at(value, i, "$(("):
+        if _is_expansion_start(value, i, "$(("):
             if _is_valid_arithmetic_start(value, i):
                 arith_depth += 1
                 i += 3
@@ -5791,6 +5960,60 @@ def _find_cmdsub_end(value: str, start: int) -> int:
                 # else: single ) in arithmetic without matching ( - skip it
             else:
                 depth -= 1
+        i += 1
+    return i
+
+
+def _find_braced_param_end(value: str, start: int) -> int:
+    """Find end of ${...}. Starts after ${. Returns position after }."""
+    depth = 1
+    i = start
+    in_double = False
+    dolbrace_state = DolbraceState.PARAM
+    while i < len(value) and depth > 0:
+        c = value[i]
+        # Escapes work everywhere except inside single quotes (which we delegate)
+        if c == "\\" and i + 1 < len(value):
+            i += 2
+            continue
+        # Single quotes: only delegate in QUOTE state (after %#^,)
+        if c == "'" and dolbrace_state == DolbraceState.QUOTE and not in_double:
+            i = _skip_single_quoted(value, i + 1)
+            continue
+        if c == '"':
+            in_double = not in_double
+            i += 1
+            continue
+        if in_double:
+            i += 1
+            continue
+        # State transitions: operators move from PARAM to WORD or QUOTE
+        if dolbrace_state == DolbraceState.PARAM and c in "%#^,":
+            dolbrace_state = DolbraceState.QUOTE
+        elif dolbrace_state == DolbraceState.PARAM and c in ":-=?+/":
+            dolbrace_state = DolbraceState.WORD
+        # Handle array subscripts (only in PARAM state, not pattern words)
+        if c == "[" and dolbrace_state == DolbraceState.PARAM and not in_double:
+            end = _skip_subscript(value, i, 0)
+            if end != -1:
+                i = end
+                continue
+        # Handle process substitution <(...) and >(...)
+        if (c == "<" or c == ">") and i + 1 < len(value) and value[i + 1] == "(":
+            i = _find_cmdsub_end(value, i + 2)
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        if _is_expansion_start(value, i, "$("):
+            i = _find_cmdsub_end(value, i + 2)
+            continue
+        if _is_expansion_start(value, i, "${"):
+            i = _find_braced_param_end(value, i + 2)
+            continue
         i += 1
     return i
 
@@ -6275,8 +6498,7 @@ def _skip_matched_pair(s: str, start: int, open: str, close: str, flags: int = 0
         i = start + 1
     depth = 1
     pass_next = False
-    in_single = False
-    in_double = False
+    backq = False
     while i < n and depth > 0:
         c = s[i]
         if pass_next:
@@ -6288,18 +6510,30 @@ def _skip_matched_pair(s: str, start: int, open: str, close: str, flags: int = 0
             pass_next = True
             i += 1
             continue
-        if not literal and c == "'" and not in_double:
-            in_single = not in_single
+        if backq:
+            if c == "`":
+                backq = False
             i += 1
             continue
-        if not literal and c == '"' and not in_single:
-            in_double = not in_double
+        if not literal and c == "`":
+            backq = True
             i += 1
             continue
-        in_quotes = in_single or in_double
-        if not literal and not in_quotes and c == open:
+        if not literal and c == "'":
+            i = _skip_single_quoted(s, i + 1)
+            continue
+        if not literal and c == '"':
+            i = _skip_double_quoted(s, i + 1)
+            continue
+        if not literal and _is_expansion_start(s, i, "$("):
+            i = _find_cmdsub_end(s, i + 2)
+            continue
+        if not literal and _is_expansion_start(s, i, "${"):
+            i = _find_braced_param_end(s, i + 2)
+            continue
+        if not literal and c == open:
             depth += 1
-        elif not in_quotes and c == close:
+        elif c == close:
             depth -= 1
         i += 1
     return i if depth == 0 else -1
@@ -6485,33 +6719,37 @@ class Parser:
     def __init__(self, source: str, in_process_sub: bool = False, extglob: bool = False):
         self.source = source
         self.pos = 0
-        self.length = len(source)
+        self.length: int = len(source)
         self._pending_heredocs: list[HereDoc] = []
         # Track heredoc content that was consumed into command/process substitutions
         # and needs to be skipped when we reach a newline
-        self._cmdsub_heredoc_end: int | None = None
+        self._cmdsub_heredoc_end: int = -1  # -1 = not set
         self._saw_newline_in_single_quote = False
         self._in_process_sub = in_process_sub
         # Extglob parsing enabled (bash shopt extglob)
         self._extglob = extglob
         # Context stack for tracking nested parsing scopes
-        self._ctx = ContextStack()
+        self._ctx: ContextStack = ContextStack()
         # Lexer for tokenization
-        self._lexer = Lexer(source, extglob=extglob)
+        self._lexer: Lexer = Lexer(source, extglob=extglob)
         self._lexer._parser = self  # Back-reference for expansion parsing
         # Token history for context-sensitive parsing (last 4 tokens like bash)
         self._token_history: list[Token | None] = [None, None, None, None]
         # Parser state flags for context-sensitive decisions
-        self._parser_state = ParserStateFlags.NONE
+        self._parser_state: int = ParserStateFlags.NONE
         # Dolbrace state for ${...} parameter expansion parsing
-        self._dolbrace_state = DolbraceState.NONE
+        self._dolbrace_state: int = DolbraceState.NONE
         # EOF token mechanism for inline command substitution parsing
         self._eof_token: str | None = None
         # Word parsing context for Lexer sync
-        self._word_context = WORD_CTX_NORMAL
+        self._word_context: int = WORD_CTX_NORMAL
         self._at_command_start = False
         self._in_array_literal = False
         self._in_assign_builtin = False
+        # Arithmetic expression parsing context (for nested parsing)
+        self._arith_src: str = ""
+        self._arith_pos: int = 0
+        self._arith_len: int = 0
 
     def _set_state(self, flag: int) -> None:
         """Set a parser state flag."""
@@ -6706,8 +6944,8 @@ class Parser:
             TokenType.AMP,
         )
 
-    def _lex_peek_operator(self) -> tuple[int, str] | None:
-        """Peek operator token. Returns (token_type, value) or None."""
+    def _lex_peek_operator(self) -> tuple[int, str]:
+        """Peek operator token. Returns (token_type, value) or (0, "") if not an operator."""
         tok = self._lex_peek_token()
         t = tok.type
         # Single-char operators: SEMI(10) through GREATER(18)
@@ -6716,7 +6954,7 @@ class Parser:
             t >= TokenType.AND_AND and t <= TokenType.PIPE_AMP
         ):
             return (t, tok.value)
-        return None
+        return (0, "")
 
     def _lex_peek_reserved_word(self) -> str | None:
         """Peek reserved word. Returns word value if reserved, None otherwise."""
@@ -6834,9 +7072,9 @@ class Parser:
                 if ch == "\n":
                     self._gather_heredoc_bodies()
                     # Skip heredoc content consumed by command/process substitutions
-                    if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                    if self._cmdsub_heredoc_end != -1 and self._cmdsub_heredoc_end > self.pos:
                         self.pos = self._cmdsub_heredoc_end
-                        self._cmdsub_heredoc_end = None
+                        self._cmdsub_heredoc_end = -1
             elif ch == "#":
                 # Skip comment to end of line
                 while not self.at_end() and self.peek() != "\n":
@@ -6883,7 +7121,7 @@ class Parser:
             return tok.type == TokenType.WORD and tok.value == "}"
         return False
 
-    def _collect_redirects(self) -> list | None:
+    def _collect_redirects(self) -> list[Node] | None:
         """Collect trailing redirects after a compound command."""
         redirects = []
         while True:
@@ -6992,7 +7230,7 @@ class Parser:
         return self._lexer._is_word_terminator(ctx, ch, bracket_depth, paren_depth)
 
     def _scan_double_quote(
-        self, chars: list, parts: list, start: int, handle_line_continuation: bool = True
+        self, chars: list[str], parts: list[Node], start: int, handle_line_continuation: bool = True
     ) -> None:
         """Scan double-quoted string with expansions. Assumes opening quote consumed."""
         chars.append('"')
@@ -7015,7 +7253,9 @@ class Parser:
             raise ParseError("Unterminated double quote", pos=start)
         chars.append(self.advance())
 
-    def _parse_dollar_expansion(self, chars: list, parts: list, in_dquote: bool = False) -> bool:
+    def _parse_dollar_expansion(
+        self, chars: list[str], parts: list[Node], in_dquote: bool = False
+    ) -> bool:
         """Handle $ expansions. Returns True if expansion parsed, False if bare $."""
         # Check $(( -> arithmetic expansion
         if (
@@ -7431,7 +7671,7 @@ class Parser:
             )
             if heredoc_end > heredoc_start:
                 content = content + _substring(self.source, heredoc_start, heredoc_end)
-                if self._cmdsub_heredoc_end is None:
+                if self._cmdsub_heredoc_end == -1:
                     self._cmdsub_heredoc_end = heredoc_end
                 else:
                     self._cmdsub_heredoc_end = max(self._cmdsub_heredoc_end, heredoc_end)
@@ -7583,7 +7823,7 @@ class Parser:
         # Find matching )) by tracking paren depth
         content_start = self.pos
         depth = 2
-        first_close_pos: int | None = None
+        first_close_pos: int = -1  # -1 = not set
         while not self.at_end() and depth > 0:
             c = self.peek()
             # Skip single-quoted strings (parens inside don't count)
@@ -7621,7 +7861,7 @@ class Parser:
                 self.advance()
             else:
                 if depth == 1:
-                    first_close_pos = None
+                    first_close_pos = -1
                 self.advance()
         if depth != 0:
             if self.at_end():
@@ -7629,7 +7869,7 @@ class Parser:
             self.pos = start
             return None, ""
         # Content ends at first_close_pos if set, else at final )
-        if first_close_pos is not None:
+        if first_close_pos != -1:
             content = _substring(self.source, content_start, first_close_pos)
         else:
             content = _substring(self.source, content_start, self.pos)
@@ -7665,15 +7905,15 @@ class Parser:
     def _parse_arith_expr(self, content: str) -> Node | None:
         """Parse an arithmetic expression string into AST nodes."""
         # Save any existing arith context (for nested parsing)
-        saved_arith_src = getattr(self, "_arith_src", None)
-        saved_arith_pos = getattr(self, "_arith_pos", None)
-        saved_arith_len = getattr(self, "_arith_len", None)
+        saved_arith_src = self._arith_src
+        saved_arith_pos = self._arith_pos
+        saved_arith_len = self._arith_len
         saved_parser_state = self._parser_state
 
         self._set_state(ParserStateFlags.PST_ARITH)
-        self._arith_src = content
-        self._arith_pos = 0
-        self._arith_len = len(content)
+        self._arith_src: str = content
+        self._arith_pos: int = 0
+        self._arith_len: int = len(content)
         self._arith_skip_ws()
         if self._arith_at_end():
             result = None
@@ -7786,7 +8026,7 @@ class Parser:
             return ArithTernary(cond, if_true, if_false)
         return cond
 
-    def _arith_parse_left_assoc(self, ops: list, parsefn) -> Node:
+    def _arith_parse_left_assoc(self, ops: list[str], parsefn: Callable[[], Node]) -> Node:
         """Parse left-associative binary operators using match/consume."""
         left = parsefn()
         while True:
@@ -8382,8 +8622,8 @@ class Parser:
             return None
 
         start = self.pos
-        fd = None
-        varfd = None  # Variable fd like {fd}
+        fd: int = -1  # -1 = no fd specified
+        varfd = ""  # Variable fd like {fd}, "" = none
 
         # Check for variable fd {varname} or {varname[subscript]} before redirect
         if self.peek() == "{":
@@ -8436,7 +8676,7 @@ class Parser:
                 self.pos = saved
 
         # Check for optional fd number before redirect (if no varfd)
-        if varfd is None and self.peek() and self.peek().isdigit():
+        if varfd == "" and self.peek() and self.peek().isdigit():
             fd_chars = []
             while not self.at_end() and self.peek().isdigit():
                 fd_chars.append(self.advance())
@@ -8449,7 +8689,7 @@ class Parser:
         # they should be a separate word, not an fd. E.g., "2&>1" is command "2"
         # with redirect "&> 1", not fd 2 redirected.
         if ch == "&" and self.pos + 1 < self.length and self.source[self.pos + 1] == ">":
-            if fd is not None or varfd is not None:
+            if fd != -1 or varfd != "":
                 # We consumed digits/varfd that should be a word, not an fd
                 # Restore position and let parse_word handle them
                 self.pos = start
@@ -8474,7 +8714,7 @@ class Parser:
 
         # Check for process substitution <(...) or >(...) - not a redirect
         # Only treat as redirect if there's a space before ( or an fd number
-        if fd is None and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+        if fd == -1 and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
             # This is a process substitution, not a redirect
             self.pos = start
             return None
@@ -8511,12 +8751,12 @@ class Parser:
             # Only consume >& or <& as operators if NOT followed by a digit or -
             # (>&2 should be > with target &2, not >& with target 2)
             # (>&- should be > with target &-, not >& with target -)
-            elif fd is None and varfd is None and op == ">" and next_ch == "&":
+            elif fd == -1 and varfd == "" and op == ">" and next_ch == "&":
                 # Peek ahead to see if there's a digit or - after &
                 if self.pos + 1 >= self.length or not _is_digit_or_dash(self.source[self.pos + 1]):
                     self.advance()
                     op = ">&"
-            elif fd is None and varfd is None and op == "<" and next_ch == "&":
+            elif fd == -1 and varfd == "" and op == "<" and next_ch == "&":
                 if self.pos + 1 >= self.length or not _is_digit_or_dash(self.source[self.pos + 1]):
                     self.advance()
                     op = "<&"
@@ -8526,9 +8766,9 @@ class Parser:
             return self._parse_heredoc(fd, strip_tabs)
 
         # Combine fd or varfd with operator if present
-        if varfd is not None:
+        if varfd != "":
             op = "{" + varfd + "}" + op
-        elif fd is not None:
+        elif fd != -1:
             op = str(fd) + op
 
         # Handle fd duplication targets like &1, &2, &-, &10-, &$var
@@ -8667,7 +8907,7 @@ class Parser:
                             delimiter_chars.append(self.advance())
                     if not self.at_end():
                         self.advance()  # skip closing '
-                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                elif _is_expansion_start(self.source, self.pos, "$("):
                     # Command substitution embedded in delimiter
                     delimiter_chars.append(self.advance())  # $
                     delimiter_chars.append(self.advance())  # (
@@ -8884,7 +9124,7 @@ class Parser:
             heredoc.content = "".join(content_lines)
         self._pending_heredocs = []
 
-    def _parse_heredoc(self, fd: int | None, strip_tabs: bool) -> HereDoc:
+    def _parse_heredoc(self, fd: int, strip_tabs: bool) -> HereDoc:
         """Parse a here document <<DELIM ... DELIM.
 
         Parses the delimiter only. Content is gathered later by _gather_heredoc_bodies
@@ -9263,10 +9503,10 @@ class Parser:
         # Check if word1 is a unary operator
         if word1.value in COND_UNARY_OPS:
             # Unary test: -f file
-            operand = self._parse_cond_word()
-            if operand is None:
+            unary_operand = self._parse_cond_word()
+            if unary_operand is None:
                 raise ParseError("Expected operand after " + word1.value, pos=self.pos)
-            return UnaryTest(word1.value, operand)
+            return UnaryTest(word1.value, unary_operand)
 
         # Check if next token is a binary operator
         if not self._cond_at_end() and (
@@ -9744,7 +9984,7 @@ class Parser:
         self.skip_whitespace_and_newlines()
 
         # Parse pattern clauses until 'esac'
-        patterns = []
+        patterns: list[CasePattern] = []
         self._set_state(ParserStateFlags.PST_CASEPAT)
         while True:
             self.skip_whitespace_and_newlines()
@@ -9818,7 +10058,7 @@ class Parser:
                         pattern_chars.append(self.advance())
                         if not self.at_end():
                             pattern_chars.append(self.advance())
-                elif ch == "$" and self.pos + 1 < self.length and self.source[self.pos + 1] == "(":
+                elif _is_expansion_start(self.source, self.pos, "$("):
                     # $( or $(( - command sub or arithmetic
                     pattern_chars.append(self.advance())  # $
                     pattern_chars.append(self.advance())  # (
@@ -10127,7 +10367,7 @@ class Parser:
         brace_depth = 0
         i = 0
         while i < len(name):
-            if i + 1 < len(name) and name[i] == "$" and name[i + 1] == "{":
+            if _is_expansion_start(name, i, "${"):
                 brace_depth += 1
                 i += 2
                 continue
@@ -10265,9 +10505,9 @@ class Parser:
                     # compound_list context: newline acts as separator
                     self.advance()  # consume \n
                     self._gather_heredoc_bodies()
-                    if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                    if self._cmdsub_heredoc_end != -1 and self._cmdsub_heredoc_end > self.pos:
                         self.pos = self._cmdsub_heredoc_end
-                        self._cmdsub_heredoc_end = None
+                        self._cmdsub_heredoc_end = -1
                     self.skip_whitespace_and_newlines()
                     if self._at_list_until_terminator(stop_words):
                         break
@@ -10523,10 +10763,9 @@ class Parser:
 
         while True:
             self.skip_whitespace()
-            op = self._lex_peek_operator()
-            if op is None:
+            token_type, value = self._lex_peek_operator()
+            if token_type == 0:
                 break
-            token_type, value = op
             if token_type != TokenType.PIPE and token_type != TokenType.PIPE_AMP:
                 break
 
@@ -10551,10 +10790,9 @@ class Parser:
     def parse_list_operator(self) -> str | None:
         """Parse a list operator (&&, ||, ;, &)."""
         self.skip_whitespace()
-        op = self._lex_peek_operator()
-        if op is None:
+        token_type, _ = self._lex_peek_operator()
+        if token_type == 0:
             return None
-        token_type, value = op
         if token_type == TokenType.AND_AND:
             self._lex_next_token()
             return "&&"
@@ -10610,9 +10848,9 @@ class Parser:
                     # compound_list: newline acts as separator
                     self.advance()  # consume \n
                     self._gather_heredoc_bodies()
-                    if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                    if self._cmdsub_heredoc_end != -1 and self._cmdsub_heredoc_end > self.pos:
                         self.pos = self._cmdsub_heredoc_end
-                        self._cmdsub_heredoc_end = None
+                        self._cmdsub_heredoc_end = -1
                     self.skip_whitespace_and_newlines()
                     if self.at_end() or self._at_list_terminating_bracket():
                         break
@@ -10716,9 +10954,9 @@ class Parser:
                 self.advance()
                 # Gather pending heredoc content after newline
                 self._gather_heredoc_bodies()
-                if self._cmdsub_heredoc_end is not None and self._cmdsub_heredoc_end > self.pos:
+                if self._cmdsub_heredoc_end != -1 and self._cmdsub_heredoc_end > self.pos:
                     self.pos = self._cmdsub_heredoc_end
-                    self._cmdsub_heredoc_end = None
+                    self._cmdsub_heredoc_end = -1
                 self.skip_whitespace()
 
             # If no newline and not at end, we have unparsed content
