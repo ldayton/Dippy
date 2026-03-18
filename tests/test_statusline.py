@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 import tempfile
 import uuid
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DIPPY_STATUSLINE = REPO_ROOT / "bin" / "dippy-statusline"
-SYSTEM_PYTHON = "/usr/bin/python3"
+IS_WINDOWS = sys.platform == "win32"
 
 
 def unique_session_id() -> str:
@@ -39,7 +43,7 @@ def run_statusline(
         script = symlink_path
 
     return subprocess.run(
-        [SYSTEM_PYTHON, str(script)],
+        [sys.executable, str(script)],
         input=stdin_bytes,
         capture_output=True,
         timeout=10,
@@ -63,6 +67,7 @@ class TestSmokeTest:
         # Should contain model name
         assert "Opus" in output
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="symlinks require elevated privileges on Windows")
     def test_symlink_invocation(self):
         """Works when invoked via symlink (Homebrew scenario)."""
         input_data = {

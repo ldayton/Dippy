@@ -462,6 +462,13 @@ def build_statusline(data: dict) -> str:
 
 def main():
     log.info("main_start")
+    # Ensure stdout can handle Unicode (emoji) on Windows where
+    # subprocess stdout defaults to cp1252
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     try:
         data = json.load(sys.stdin)
         log.debug("main_input_parsed", session_id=data.get("session_id", ""))
