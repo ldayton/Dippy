@@ -83,6 +83,7 @@ SAFE_MODULES = frozenset(
         # Note: inspect excluded - getsource/getsourcefile read files
         # Note: linecache excluded - reads files
         # Other safe utilities
+        "__future__",
         "copy",
         "pprint",
         "reprlib",
