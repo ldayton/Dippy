@@ -9,7 +9,9 @@
 
 > **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` - destroying your flow state. You check Slack, come back, and your assistant's just sitting there waiting.
 
-Dippy is a shell command hook that auto-approves safe commands while still prompting for anything destructive. When it blocks, your custom deny messages can steer Claude back on track—no wasted turns. Get up to **40% faster development** without disabling permissions entirely.
+Dippy is a shell command hook that auto-approves safe commands while still prompting for anything destructive. When it blocks, your custom deny messages can steer the AI back on track—no wasted turns. Get up to **40% faster development** without disabling permissions entirely.
+
+Works with **Claude Code**, **Cursor**, and **Gemini CLI**.
 
 Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bash parser—no external dependencies, just pure Python. 14,000+ tests between the two.
 
@@ -61,6 +63,8 @@ git clone https://github.com/ldayton/Dippy.git
 
 ### Configure
 
+#### Claude Code
+
 Add to `~/.claude/settings.json` (or use `/hooks` interactively):
 
 ```json
@@ -75,6 +79,27 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively):
   }
 }
 ```
+
+#### Cursor
+
+Add to `~/.cursor/hooks.json` (global) or `.cursor/hooks.json` in your project root:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "dippy" }
+    ]
+  }
+}
+```
+
+Dippy auto-detects Cursor's input format, so no extra flags are needed. If you prefer to be explicit, use `dippy --cursor` or set `DIPPY_CURSOR=1`.
+
+Logs go to `~/.cursor/hook-approvals.log`.
+
+> **Note:** Cursor has a known bug where only the first hook in an array runs. If you have other `beforeShellExecution` hooks, Dippy must be listed first.
 
 If you installed manually, use the full path instead: `/path/to/Dippy/bin/dippy-hook`
 
@@ -104,7 +129,7 @@ Dippy can do more than filter shell commands. See the [wiki](https://github.com/
 
 ## Uninstall
 
-Remove the hook entry from `~/.claude/settings.json`, then:
+Remove the hook entry from `~/.claude/settings.json` or `~/.cursor/hooks.json`, then:
 
 ```bash
 brew uninstall dippy  # if installed via Homebrew
