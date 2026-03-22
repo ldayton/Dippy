@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime, timezone
@@ -216,6 +217,35 @@ def get_local_mcp_servers() -> list[str]:
     return []
 
 
+def _refresh_mcp_cache_python(tmp, conn_r, conn_g, conn_b, disc_r, disc_g, disc_b):
+    """Refresh MCP cache using pure Python (Windows-compatible)."""
+    try:
+        result = subprocess.run(
+            ["claude", "mcp", "list"],
+            capture_output=True, text=True, timeout=10,
+        )
+        lines = []
+        for line in result.stdout.splitlines():
+            if ":" not in line:
+                continue
+            name = line.split(":")[0].strip()
+            if not name:
+                continue
+            if "Connected" in line:
+                lines.append(f"\033[38;2;{conn_r};{conn_g};{conn_b}m{name}\033[0m")
+            else:
+                lines.append(f"\033[38;2;{disc_r};{disc_g};{disc_b}m!{name}\033[0m")
+        with open(tmp, "w") as f:
+            f.write(", ".join(lines))
+        os.replace(tmp, MCP_CACHE_PATH)
+    except Exception:
+        log.error("mcp_cache_refresh_python_failed")
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def get_mcp_servers() -> str | None:
     """Read MCP servers from local config and cached global list."""
     local_servers = get_local_mcp_servers()
@@ -242,15 +272,23 @@ def get_mcp_servers() -> str | None:
             os.makedirs(CACHE_DIR, exist_ok=True)
             tmp = f"{MCP_CACHE_PATH}.tmp.{os.getpid()}"
             disc_r, disc_g, disc_b = hex_to_rgb(MOLOKAI[STYLES["mcp_disconnected"][0]])
-            cmd = f'timeout 10 claude mcp list 2>/dev/null | awk -F: \'NF>1 {{if (/Connected/) print "\\033[38;2;{conn_r};{conn_g};{conn_b}m" $1 "\\033[0m"; else print "\\033[38;2;{disc_r};{disc_g};{disc_b}m!" $1 "\\033[0m"}}\' | paste -sd, | sed \'s/,/, /g\' > {tmp} && mv {tmp} {MCP_CACHE_PATH}'
-            subprocess.Popen(
-                cmd,
-                shell=True,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            if sys.platform == "win32":
+                t = threading.Thread(
+                    target=_refresh_mcp_cache_python,
+                    args=(tmp, conn_r, conn_g, conn_b, disc_r, disc_g, disc_b),
+                    daemon=True,
+                )
+                t.start()
+            else:
+                cmd = f'timeout 10 claude mcp list 2>/dev/null | awk -F: \'NF>1 {{if (/Connected/) print "\\033[38;2;{conn_r};{conn_g};{conn_b}m" $1 "\\033[0m"; else print "\\033[38;2;{disc_r};{disc_g};{disc_b}m!" $1 "\\033[0m"}}\' | paste -sd, | sed \'s/,/, /g\' > {tmp} && mv {tmp} {MCP_CACHE_PATH}'
+                subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
             log.debug("mcp_cache_refresh_spawned", age=age, ttl=MCP_CACHE_TTL)
         except Exception:
             log.error("mcp_cache_refresh_failed")
@@ -462,6 +500,13 @@ def build_statusline(data: dict) -> str:
 
 def main():
     log.info("main_start")
+    # Ensure stdout can handle Unicode (emoji) on Windows where
+    # subprocess stdout defaults to cp1252
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     try:
         data = json.load(sys.stdin)
         log.debug("main_input_parsed", session_id=data.get("session_id", ""))

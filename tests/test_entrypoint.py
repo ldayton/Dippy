@@ -8,11 +8,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DIPPY_HOOK = REPO_ROOT / "bin" / "dippy-hook"
-# Use system Python to avoid venv masking import issues
-SYSTEM_PYTHON = "/usr/bin/python3"
+IS_WINDOWS = sys.platform == "win32"
 
 
 def get_decision(output: dict) -> str | None:
@@ -46,7 +46,9 @@ def _run(
     else:
         stdin_bytes = input_data.encode()
 
-    python = SYSTEM_PYTHON if use_system_python else sys.executable
+    # use_system_python is for testing path resolution without venv;
+    # on Windows there's no /usr/bin/python3, so always use sys.executable
+    python = sys.executable
     return subprocess.run(
         [python, str(script)],
         input=stdin_bytes,
@@ -66,6 +68,7 @@ class TestSymlinkResolution:
         output = json.loads(result.stdout)
         assert get_decision(output) == "allow"
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="symlinks require elevated privileges on Windows")
     def test_symlink_invocation(self):
         """Critical: invocation via symlink must also work.
 
@@ -78,6 +81,7 @@ class TestSymlinkResolution:
         output = json.loads(result.stdout)
         assert get_decision(output) == "allow"
 
+    @pytest.mark.skipif(IS_WINDOWS, reason="symlinks require elevated privileges on Windows")
     def test_nested_symlink_invocation(self):
         """Symlink in deeply nested unrelated path (simulates Homebrew Cellar)."""
         input_data = {"tool_name": "Bash", "tool_input": {"command": "ls"}}

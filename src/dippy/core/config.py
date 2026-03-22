@@ -11,6 +11,11 @@ from pathlib import Path
 # Cache home directory at module load - fails fast if HOME is unset
 _HOME = Path.home()
 
+
+def _posix_str(path: str) -> str:
+    """Normalize path separators to forward slashes for consistent matching."""
+    return path.replace("\\", "/")
+
 USER_CONFIG = _HOME / ".dippy" / "config"
 PROJECT_CONFIG_NAME = ".dippy"
 ENV_CONFIG = "DIPPY_CONFIG"
@@ -458,6 +463,9 @@ def _classify_token(token: str) -> str:
         return _VARIABLE
     if token.startswith("/"):
         return _ABSOLUTE
+    # Windows drive letter paths: C:\, C:/, D:\, etc.
+    if len(token) >= 3 and token[0].isalpha() and token[1] == ":" and token[2] in ("/", "\\"):
+        return _ABSOLUTE
     if token == "~" or token.startswith("~/"):
         return _HOME
     if token.startswith("~"):
@@ -490,17 +498,18 @@ def _expand_token(token: str, cwd: Path, *, force_path: bool = False) -> str:
     if kind == _VARIABLE:
         return token
     if kind == _ABSOLUTE:
-        return token
+        return _posix_str(token)
     if kind == _HOME:
         # ~ → /home/user, ~/foo → /home/user/foo
-        return str(home) + token[1:] if len(token) > 1 else str(home)
+        h = _posix_str(str(home))
+        return h + token[1:] if len(token) > 1 else h
     if kind == _USER_HOME:
         return token
     if kind == _RELATIVE:
-        return str((cwd / token).resolve())
+        return _posix_str(str((cwd / token).resolve()))
     # BARE
     if force_path:
-        return str((cwd / token).resolve())
+        return _posix_str(str((cwd / token).resolve()))
     return token
 
 
@@ -512,7 +521,8 @@ def _expand_home_only(token: str) -> str:
     """
     if _classify_token(token) == _HOME:
         home = Path.home()
-        return str(home) + token[1:] if len(token) > 1 else str(home)
+        h = _posix_str(str(home))
+        return h + token[1:] if len(token) > 1 else h
     return token
 
 

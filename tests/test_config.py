@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -217,6 +218,9 @@ class TestLoadConfig:
         fake_home.mkdir()
         (fake_home / "my.cfg").write_text("allow tilde")
         monkeypatch.setenv("HOME", str(fake_home))
+        # On Windows, Path.expanduser() uses USERPROFILE, not HOME
+        if sys.platform == "win32":
+            monkeypatch.setenv("USERPROFILE", str(fake_home))
         monkeypatch.setenv("DIPPY_CONFIG", "~/my.cfg")
 
         def mock_parse(text, source=None):
@@ -1305,8 +1309,8 @@ allow cd ~
         home = Path.home()
         # Settings expand tilde correctly
         assert cfg.log == home / "audit.log"
-        # Rule patterns also expand tilde consistently
-        assert cfg.rules[0].pattern == f"cd {home}"
+        # Rule patterns also expand tilde consistently (forward slashes for matching)
+        assert cfg.rules[0].pattern == f"cd {str(home).replace(chr(92), '/')}"
 
     def test_url_not_mangled(self, tmp_path):
         """URLs should not be turned into paths under cwd."""
@@ -1821,7 +1825,7 @@ class TestAlias:
 
     def test_alias_tilde_path(self, tmp_path):
         """alias ~/bin/gh gh + allow gh matches ~/bin/gh pr list."""
-        home = str(Path.home())
+        home = str(Path.home()).replace("\\", "/")
         cfg = parse_config("alias ~/bin/gh gh\nallow gh")
         assert cfg.aliases == {f"{home}/bin/gh": "gh"}
         c = SimpleCommand(words=["~/bin/gh", "pr", "list"])
