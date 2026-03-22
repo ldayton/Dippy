@@ -4016,9 +4016,8 @@ class TestCLI:
         import sys
         from unittest.mock import patch
 
-        with (
-            patch.object(sys, "argv", ["dippy"]),
-            patch.object(sys.stdin, "isatty", return_value=True),
+        with patch.object(sys, "argv", ["dippy"]), patch.object(
+            sys.stdin, "isatty", return_value=True
         ):
             from dippy.dippy import main
 
