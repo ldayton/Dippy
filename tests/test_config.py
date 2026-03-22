@@ -1162,6 +1162,40 @@ class TestMatchEdgeCases:
             match_command(cmd("git status --short --branch"), cfg, tmp_path) is not None
         )
 
+    def test_trailing_star_fallback_uses_fnmatch(self, tmp_path):
+        """Trailing ' *' fallback for bare commands should use fnmatch, not == (issue #110).
+
+        Pattern 'tea issue* close *' should match bare 'tea issues close'
+        because the base pattern 'tea issue* close' contains a glob.
+        """
+        cfg = Config(
+            rules=[Rule("ask", "tea issue* close *", message="Confirm closing issue")]
+        )
+        # Full pattern matches with args
+        assert match_command(cmd("tea issues close 42"), cfg, tmp_path) is not None
+        # Trailing ' *' fallback should use fnmatch on 'tea issue* close'
+        assert match_command(cmd("tea issues close"), cfg, tmp_path) is not None
+
+    def test_trailing_star_fallback_degenerate_base(self, tmp_path):
+        """Pattern '* *' should NOT match bare commands — base '*' is too permissive."""
+        cfg = Config(rules=[Rule("allow", "* *")])
+        assert match_command(cmd("git status"), cfg, tmp_path) is not None  # has args
+        assert match_command(cmd("ls"), cfg, tmp_path) is None  # bare, should not match
+
+    def test_trailing_star_fallback_glob_suffix(self, tmp_path):
+        """Pattern '*foo *' should match bare 'barfoo' via fnmatch fallback."""
+        cfg = Config(rules=[Rule("allow", "*foo *")])
+        assert match_command(cmd("barfoo baz"), cfg, tmp_path) is not None
+        assert match_command(cmd("barfoo"), cfg, tmp_path) is not None
+
+    def test_trailing_star_fallback_char_class(self, tmp_path):
+        """Pattern 'git [cp]* *' should match bare 'git clone' via fnmatch fallback."""
+        cfg = Config(rules=[Rule("ask", "git [cp]* *")])
+        assert match_command(cmd("git clone repo"), cfg, tmp_path) is not None
+        assert match_command(cmd("git clone"), cfg, tmp_path) is not None
+        assert match_command(cmd("git push"), cfg, tmp_path) is not None
+        assert match_command(cmd("git status"), cfg, tmp_path) is None  # s not in [cp]
+
 
 class TestPatternNormalization:
     """Test that patterns are normalized against cwd for matching."""
@@ -1431,6 +1465,20 @@ class TestMatchAfter:
         cfg = Config(after_rules=[Rule("after", "python *", message="Python ran")])
         result = match_after(["python"], cfg, tmp_path)
         assert result == "Python ran"
+
+    def test_trailing_star_fallback_uses_fnmatch(self, tmp_path):
+        """After rule trailing ' *' fallback should use fnmatch (issue #110)."""
+        cfg = Config(
+            after_rules=[Rule("after", "tea issue* close *", message="Issue closed")]
+        )
+        result = match_after(["tea", "issues", "close"], cfg, tmp_path)
+        assert result == "Issue closed"
+
+    def test_trailing_star_fallback_degenerate_base(self, tmp_path):
+        """After rule '* *' should NOT match bare commands."""
+        cfg = Config(after_rules=[Rule("after", "* *", message="ran")])
+        assert match_after(["git", "status"], cfg, tmp_path) == "ran"
+        assert match_after(["ls"], cfg, tmp_path) is None
 
     def test_path_normalization(self, tmp_path):
         home = str(Path.home())
