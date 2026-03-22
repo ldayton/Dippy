@@ -3966,6 +3966,69 @@ def test_command(check, cmd, expected_safe):
         assert needs_confirmation(result), f"Expected confirmation for: {cmd}"
 
 
+class TestCLI:
+    """Test CLI flags (--help, --version) and TTY detection."""
+
+    def test_help_flag(self, capsys):
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["dippy", "--help"]):
+            from dippy.dippy import main
+
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "Usage:" in captured.out
+        assert "--claude" in captured.out
+
+    def test_help_flag_short(self, capsys):
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["dippy", "-h"]):
+            from dippy.dippy import main
+
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "Usage:" in captured.out
+
+    def test_version_flag(self, capsys):
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["dippy", "--version"]):
+            from dippy.dippy import main
+
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        from dippy import __version__
+
+        assert __version__ in captured.out
+
+    def test_tty_shows_help(self, capsys):
+        """When stdin is a TTY (no piped input), show help instead of hanging."""
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["dippy"]), patch.object(
+            sys.stdin, "isatty", return_value=True
+        ):
+            from dippy.dippy import main
+
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "no input" in captured.out
+        assert "--help" in captured.out
+
+
 class TestPostToolUse:
     """Test PostToolUse hook handling."""
 
