@@ -7,6 +7,7 @@ caffeinate with a utility runs it while preventing sleep (delegate).
 from __future__ import annotations
 
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_join
 
 COMMANDS = ["caffeinate"]
 
@@ -47,5 +48,5 @@ def classify(ctx: HandlerContext) -> Classification:
         return Classification("allow", description="caffeinate")
 
     # Delegate to utility
-    inner_cmd = " ".join(tokens[i:])
+    inner_cmd = bash_join(tokens[i:])
     return Classification("delegate", inner_command=inner_cmd)

@@ -8,6 +8,7 @@ Delegates to inner command check.
 from __future__ import annotations
 
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_join
 
 COMMANDS = ["env"]
 
@@ -59,5 +60,5 @@ def classify(ctx: HandlerContext) -> Classification:
 
     # Delegate to inner command check
     inner_tokens = tokens[i:]
-    inner_cmd = " ".join(inner_tokens)
+    inner_cmd = bash_join(inner_tokens)
     return Classification("delegate", inner_command=inner_cmd)

@@ -8,6 +8,7 @@ Some commands need special handling for inner command checking.
 from __future__ import annotations
 
 from dippy.cli import Classification, HandlerContext
+from dippy.core.bash import bash_join
 
 COMMANDS = ["uv", "uvx"]
 
@@ -150,8 +151,8 @@ def _classify_uv_run(tokens: list[str]) -> Classification:
 
         inner_cmd_name = inner_tokens[0]
 
-        # Delegate to inner command check
-        inner_cmd = " ".join(inner_tokens)
+        # Delegate to inner command check (quote tokens to preserve special chars)
+        inner_cmd = bash_join(inner_tokens)
         return Classification(
             "delegate", inner_command=inner_cmd, description=f"uv run {inner_cmd_name}"
         )

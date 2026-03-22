@@ -138,6 +138,10 @@ TESTS = [
     ("uv run node script.js", False),
     ("uv run make build", False),
     #
+    # === Delegation with special characters (issue #109) ===
+    ("uv run python -c 'print(1)'", False),  # delegates to python handler, not parse error
+    ('uv run python -c "print(1)"', False),  # double-quoted variant
+    #
     # === UNSAFE: uv tool ===
     ("uv tool run ruff check", False),
     ("uv tool run --from ruff ruff check", False),
@@ -212,3 +216,13 @@ class TestUvRunDelegation:
         config = Config(rules=[Rule("allow", "python")])
         result = check("uv run --with requests python script.py", config=config)
         assert is_approved(result), "uv run with flags should still delegate"
+
+    def test_python_c_with_special_chars_no_parse_error(self, check_single):
+        """uv run python -c with parens should delegate, not parse error (issue #109)."""
+        decision, reason = check_single("uv run python -c 'print(1)'")
+        assert "parse error" not in reason, f"Got parse error instead of delegation: {reason}"
+
+    def test_python_c_double_quotes_no_parse_error(self, check_single):
+        """uv run python -c with double-quoted parens should not parse error (issue #109)."""
+        decision, reason = check_single('uv run python -c "print(1)"')
+        assert "parse error" not in reason, f"Got parse error instead of delegation: {reason}"
