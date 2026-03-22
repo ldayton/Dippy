@@ -271,6 +271,39 @@ def main():
     """Main entry point for the hook."""
     global MODE
 
+    # Early exit flags — checked before reading stdin
+    if "--help" in sys.argv or "-h" in sys.argv:
+        from dippy import __version__
+
+        print(f"Dippy v{__version__} — approval autopilot for AI coding assistants")
+        print()
+        print("Usage: dippy [--claude|--gemini|--cursor]")
+        print()
+        print("Reads JSON hook payload from stdin. Outputs a JSON decision.")
+        print()
+        print("Modes:")
+        print("  --claude   Force Claude Code mode")
+        print("  --gemini   Force Gemini CLI mode")
+        print("  --cursor   Force Cursor mode")
+        print("  (auto-detected from input if not specified)")
+        print()
+        print("Flags:")
+        print("  --help, -h       Show this help")
+        print("  --version, -V    Show version")
+        raise SystemExit(0)
+
+    if "--version" in sys.argv or "-V" in sys.argv:
+        from dippy import __version__
+
+        print(f"dippy {__version__}")
+        raise SystemExit(0)
+
+    # If stdin is a TTY, no input is being piped — show help instead of hanging
+    if sys.stdin.isatty():
+        print("dippy: no input (expected JSON on stdin)")
+        print("Run 'dippy --help' for usage.")
+        raise SystemExit(0)
+
     setup_logging()
 
     try:
