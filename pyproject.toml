@@ -1,6 +1,6 @@
 [project]
 name = "dippy"
-version = "0.2.6"
+version = "0.2.7"
 description = "Approval autopilot for Claude Code — stay in the flow by automatically allowing safe commands"
 readme = "README.md"
 license = { file = "LICENSE" }
