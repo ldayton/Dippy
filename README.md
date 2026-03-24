@@ -57,6 +57,8 @@ brew install dippy
 
 ```bash
 git clone https://github.com/ldayton/Dippy.git
+cd Dippy
+uv pip install -e .
 ```
 
 ### Configure
@@ -93,6 +95,20 @@ deny-redirect **/.env* "Never write secrets, ask me to do it"
 Dippy reads config from `~/.dippy/config` (global) and `.dippy` in your project root.
 
 **Full documentation:** [Dippy Wiki](https://github.com/ldayton/Dippy/wiki)
+
+### Getting Started
+
+An annotated example config and test harness are included in [`examples/`](examples/):
+
+- **[`examples/config`](examples/config)** — Starter config with rules for Git, Docker, npm, MCP tools, shell redirects, and home directory protection. Copy it and customize:
+  ```bash
+  cp examples/config ~/.dippy/config
+  ```
+
+- **[`examples/test-config.sh`](examples/test-config.sh)** — Validates your config produces the expected allow/ask/deny decisions (45 tests across 6 categories). Auto-detects `dippy`/`dippy.exe`:
+  ```bash
+  bash examples/test-config.sh
+  ```
 
 ---
 
