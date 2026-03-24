@@ -9,11 +9,15 @@ set log ~/.dippy/audit.log
 set log-full                     # include full command text in audit log
 
 #---- Python ----#
+allow rm -rf /**/__pycache__             # cache cleanup is safe
 deny python3 "Use `uv run python` to run in project environment"
 deny python  "Use `uv run python` to run in project environment"
 
 #---- uv ----#
 allow uv run                     # run commands in project venv
+allow uv run pytest              # test runner
+allow uv run python -c           # one-liners in venv
+deny uv run ruff "Use `just fmt --fix` and `just lint --fix`"
 allow uv sync                    # sync dependencies from lockfile
 allow uv lock                    # update lockfile
 allow uv tree                    # show dependency tree
@@ -64,6 +68,13 @@ deny npm unpublish "Irreversible — don't unpublish packages"
 #---- PowerShell ----#
 ask pwsh
 ask powershell
+
+#---- Just (task runner) ----#
+allow just check
+allow just fmt
+allow just lint
+allow just test
+deny just -C "Don't use -C, use the target directly"
 
 #---- curl / wget ----#
 ask curl

@@ -141,9 +141,23 @@ r=$(check_bash "docker ps -a");                  assert "docker ps"          "al
 r=$(check_bash "docker run -it ubuntu bash");    assert "docker run"         "ask"   "$r"
 r=$(check_bash "rm -rf ./node_modules");         assert "rm -rf"             "ask"   "$r"
 r=$(check_bash "pwsh -Command Get-Process");     assert "pwsh"               "ask"   "$r"
+r=$(check_bash "rm -rf /some/path/__pycache__");  assert "rm __pycache__"      "allow" "$r"
+r=$(check_bash "uv run pytest tests/");            assert "uv run pytest"       "allow" "$r"
+r=$(check_bash "uv run python -c 'print(1)'");     assert "uv run python -c"   "allow" "$r"
+r=$(check_bash "uv run ruff check .");             assert "uv run ruff (deny)" "deny"  "$r"
 
 # ==============================================================================
-header "6. Pipelines / Compound Commands"
+header "6. Just (task runner)"
+# ==============================================================================
+
+r=$(check_bash "just check");                      assert "just check"         "allow" "$r"
+r=$(check_bash "just fmt");                         assert "just fmt"           "allow" "$r"
+r=$(check_bash "just lint");                        assert "just lint"          "allow" "$r"
+r=$(check_bash "just test");                        assert "just test"          "allow" "$r"
+r=$(check_bash "just -C /other/dir test");          assert "just -C (deny)"    "deny"  "$r"
+
+# ==============================================================================
+header "7. Pipelines / Compound Commands"
 # ==============================================================================
 
 r=$(check_bash "git status && git log --oneline -5");          assert "status && log (safe)"   "allow" "$r"
