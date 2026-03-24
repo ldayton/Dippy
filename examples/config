@@ -1,0 +1,161 @@
+# Dippy example config
+# Copy to ~/.dippy/config and customize to your needs.
+#
+# Three decisions:  allow (auto-approve)  |  ask (prompt user)  |  deny (block)
+# Rule order matters: LAST MATCH WINS — put broad rules first, specific overrides after.
+
+#---- Settings ----#
+set log ~/.dippy/audit.log
+set log-full                     # include full command text in audit log
+
+#---- Python ----#
+deny python3 "Use `uv run python` to run in project environment"
+deny python  "Use `uv run python` to run in project environment"
+
+#---- uv ----#
+allow uv run                     # run commands in project venv
+allow uv sync                    # sync dependencies from lockfile
+allow uv lock                    # update lockfile
+allow uv tree                    # show dependency tree
+ask uv add                       # adding deps changes lockfile
+ask uv remove
+ask uv pip install               # escape hatch — prefer uv add
+ask uv pip uninstall
+
+#---- Git ----#
+# Reads — safe, auto-approve
+allow git status
+allow git log
+allow git diff
+allow git diff --stat
+allow git branch
+allow git stash list
+allow git show
+allow git remote -v
+allow git fetch
+
+# Writes — prompt for confirmation
+ask git push
+ask git merge
+ask git rebase
+ask git cherry-pick
+ask git tag
+
+# Dangerous — block with message
+deny git push --force "Dangerous — confirm manually in terminal"
+deny git reset --hard "Dangerous — confirm manually in terminal"
+deny git clean -f     "Irreversible — confirm manually in terminal"
+
+#---- Docker ----#
+allow docker ps
+allow docker images
+allow docker logs
+allow docker inspect
+ask docker run
+ask docker rm
+ask docker rmi
+
+#---- npm / node ----#
+allow npm list
+allow npm outdated
+ask npm run
+deny npm unpublish "Irreversible — don't unpublish packages"
+
+#---- PowerShell ----#
+ask pwsh
+ask powershell
+
+#---- curl / wget ----#
+ask curl
+ask wget
+
+# ==============================================================================
+# MCP Tools
+#
+# IMPORTANT: Last match wins! Put the catch-all FIRST, then specific overrides.
+# If you put the catch-all last, it will override all your specific rules.
+# ==============================================================================
+
+#---- MCP Tools ----#
+# Catch-all default — ask for any unrecognized MCP tool
+ask-mcp mcp__*
+
+# Read-only actions — auto-approve
+allow-mcp mcp__*__get_*
+allow-mcp mcp__*__list_*
+allow-mcp mcp__*__read_*
+allow-mcp mcp__*__search_*
+allow-mcp mcp__*__query_*
+
+# Per-server overrides (allow all tools from trusted read-only servers)
+# allow-mcp mcp__context7__*
+
+# Mutating actions — prompt for confirmation
+ask-mcp mcp__*__create_*
+ask-mcp mcp__*__update_*
+ask-mcp mcp__*__push_*
+
+# Destructive actions — block (overrides the allows above)
+deny-mcp mcp__*__delete_* "Destructive — confirm manually"
+deny-mcp mcp__*__remove_* "Destructive — confirm manually"
+deny-mcp mcp__*__drop_*   "Destructive — confirm manually"
+
+# ==============================================================================
+# Redirects (shell output: >, >>, 2>, &>, tee, dd of=)
+#
+# These rules control where shell commands can WRITE via redirects.
+# They do NOT affect Claude's Edit/Write tools (that requires a separate hook).
+# ==============================================================================
+
+#---- Redirect rules ----#
+deny-redirect **/.env*    "Don't overwrite .env files via shell"
+deny-redirect **/secrets* "Don't overwrite secrets via shell"
+
+# Block all shell writes under home directory
+deny-redirect ~/** "Don't write to home directory via shell redirect"
+
+# Allow temp and build output
+allow-redirect /tmp/**
+allow-redirect ./dist/**
+allow-redirect ./build/**
+allow-redirect ./target/**
+allow-redirect ./coverage/**
+allow-redirect ./.pytest_cache/**
+
+# Logs
+allow-redirect ./logs/**
+allow-redirect ./*.log
+
+# Protect source from shell redirects (prefer Edit/Write tools)
+deny-redirect ./src/** "Use the AI's file editing tools instead"
+
+# ==============================================================================
+# Command argument protection
+#
+# These rules match commands with specific PATH ARGUMENTS.
+# Pattern: deny <cmd> <path-glob> "message"
+# ==============================================================================
+
+#---- Home directory protection ----#
+# Block mutations in ~, then carve out exceptions (last match wins)
+deny rm    ~/** "Don't delete files in home directory"
+deny mv    ~/** "Don't move files in home directory"
+deny cp    ~/** "Don't copy to home directory"
+deny chmod ~/** "Don't change permissions in home directory"
+
+# Exception: allow operations in project workspace
+allow * ~/repos/**
+# Exception: prompt for AI config changes
+ask * ~/.claude/**
+
+#---- System paths ----#
+ask rm -rf
+deny * /etc/**    "Don't touch system config"
+deny * /usr/**    "Don't touch system files"
+deny * ~/.ssh/**  "Don't touch SSH keys"
+
+#---- Sensitive redirect targets ----#
+deny-redirect ~/.ssh/**  "SSH keys are protected"
+deny-redirect ~/.aws/**  "AWS credentials are protected"
+deny-redirect ~/.gnupg/** "GPG keys are protected"
+deny-redirect /etc/**    "System config is protected"
