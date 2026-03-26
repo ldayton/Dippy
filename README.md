@@ -9,7 +9,9 @@
 
 > **Stop the permission fatigue.** Claude Code asks for approval on every `ls`, `git status`, and `cat` - destroying your flow state. You check Slack, come back, and your assistant's just sitting there waiting.
 
-Dippy is a shell command hook that auto-approves safe commands while still prompting for anything destructive. When it blocks, your custom deny messages can steer Claude back on track—no wasted turns. Get up to **40% faster development** without disabling permissions entirely.
+Dippy is a shell command hook that auto-approves safe commands while still prompting for anything destructive. When it blocks, your custom deny messages can steer the AI back on track—no wasted turns. Get up to **40% faster development** without disabling permissions entirely.
+
+Works with **Claude Code**, **Cursor**, and **Gemini CLI**.
 
 Built on [Parable](https://github.com/ldayton/Parable), our own hand-written bash parser—no external dependencies, just pure Python. 14,000+ tests between the two.
 
@@ -61,6 +63,8 @@ git clone https://github.com/ldayton/Dippy.git
 
 ### Configure
 
+#### Claude Code
+
 Add to `~/.claude/settings.json` (or use `/hooks` interactively):
 
 ```json
@@ -75,6 +79,37 @@ Add to `~/.claude/settings.json` (or use `/hooks` interactively):
   }
 }
 ```
+
+#### Cursor
+
+WARNING: While Dippy does support the input and ouput formats expected by Cursor the latest version of Cursor's use of hooks is broken and integrates pooly with their sandbox and network sandbox system. You have two choices:
+1) Use Dippy as an extra layer: With `beforeShellExecution` it honors the Deny response but then will still prompt on Allow or Ask.
+2) Forgo protections for non-shell commands: This is NOT recommended but with the `preToolUse` hook in cursor Allow/Deny work but Ask is treated as "no opinion" so it falls through. So you can set Cursor to "run everything" but this approves all tool use, Read, Write, WebSearch etc automatically as well.
+
+Add to `~/.cursor/hooks.json` (global) or `.cursor/hooks.json` in your project root:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      { "matcher": "Shell", "command": "dippy" }
+    ]
+  }
+}
+```
+
+The `matcher` ensures Dippy only runs for shell commands, not every tool invocation.
+
+Dippy auto-detects Cursor's input format, so no extra flags are needed. If you prefer to be explicit, use `dippy --cursor` or set `DIPPY_CURSOR=1`.
+
+Logs go to `~/.cursor/hook-approvals.log`.
+
+> **Note:** Cursor has a known bug where only the first hook in an array runs. If you have other hooks of the same type, Dippy must be listed first.
+
+> **Note:** Cursor's `beforeShellExecution` hook has a known bug where `allow` responses are ignored — only `deny` works correctly. Use `preToolUse` instead, however this does NOT respect `ask` commands.
+
+> **Note:** Cursor's sandbox mode bypasses hook permission decisions. Commands that run in the sandbox are auto-approved regardless of what the hook returns. Only unsandboxed commands (those requiring `required_permissions`) respect `allow` and `deny` responses.
 
 If you installed manually, use the full path instead: `/path/to/Dippy/bin/dippy-hook`
 
@@ -104,7 +139,7 @@ Dippy can do more than filter shell commands. See the [wiki](https://github.com/
 
 ## Uninstall
 
-Remove the hook entry from `~/.claude/settings.json`, then:
+Remove the hook entry from `~/.claude/settings.json` or `~/.cursor/hooks.json`, then:
 
 ```bash
 brew uninstall dippy  # if installed via Homebrew

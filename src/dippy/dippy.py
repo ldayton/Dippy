@@ -53,8 +53,12 @@ def _detect_mode_from_flags() -> str | None:
 
 def _detect_mode_from_input(input_data: dict) -> str:
     """Auto-detect mode from input JSON structure."""
-    # Cursor: {"command": "...", "cwd": "..."}
+    # Cursor beforeShellExecution: {"command": "...", "cwd": "..."}
     if "command" in input_data and "tool_name" not in input_data:
+        return "cursor"
+
+    # Cursor preToolUse: has cursor_version field
+    if "cursor_version" in input_data:
         return "cursor"
 
     # Claude/Gemini: {"tool_name": "...", "tool_input": {...}}
@@ -259,6 +263,7 @@ def handle_mcp_post_tool_use(tool_name: str, config: Config) -> None:
 SHELL_TOOL_NAMES = frozenset(
     {
         "Bash",  # Claude Code
+        "Shell",  # Cursor preToolUse
         "shell",  # Gemini CLI
         "run_shell",  # Gemini CLI alternate
         "run_shell_command",  # Gemini CLI official name
@@ -340,12 +345,20 @@ def main():
         hook_event = input_data.get("hook_event_name", "PreToolUse")
 
         # Extract command based on mode
-        # Cursor: {"command": "...", "cwd": "..."}
+        # Cursor beforeShellExecution: {"command": "...", "cwd": "..."}
+        # Cursor preToolUse: {"tool_name": "Shell", "tool_input": {"command": "..."}}
         # Claude/Gemini: {"tool_name": "...", "tool_input": {"command": "..."}}
         if MODE == "cursor":
-            # Cursor sends command directly (beforeShellExecution hook)
-            command = input_data.get("command", "")
-            tool_name = None
+            # beforeShellExecution hook: command is top-level
+            # preToolUse hook (delegated via claude-approve): command is in tool_input
+            tool_name = input_data.get("tool_name")
+            if tool_name is not None:
+                if tool_name not in SHELL_TOOL_NAMES:
+                    print(json.dumps({}))
+                    return
+                command = input_data.get("tool_input", {}).get("command", "")
+            else:
+                command = input_data.get("command", "")
         else:
             # Claude Code and Gemini CLI use tool_name/tool_input format
             tool_name = input_data.get("tool_name", "")

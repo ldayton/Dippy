@@ -129,6 +129,52 @@ class TestEndToEnd:
         assert output == {}
 
 
+class TestCursorPreToolUse:
+    """Tests for Cursor preToolUse hook format."""
+
+    def test_cursor_pretooluse_shell_allowed(self):
+        """Cursor preToolUse with Shell tool and safe command returns allow."""
+        input_data = {
+            "tool_name": "Shell",
+            "tool_input": {"command": "git status", "cwd": ""},
+            "hook_event_name": "preToolUse",
+            "cursor_version": "2.6.18",
+            "workspace_roots": ["/tmp"],
+        }
+        result = run_hook(input_data)
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert output.get("permission") == "allow"
+
+    def test_cursor_pretooluse_shell_dangerous(self):
+        """Cursor preToolUse with Shell tool and dangerous command returns ask."""
+        input_data = {
+            "tool_name": "Shell",
+            "tool_input": {"command": "rm -rf /", "cwd": ""},
+            "hook_event_name": "preToolUse",
+            "cursor_version": "2.6.18",
+            "workspace_roots": ["/tmp"],
+        }
+        result = run_hook(input_data)
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert output.get("permission") == "ask"
+
+    def test_cursor_pretooluse_non_shell_passthrough(self):
+        """Cursor preToolUse with non-Shell tool returns empty (passthrough)."""
+        input_data = {
+            "tool_name": "Read",
+            "tool_input": {"path": "/etc/passwd"},
+            "hook_event_name": "preToolUse",
+            "cursor_version": "2.6.18",
+            "workspace_roots": ["/tmp"],
+        }
+        result = run_hook(input_data)
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert output == {}
+
+
 class TestErrorHandling:
     """Test graceful handling of bad input."""
 

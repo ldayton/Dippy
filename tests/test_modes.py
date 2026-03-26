@@ -245,9 +245,43 @@ def test_auto_detect_cursor_from_input():
     """Test auto-detection of Cursor mode from input structure."""
     from dippy.dippy import _detect_mode_from_input
 
-    # Cursor sends command directly without tool_name
+    # Cursor beforeShellExecution: command directly without tool_name
     input_data = {"command": "ls", "cwd": "/home/user"}
     assert _detect_mode_from_input(input_data) == "cursor"
+
+
+def test_auto_detect_cursor_pretooluse_from_input():
+    """Test auto-detection of Cursor mode from preToolUse input structure."""
+    from dippy.dippy import _detect_mode_from_input
+
+    # Cursor preToolUse: has cursor_version field
+    input_data = {
+        "tool_name": "Shell",
+        "tool_input": {"command": "ls", "cwd": ""},
+        "hook_event_name": "preToolUse",
+        "cursor_version": "2.6.18",
+    }
+    assert _detect_mode_from_input(input_data) == "cursor"
+
+
+def test_auto_detect_cursor_pretooluse_non_shell_tool():
+    """Test auto-detection of Cursor mode for non-shell preToolUse tools."""
+    from dippy.dippy import _detect_mode_from_input
+
+    input_data = {
+        "tool_name": "Read",
+        "tool_input": {"path": "/some/file"},
+        "hook_event_name": "preToolUse",
+        "cursor_version": "2.6.18",
+    }
+    assert _detect_mode_from_input(input_data) == "cursor"
+
+
+def test_shell_tool_names_includes_cursor():
+    """Test that SHELL_TOOL_NAMES includes Cursor's Shell tool name."""
+    from dippy.dippy import SHELL_TOOL_NAMES
+
+    assert "Shell" in SHELL_TOOL_NAMES
 
 
 def test_no_flag_defaults_to_auto_detect(monkeypatch):
