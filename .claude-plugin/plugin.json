@@ -1,0 +1,8 @@
+{
+  "name": "dippy",
+  "description": "Approval autopilot — auto-approves safe commands, prompts for destructive ones",
+  "author": {
+    "name": "Lily Dayton"
+  },
+  "homepage": "https://github.com/ldayton/Dippy"
+}
