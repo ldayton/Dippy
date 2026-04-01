@@ -141,9 +141,9 @@ TESTS = [
     # === Delegation with special characters (issue #109) ===
     (
         "uv run python -c 'print(1)'",
-        False,
-    ),  # delegates to python handler, not parse error
-    ('uv run python -c "print(1)"', False),  # double-quoted variant
+        True,
+    ),  # delegates to python handler, safe -c code auto-approved
+    ('uv run python -c "print(1)"', True),  # double-quoted variant
     #
     # === UNSAFE: uv tool ===
     ("uv tool run ruff check", False),

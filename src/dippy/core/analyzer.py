@@ -231,6 +231,8 @@ def _analyze_command(
 
     # Get base command for injection check
     words = [_get_word_value(w) for w in node.words]
+    # Track which words contain bash expansions (param, cmdsub, procsub)
+    word_has_expansions = tuple(bool(getattr(w, "parts", [])) for w in node.words)
     # Skip env var assignments to find base command
     base_idx = 0
     while (
@@ -287,7 +289,9 @@ def _analyze_command(
                     and position > base_idx
                 ):
                     handler = get_handler(base)
-                    outer_result = handler.classify(HandlerContext(words[base_idx:]))
+                    outer_result = handler.classify(
+                        HandlerContext(words[base_idx:], config=config)
+                    )
                     if outer_result.action != "allow":
                         inner_cmd = _get_word_value(word).strip("$()")
                         return Decision("ask", f"cmdsub injection risk: {inner_cmd}")
@@ -319,7 +323,9 @@ def _analyze_command(
         decisions.append(Decision("allow", "conditional test"))
         return _combine(decisions)
 
-    cmd_decision = _analyze_simple_command(words, config, cwd, remote=remote)
+    cmd_decision = _analyze_simple_command(
+        words, config, cwd, remote=remote, word_has_expansions=word_has_expansions
+    )
     decisions.append(cmd_decision)
 
     return _combine(decisions)
@@ -382,7 +388,12 @@ def _analyze_redirects(
 
 
 def _analyze_simple_command(
-    words: list[str], config: Config, cwd: Path, *, remote: bool = False
+    words: list[str],
+    config: Config,
+    cwd: Path,
+    *,
+    remote: bool = False,
+    word_has_expansions: tuple[bool, ...] = (),
 ) -> Decision:
     """Analyze a simple command (list of words)."""
     if not words:
@@ -448,7 +459,11 @@ def _analyze_simple_command(
     # 5. CLI-specific handlers
     handler = get_handler(base)
     if handler:
-        result = handler.classify(HandlerContext(tokens))
+        result = handler.classify(
+            HandlerContext(
+                tokens, config=config, word_has_expansions=word_has_expansions
+            )
+        )
         desc = result.description or get_description(tokens, base)
         # Check handler-provided redirect targets against config (skip in remote mode)
         if result.redirect_targets and not remote:

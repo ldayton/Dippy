@@ -12,7 +12,10 @@ import importlib
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional, Protocol
+from typing import TYPE_CHECKING, Literal, Optional, Protocol
+
+if TYPE_CHECKING:
+    from dippy.core.config import Config
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,9 @@ class HandlerContext:
     """Context passed to handlers."""
 
     tokens: list[str]
+    config: Config | None = None
+    word_has_expansions: tuple[bool, ...] = ()
+    """Per-token flag: True if the original word contained bash expansions ($VAR, $(cmd), etc.)."""
 
 
 @dataclass(frozen=True)

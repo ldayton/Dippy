@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from dippy.core.config import Config
 from conftest import is_approved, needs_confirmation
 
 
@@ -40,9 +41,7 @@ class TestPythonCodeExecution:
     @pytest.mark.parametrize(
         "cmd",
         [
-            "python -c 'print(1)'",
             "python3 -c 'import os; os.system(\"ls\")'",
-            "python -c 'x=1'",
             "python -m http.server",
             "python -m pip install foo",
             "python -m pytest",
@@ -1285,3 +1284,244 @@ print(data, counts)
 """
         violations = analyze_python_source(source)
         assert len(violations) == 0, f"Expected no violations, got {violations}"
+
+
+class TestPythonConfigModules:
+    """Tests for configurable safe/unsafe module lists."""
+
+    def test_allow_module_via_config(self, check, tmp_path):
+        """User-allowed module should pass analysis."""
+        script = tmp_path / "use_numpy.py"
+        script.write_text("import numpy\nx = numpy.array([1, 2, 3])")
+        config = Config(python_allow_modules=["numpy"])
+        result = check(f"python {script}", config=config)
+        assert is_approved(result), "numpy should be approved via config"
+
+    def test_deny_module_via_config(self, check, tmp_path):
+        """User-denied module should be flagged even if normally safe."""
+        script = tmp_path / "use_json.py"
+        script.write_text("import json\njson.dumps({})")
+        config = Config(python_deny_modules=["json"])
+        result = check(f"python {script}", config=config)
+        assert needs_confirmation(result), "json should be denied via config"
+
+    def test_deny_overrides_safe(self, check, tmp_path):
+        """Deny should override the hardcoded safe list."""
+        script = tmp_path / "use_math.py"
+        script.write_text("import math\nprint(math.pi)")
+        config = Config(python_deny_modules=["math"])
+        result = check(f"python {script}", config=config)
+        assert needs_confirmation(result), "math should be denied via config override"
+
+    def test_multiple_config_modules(self, check, tmp_path):
+        """Multiple allowed modules should all work."""
+        script = tmp_path / "multi.py"
+        script.write_text("import numpy\nimport pandas\nx = 1")
+        config = Config(python_allow_modules=["numpy", "pandas"])
+        result = check(f"python {script}", config=config)
+        assert is_approved(result), "multiple config modules should work"
+
+    def test_no_config_unknown_module_blocked(self, check, tmp_path):
+        """Without config, unknown module should be blocked."""
+        script = tmp_path / "use_numpy.py"
+        script.write_text("import numpy")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "unknown module without config should ask"
+
+
+class TestPythonAllowOverridesDangerous:
+    """Tests for python-allow-module overriding hardcoded dangerous modules."""
+
+    def test_allow_pathlib_module(self, check, tmp_path):
+        """python-allow-module pathlib should override dangerous for pathlib."""
+        script = tmp_path / "use_pathlib.py"
+        script.write_text("from pathlib import Path\np = Path('.')")
+        config = Config(python_allow_modules=["pathlib"])
+        result = check(f"python {script}", config=config)
+        assert is_approved(result), "pathlib should be approved via config override"
+
+    def test_allow_root_only_blocks_submodule(self, check, tmp_path):
+        """Allowing only root should NOT approve separately-listed submodules."""
+        script = tmp_path / "use_http.py"
+        script.write_text("import http.server")
+        config = Config(python_allow_modules=["http"])
+        result = check(f"python {script}", config=config)
+        assert needs_confirmation(result), "http.server needs separate allow"
+
+    def test_allow_root_and_submodules(self, check, tmp_path):
+        """Allowing both http and http.server should approve the script."""
+        script = tmp_path / "use_http.py"
+        script.write_text("import http.server\nprint('ok')")
+        config = Config(python_allow_modules=["http", "http.server"])
+        result = check(f"python {script}", config=config)
+        assert is_approved(result), "http + http.server should be approved via config"
+
+    def test_without_allow_still_blocked(self, check, tmp_path):
+        """Without config, dangerous modules should still be blocked."""
+        script = tmp_path / "use_http.py"
+        script.write_text("import http.server")
+        result = check(f"python {script}")
+        assert needs_confirmation(result), "http should still be blocked without config"
+
+
+class TestUnitAnalysisConfigModules:
+    """Unit tests for analyze_python_source with extra modules."""
+
+    def test_extra_safe_module(self):
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "import numpy", extra_safe_modules=frozenset({"numpy"})
+        )
+        assert len(violations) == 0
+
+    def test_extra_deny_module(self):
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "import json", extra_deny_modules=frozenset({"json"})
+        )
+        assert len(violations) > 0
+        assert any("json" in v.detail for v in violations)
+
+    def test_deny_overrides_builtin_safe(self):
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "import math", extra_deny_modules=frozenset({"math"})
+        )
+        assert len(violations) > 0
+        assert any("math" in v.detail for v in violations)
+
+    def test_from_import_respects_config(self):
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "from numpy import array", extra_safe_modules=frozenset({"numpy"})
+        )
+        assert len(violations) == 0
+
+    def test_allow_overrides_dangerous_exact(self):
+        """python-allow-module should override exact match in DANGEROUS_MODULES."""
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "import http", extra_safe_modules=frozenset({"http"})
+        )
+        assert len(violations) == 0
+
+    def test_allow_does_not_override_submodules(self):
+        """Allowing root does NOT automatically allow separately-listed submodules."""
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "import http.server", extra_safe_modules=frozenset({"http"})
+        )
+        assert len(violations) > 0
+
+    def test_allow_submodule_explicitly(self):
+        """Explicitly allowing a submodule should work."""
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "import http.server",
+            extra_safe_modules=frozenset({"http", "http.server"}),
+        )
+        assert len(violations) == 0
+
+    def test_allow_override_pathlib(self):
+        """Allowing pathlib should override dangerous for pathlib."""
+        from dippy.cli.python import analyze_python_source
+
+        violations = analyze_python_source(
+            "from pathlib import Path", extra_safe_modules=frozenset({"pathlib"})
+        )
+        assert len(violations) == 0
+
+
+class TestPythonInlineCode:
+    """Tests for python -c inline code analysis."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "python -c 'print(1)'",
+            "python -c 'x=1'",
+            "python -c 'import json; json.dumps({})'",
+            "python -c 'import math; print(math.sqrt(2))'",
+            "python -c '[x**2 for x in range(10)]'",
+        ],
+    )
+    def test_safe_inline_code_approved(self, check, cmd):
+        """Safe inline code should be auto-approved."""
+        result = check(cmd)
+        assert is_approved(result), f"Expected approve: {cmd}"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "python -c 'import os'",
+            "python -c 'import subprocess; subprocess.run([])'",
+            "python -c 'open(\"foo.txt\")'",
+            "python -c 'eval(\"1+1\")'",
+            "python3 -c 'import os; os.system(\"ls\")'",
+        ],
+    )
+    def test_dangerous_inline_code_needs_confirmation(self, check, cmd):
+        """Dangerous inline code should need confirmation."""
+        result = check(cmd)
+        assert needs_confirmation(result), f"Expected confirm: {cmd}"
+
+    def test_c_no_argument_needs_confirmation(self, check):
+        """python -c with no code argument should need confirmation."""
+        result = check("python -c")
+        assert needs_confirmation(result)
+
+    def test_c_empty_string_needs_confirmation(self, check):
+        """python -c '' should need confirmation."""
+        result = check("python -c ''")
+        assert needs_confirmation(result)
+
+    def test_config_modules_with_inline_code(self, check):
+        """Config modules should apply to -c inline code too."""
+        config = Config(python_allow_modules=["numpy"])
+        result = check("python -c 'import numpy'", config=config)
+        assert is_approved(result), "numpy should be approved in -c via config"
+
+    def test_config_deny_modules_with_inline_code(self, check):
+        """Config deny modules should apply to -c inline code too."""
+        config = Config(python_deny_modules=["json"])
+        result = check("python -c 'import json'", config=config)
+        assert needs_confirmation(result), "json should be denied in -c via config"
+
+    def test_allow_override_in_inline_code(self, check):
+        """Allow override should also work for -c inline code."""
+        config = Config(python_allow_modules=["pathlib"])
+        result = check("python -c 'from pathlib import Path'", config=config)
+        assert is_approved(result), (
+            "pathlib in -c should be approved via config override"
+        )
+
+
+class TestPythonInlineExpansions:
+    """Tests for bash expansion detection in -c inline code."""
+
+    def test_c_with_bash_variable_needs_confirmation(self, check_single):
+        """python -c with $VAR should fall back to ask."""
+        decision, reason = check_single('python -c "print($HOME)"')
+        assert decision != "approve" or "expansion" in reason
+
+    def test_c_with_command_substitution_needs_confirmation(self, check_single):
+        """python -c with $(cmd) should fall back to ask."""
+        decision, reason = check_single('python -c "print($(whoami))"')
+        assert decision != "approve"
+
+    def test_c_safe_no_expansion_approved(self, check_single):
+        """python -c with no expansions should be approved if safe."""
+        decision, reason = check_single("python -c 'print(1)'")
+        assert decision == "approve"
+
+    def test_c_single_quoted_no_expansion(self, check_single):
+        """Single-quoted -c code has no expansions (bash doesn't expand in single quotes)."""
+        decision, reason = check_single("python -c 'print(1+1)'")
+        assert decision == "approve"

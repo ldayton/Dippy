@@ -1973,3 +1973,91 @@ class TestAlias:
         m = match_command(c, cfg, tmp_path)
         assert m is not None
         assert m.decision == "allow"
+
+
+class TestPythonModuleDirectives:
+    """Tests for python-allow-module and python-deny-module directives."""
+
+    def test_python_allow_module(self):
+        cfg = parse_config("python-allow-module numpy")
+        assert cfg.python_allow_modules == ["numpy"]
+
+    def test_python_deny_module(self):
+        cfg = parse_config("python-deny-module requests")
+        assert cfg.python_deny_modules == ["requests"]
+
+    def test_multiple_allow_modules(self):
+        cfg = parse_config("python-allow-module numpy\npython-allow-module pandas")
+        assert cfg.python_allow_modules == ["numpy", "pandas"]
+
+    def test_multiple_deny_modules(self):
+        cfg = parse_config("python-deny-module requests\npython-deny-module boto3")
+        assert cfg.python_deny_modules == ["requests", "boto3"]
+
+    def test_empty_module_skipped(self):
+        """Empty module name should be skipped with warning."""
+        cfg = parse_config("python-allow-module")
+        assert cfg.python_allow_modules == []
+
+    def test_inline_comment_after_module(self):
+        """Inline comment after module name should be stripped."""
+        cfg = parse_config("python-allow-module numpy # math library")
+        assert cfg.python_allow_modules == ["numpy"]
+
+    def test_merge_accumulates_modules(self):
+        """Merging configs should accumulate module lists."""
+        base = Config(python_allow_modules=["numpy"])
+        overlay = Config(python_allow_modules=["pandas"])
+        merged = _merge_configs(base, overlay)
+        assert merged.python_allow_modules == ["numpy", "pandas"]
+
+    def test_merge_accumulates_deny_modules(self):
+        base = Config(python_deny_modules=["requests"])
+        overlay = Config(python_deny_modules=["boto3"])
+        merged = _merge_configs(base, overlay)
+        assert merged.python_deny_modules == ["requests", "boto3"]
+
+    def test_mixed_directives(self):
+        """Allow and deny modules can coexist."""
+        cfg = parse_config("python-allow-module numpy\npython-deny-module requests")
+        assert cfg.python_allow_modules == ["numpy"]
+        assert cfg.python_deny_modules == ["requests"]
+
+    def test_with_other_directives(self):
+        """Module directives coexist with other config directives."""
+        cfg = parse_config("allow git\npython-allow-module numpy\ndeny rm")
+        assert cfg.python_allow_modules == ["numpy"]
+        assert len(cfg.rules) == 2
+
+    def test_dotted_module_name(self):
+        """Dotted module names like http.server should be valid."""
+        cfg = parse_config("python-allow-module http.server")
+        assert cfg.python_allow_modules == ["http.server"]
+
+    def test_deeply_nested_module_name(self):
+        """Deeply nested module names should be valid."""
+        cfg = parse_config("python-allow-module xml.etree.ElementTree")
+        assert cfg.python_allow_modules == ["xml.etree.ElementTree"]
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "lol what",
+            "123bad",
+            "foo/bar",
+            "foo-bar",
+            ".leading.dot",
+            "trailing.",
+            "double..dot",
+            "foo bar baz",
+        ],
+    )
+    def test_invalid_module_name_skipped(self, bad_name):
+        """Invalid Python module names should be rejected."""
+        cfg = parse_config(f"python-allow-module {bad_name}")
+        assert cfg.python_allow_modules == []
+
+    def test_invalid_deny_module_name_skipped(self):
+        """Invalid module name in deny should also be rejected."""
+        cfg = parse_config("python-deny-module not-valid!")
+        assert cfg.python_deny_modules == []
