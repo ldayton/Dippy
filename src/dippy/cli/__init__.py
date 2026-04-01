@@ -20,6 +20,7 @@ class HandlerContext:
     """Context passed to handlers."""
 
     tokens: list[str]
+    opaque_positions: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)

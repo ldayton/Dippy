@@ -98,6 +98,98 @@ UNSAFE_SUBCOMMANDS = {
 }
 
 
+SECRET_RESOURCES = frozenset({"secret", "secrets"})
+
+SAFE_OUTPUT_FORMATS = frozenset({"name", "wide"})
+
+# Flags (after the verb) that consume the next token as a value
+_POST_VERB_FLAGS_WITH_ARG = frozenset(
+    {
+        "-o",
+        "--output",
+        "-n",
+        "--namespace",
+        "-l",
+        "--selector",
+        "-f",
+        "--filename",
+        "--field-selector",
+        "--sort-by",
+        "--template",
+        "--context",
+        "--cluster",
+    }
+)
+
+
+def _is_secret_data_exposure(
+    tokens: list[str],
+    rest: list[str],
+    opaque_positions: frozenset[int] = frozenset(),
+    rest_offset: int = 0,
+) -> bool:
+    """Check if a get command targets secrets with a data-exposing output format.
+
+    Scans rest for the resource type and full tokens for -o (which can appear
+    before or after the verb).  When opaque_positions is provided, conservatively
+    flags commands where opaque tokens could expand to secret resources or
+    data-exposing formats.
+    """
+    # Find resource type: first non-flag token in rest
+    resource_type = None
+    resource_abs_pos = None
+    i = 0
+    while i < len(rest):
+        token = rest[i]
+        if token in _POST_VERB_FLAGS_WITH_ARG:
+            i += 2
+            continue
+        if token.startswith("-"):
+            i += 1
+            continue
+        resource_type = token
+        resource_abs_pos = rest_offset + i
+        break
+
+    if resource_type is None:
+        return False
+
+    # If resource position is opaque, it could expand to "secret" (or anything)
+    if resource_abs_pos in opaque_positions:
+        return True
+
+    # Handle comma-separated resources (e.g., "secret,configmap") and
+    # type/name syntax (e.g., "secret/my-secret")
+    parts = resource_type.split(",")
+    if not any(p.split("/")[0] in SECRET_RESOURCES for p in parts):
+        return False
+
+    # Resource IS secrets -- if any remaining token is opaque, it could inject
+    # a data-exposing format like -o yaml
+    if _has_opaque_after(opaque_positions, resource_abs_pos + 1):
+        return True
+
+    # Find output format from full token list (-o can appear before or after verb)
+    output_format = None
+    for j, token in enumerate(tokens):
+        if token in ("-o", "--output") and j + 1 < len(tokens):
+            output_format = tokens[j + 1]
+            break
+        if token.startswith("--output="):
+            output_format = token[len("--output=") :]
+            break
+        if len(token) > 2 and token[:2] == "-o" and token[2] != "-":
+            output_format = token[2:]
+            break
+
+    if output_format is None:
+        return False
+
+    # Extract format name before any = (e.g., "jsonpath='{.data}'" -> "jsonpath")
+    format_name = output_format.split("=")[0]
+    return format_name not in SAFE_OUTPUT_FORMATS
+
+
 def _extract_exec_inner_command(tokens: list[str]) -> list[str] | None:
     """Extract command from kubectl exec args (after -- separator)."""
     try:
@@ -108,9 +200,15 @@ def _extract_exec_inner_command(tokens: list[str]) -> list[str] | None:
         return None  # No -- separator
 
 
+def _has_opaque_after(opaque_positions: frozenset[int], start: int) -> bool:
+    """Check if any token position >= start is opaque."""
+    return any(p >= start for p in opaque_positions)
+
+
 def classify(ctx: HandlerContext) -> Classification:
     """Classify kubectl command."""
     tokens = ctx.tokens
+    opaque = ctx.opaque_positions
     base = tokens[0] if tokens else "kubectl"
     if len(tokens) < 2:
         return Classification("ask", description=base)
@@ -147,22 +245,37 @@ def classify(ctx: HandlerContext) -> Classification:
         return Classification("ask", description=base)
 
     rest = tokens[action_idx + 1 :] if action_idx + 1 < len(tokens) else []
+    rest_offset = action_idx + 1
     desc = f"{base} {action}"
 
-    # Check for subcommands first
+    # Check for subcommands first (config/auth/rollout)
     if action in SAFE_SUBCOMMANDS and rest:
-        for token in rest:
+        for idx, token in enumerate(rest):
             if not token.startswith("-"):
+                abs_pos = rest_offset + idx
+                if abs_pos in opaque:
+                    return Classification("ask", description=desc)
                 if token in SAFE_SUBCOMMANDS[action]:
+                    # config view --raw exposes unredacted kubeconfig credentials
+                    if action == "config" and token == "view":
+                        if "--raw" in rest or _has_opaque_after(opaque, abs_pos + 1):
+                            return Classification("ask", description=f"{desc} {token}")
                     return Classification("allow", description=f"{desc} {token}")
                 break
 
     if action in UNSAFE_SUBCOMMANDS and rest:
-        for token in rest:
+        for idx, token in enumerate(rest):
             if not token.startswith("-"):
+                abs_pos = rest_offset + idx
+                if abs_pos in opaque:
+                    return Classification("ask", description=desc)
                 if token in UNSAFE_SUBCOMMANDS[action]:
                     return Classification("ask", description=f"{desc} {token}")
                 break
+
+    # Sensitive data checks (before blanket safe-action approval)
+    if action == "get" and _is_secret_data_exposure(tokens, rest, opaque, rest_offset):
+        return Classification("ask", description=f"{desc} (secret data)")
 
     # Simple safe actions
     if action in SAFE_ACTIONS:
