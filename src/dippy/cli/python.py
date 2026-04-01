@@ -792,10 +792,11 @@ def classify(ctx: HandlerContext) -> Classification:
 
     Auto-approves:
     - Version/help flags
+    - -c inline code that passes static analysis (no bash expansions)
     - Scripts that pass static analysis (no I/O, no dangerous imports)
 
     Requires confirmation:
-    - -c (inline code)
+    - -c inline code that fails analysis or contains bash expansions
     - -m (module execution)
     - Scripts that fail analysis or can't be read
     - Interactive mode
@@ -819,9 +820,30 @@ def classify(ctx: HandlerContext) -> Classification:
         if token in SAFE_FLAGS:
             return Classification("allow", description=desc)
 
-    # Check for -c (inline code) - too hard to analyze reliably
+    # Check for -c (inline code) - analyze if possible
     if "-c" in tokens:
-        return Classification("ask", description=desc)
+        idx = tokens.index("-c")
+        if idx + 1 >= len(tokens):
+            return Classification("ask", description=desc)
+        # If the -c argument contains bash expansions ($VAR, $(cmd), etc.),
+        # we can't reliably analyze it since bash modifies the code at runtime.
+        code_token_idx = idx + 1
+        if (
+            ctx.word_has_expansions
+            and code_token_idx < len(ctx.word_has_expansions)
+            and ctx.word_has_expansions[code_token_idx]
+        ):
+            return Classification("ask", description=f"{desc} (bash expansion)")
+        code = tokens[code_token_idx]
+        if not code.strip():
+            return Classification("ask", description=desc)
+        violations = analyze_python_source(
+            code, extra_safe_modules=extra_safe, extra_deny_modules=extra_deny
+        )
+        if not violations:
+            return Classification("allow", description=f"{desc} (analyzed)")
+        v = violations[0]
+        return Classification("ask", description=f"{desc}: {v.kind}: {v.detail}")
 
     # Check for -m (module) - could run arbitrary code
     if "-m" in tokens:

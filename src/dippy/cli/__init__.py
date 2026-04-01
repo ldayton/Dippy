@@ -24,6 +24,8 @@ class HandlerContext:
 
     tokens: list[str]
     config: Config | None = None
+    word_has_expansions: tuple[bool, ...] = ()
+    """Per-token flag: True if the original word contained bash expansions ($VAR, $(cmd), etc.)."""
 
 
 @dataclass(frozen=True)

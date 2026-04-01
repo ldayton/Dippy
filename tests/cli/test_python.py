@@ -41,9 +41,7 @@ class TestPythonCodeExecution:
     @pytest.mark.parametrize(
         "cmd",
         [
-            "python -c 'print(1)'",
             "python3 -c 'import os; os.system(\"ls\")'",
-            "python -c 'x=1'",
             "python -m http.server",
             "python -m pip install foo",
             "python -m pytest",
@@ -1465,3 +1463,91 @@ class TestUnitAnalysisConfigModules:
             "from pathlib import Path", extra_safe_modules=frozenset({"pathlib"})
         )
         assert len(violations) == 0
+
+
+class TestPythonInlineCode:
+    """Tests for python -c inline code analysis."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "python -c 'print(1)'",
+            "python -c 'x=1'",
+            "python -c 'import json; json.dumps({})'",
+            "python -c 'import math; print(math.sqrt(2))'",
+            "python -c '[x**2 for x in range(10)]'",
+        ],
+    )
+    def test_safe_inline_code_approved(self, check, cmd):
+        """Safe inline code should be auto-approved."""
+        result = check(cmd)
+        assert is_approved(result), f"Expected approve: {cmd}"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "python -c 'import os'",
+            "python -c 'import subprocess; subprocess.run([])'",
+            "python -c 'open(\"foo.txt\")'",
+            "python -c 'eval(\"1+1\")'",
+            "python3 -c 'import os; os.system(\"ls\")'",
+        ],
+    )
+    def test_dangerous_inline_code_needs_confirmation(self, check, cmd):
+        """Dangerous inline code should need confirmation."""
+        result = check(cmd)
+        assert needs_confirmation(result), f"Expected confirm: {cmd}"
+
+    def test_c_no_argument_needs_confirmation(self, check):
+        """python -c with no code argument should need confirmation."""
+        result = check("python -c")
+        assert needs_confirmation(result)
+
+    def test_c_empty_string_needs_confirmation(self, check):
+        """python -c '' should need confirmation."""
+        result = check("python -c ''")
+        assert needs_confirmation(result)
+
+    def test_config_modules_with_inline_code(self, check):
+        """Config modules should apply to -c inline code too."""
+        config = Config(python_allow_modules=["numpy"])
+        result = check("python -c 'import numpy'", config=config)
+        assert is_approved(result), "numpy should be approved in -c via config"
+
+    def test_config_deny_modules_with_inline_code(self, check):
+        """Config deny modules should apply to -c inline code too."""
+        config = Config(python_deny_modules=["json"])
+        result = check("python -c 'import json'", config=config)
+        assert needs_confirmation(result), "json should be denied in -c via config"
+
+    def test_allow_override_in_inline_code(self, check):
+        """Allow override should also work for -c inline code."""
+        config = Config(python_allow_modules=["pathlib"])
+        result = check("python -c 'from pathlib import Path'", config=config)
+        assert is_approved(result), (
+            "pathlib in -c should be approved via config override"
+        )
+
+
+class TestPythonInlineExpansions:
+    """Tests for bash expansion detection in -c inline code."""
+
+    def test_c_with_bash_variable_needs_confirmation(self, check_single):
+        """python -c with $VAR should fall back to ask."""
+        decision, reason = check_single('python -c "print($HOME)"')
+        assert decision != "approve" or "expansion" in reason
+
+    def test_c_with_command_substitution_needs_confirmation(self, check_single):
+        """python -c with $(cmd) should fall back to ask."""
+        decision, reason = check_single('python -c "print($(whoami))"')
+        assert decision != "approve"
+
+    def test_c_safe_no_expansion_approved(self, check_single):
+        """python -c with no expansions should be approved if safe."""
+        decision, reason = check_single("python -c 'print(1)'")
+        assert decision == "approve"
+
+    def test_c_single_quoted_no_expansion(self, check_single):
+        """Single-quoted -c code has no expansions (bash doesn't expand in single quotes)."""
+        decision, reason = check_single("python -c 'print(1+1)'")
+        assert decision == "approve"
