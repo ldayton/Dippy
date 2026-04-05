@@ -13,7 +13,7 @@ from typing import Literal
 
 from dippy.core.config import Config, match_redirect
 from dippy.core.allowlists import SIMPLE_SAFE, WRAPPER_COMMANDS
-from dippy.cli import get_handler, get_description, HandlerContext
+from dippy.cli import get_handler, get_description, strip_global_flags, HandlerContext
 from dippy.vendor.parable import parse, ParseError
 
 # Redirect targets that are always safe (no file write)
@@ -381,6 +381,16 @@ def _analyze_redirects(
     return decisions
 
 
+def _config_match_decision(match, base: str) -> Decision | None:
+    """Convert a config Match to a Decision, or None if no match."""
+    if not match:
+        return None
+    if match.decision == "allow":
+        return Decision("allow", f"{base} ({match.pattern})")
+    msg = match.message or match.pattern
+    return Decision(match.decision, f"{base}: {msg}")
+
+
 def _analyze_simple_command(
     words: list[str], config: Config, cwd: Path, *, remote: bool = False
 ) -> Decision:
@@ -404,15 +414,21 @@ def _analyze_simple_command(
 
     cmd = SimpleCommand(words=words)
     config_match = match_command(cmd, config, cwd, remote=remote)
-    if config_match:
-        if config_match.decision == "allow":
-            return Decision("allow", f"{base} ({config_match.pattern})")
-        elif config_match.decision == "deny":
-            msg = config_match.message or config_match.pattern
-            return Decision("deny", f"{base}: {msg}")
-        else:  # ask
-            msg = config_match.message or config_match.pattern
-            return Decision("ask", f"{base}: {msg}")
+    decision = _config_match_decision(config_match, base)
+    if decision:
+        return decision
+
+    # 1.5. If no config match on raw tokens, retry with global flags stripped.
+    # This lets "allow git commit" match "git -C /path commit".
+    # Step 1 already handles explicit rules like "deny git -C * commit".
+    stripped = strip_global_flags(tokens)
+    if stripped is not None:
+        stripped_words = list(words[:i]) + stripped if i > 0 else stripped
+        stripped_cmd = SimpleCommand(words=stripped_words)
+        config_match = match_command(stripped_cmd, config, cwd, remote=remote)
+        decision = _config_match_decision(config_match, base)
+        if decision:
+            return decision
 
     # 2. Handle wrapper commands (time, timeout, etc.) - analyze inner command
     if base in WRAPPER_COMMANDS and len(tokens) > 1:
