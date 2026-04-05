@@ -80,6 +80,63 @@ def get_description(tokens: list[str], handler_name: str = None) -> str:
     return " ".join(tokens[:depth])
 
 
+def strip_global_flags(tokens: list[str]) -> list[str] | None:
+    """Strip handler-recognized global flags from command tokens.
+
+    Used by the analyzer to retry config matching when raw tokens don't match.
+    Looks up the handler for tokens[0] and uses GLOBAL_FLAGS_WITH_ARG and
+    GLOBAL_FLAGS_NO_ARG constants to remove global flags.
+
+    Returns cleaned tokens, or None if no handler, no flags stripped, or
+    tokens is too short.
+    """
+    if len(tokens) < 2:
+        return None
+
+    handler = get_handler(tokens[0])
+    if handler is None:
+        return None
+
+    flags_with_arg: frozenset[str] = getattr(
+        handler, "GLOBAL_FLAGS_WITH_ARG", frozenset()
+    )
+    flags_no_arg: frozenset[str] = getattr(handler, "GLOBAL_FLAGS_NO_ARG", frozenset())
+
+    if not flags_with_arg and not flags_no_arg:
+        return None
+
+    result = [tokens[0]]
+    i = 1
+    changed = False
+
+    while i < len(tokens):
+        token = tokens[i]
+
+        # --flag=value form for flags with arg
+        if any(token.startswith(f"{flag}=") for flag in flags_with_arg):
+            changed = True
+            i += 1
+            continue
+
+        # Flags with argument (consume flag + next token)
+        if token in flags_with_arg:
+            changed = True
+            i += 2
+            continue
+
+        # Flags without argument
+        if token in flags_no_arg:
+            changed = True
+            i += 1
+            continue
+
+        # Not a global flag — keep rest as-is
+        result.extend(tokens[i:])
+        break
+
+    return result if changed else None
+
+
 def _discover_handlers() -> dict[str, str]:
     """Discover handler modules and build command -> module mapping."""
     handlers = {}
