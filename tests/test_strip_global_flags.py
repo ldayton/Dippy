@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from dippy.cli import strip_global_flags
 
 

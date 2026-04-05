@@ -97,7 +97,9 @@ def strip_global_flags(tokens: list[str]) -> list[str] | None:
     if handler is None:
         return None
 
-    flags_with_arg: frozenset[str] = getattr(handler, "GLOBAL_FLAGS_WITH_ARG", frozenset())
+    flags_with_arg: frozenset[str] = getattr(
+        handler, "GLOBAL_FLAGS_WITH_ARG", frozenset()
+    )
     flags_no_arg: frozenset[str] = getattr(handler, "GLOBAL_FLAGS_NO_ARG", frozenset())
 
     if not flags_with_arg and not flags_no_arg:
