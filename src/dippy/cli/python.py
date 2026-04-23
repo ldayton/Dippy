@@ -98,6 +98,11 @@ SAFE_MODULES = frozenset(
         "html",
         "html.parser",
         "html.entities",
+        # Argv parsing (pure string processing; sys.exit/--help to stdout is
+        # part of the CLI contract, not a security concern — print is already
+        # whitelisted, and termination is not in the threat model).
+        "argparse",
+        "getopt",
     }
 )
 
@@ -205,8 +210,6 @@ DANGEROUS_MODULES = frozenset(
         "cmd",
         "shlex",
         "getpass",
-        "getopt",
-        "argparse",  # Can sys.exit
         "logging",  # Can write to files
         "atexit",
         # CGI (Bandit B412: httpoxy vulnerabilities)
