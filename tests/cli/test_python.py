@@ -125,6 +125,34 @@ print(json.dumps({"name": p.name, "age": p.age}))
         result = check(f"python {script}")
         assert is_approved(result), "Dataclass script should be approved"
 
+    def test_safe_script_argparse_approved(self, check, tmp_path):
+        """Script using argparse should be approved (pure argv parsing)."""
+        script = tmp_path / "argparse_script.py"
+        script.write_text("""
+import argparse
+
+parser = argparse.ArgumentParser(description="Demo")
+parser.add_argument("--count", type=int, default=1)
+parser.add_argument("name")
+args = parser.parse_args()
+print(f"Hello {args.name} x{args.count}")
+""")
+        result = check(f"python {script}")
+        assert is_approved(result), "argparse script should be approved"
+
+    def test_safe_script_getopt_approved(self, check, tmp_path):
+        """Script using getopt should be approved (pure argv parsing)."""
+        script = tmp_path / "getopt_script.py"
+        script.write_text("""
+import getopt
+
+opts, args = getopt.getopt(["--name", "Alice"], "", ["name="])
+for opt, val in opts:
+    print(opt, val)
+""")
+        result = check(f"python {script}")
+        assert is_approved(result), "getopt script should be approved"
+
     def test_dangerous_import_os_blocked(self, check, tmp_path):
         """Script importing os should be blocked."""
         script = tmp_path / "dangerous_os.py"
