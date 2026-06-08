@@ -6,6 +6,8 @@ import pytest
 
 from conftest import is_approved, needs_confirmation
 
+from dippy.core.config import parse_config
+
 # ==========================================================================
 # find
 # ==========================================================================
@@ -138,10 +140,6 @@ TESTS = [
     ("find . -printf '%f\\n'", True),
     ("find . -printf '%p %s\\n'", True),
     ("find . -ls", True),
-    ("find . -fls /tmp/output.txt", True),
-    ("find . -fprint /tmp/output.txt", True),
-    ("find . -fprint0 /tmp/output.txt", True),
-    ("find . -fprintf /tmp/output.txt '%p\\n'", True),
     #
     # --- Boolean operators (safe) ---
     #
@@ -251,6 +249,14 @@ TESTS = [
     ("find /tmp -name '*.cache' -delete", False),
     ("find . -mtime +30 -delete", False),
     #
+    # --- -fprint/-fprintf/-fls (write output to a file, truncating it) ---
+    #
+    ("find . -fprint /tmp/output.txt", False),
+    ("find . -fprint0 /tmp/output.txt", False),
+    ("find . -fprintf /tmp/output.txt '%p\\n'", False),
+    ("find . -fls /tmp/output.txt", False),
+    ("find . -name '*.py' -fprint /etc/hosts", False),
+    #
     # --- Combinations with safe exec ---
     #
     ("find . -name '*.py' -print -exec cat {} \\;", True),
@@ -296,3 +302,40 @@ def test_find_command(check, command: str, expected: bool):
         assert is_approved(result), f"Expected approved for: {command}"
     else:
         assert needs_confirmation(result), f"Expected confirmation for: {command}"
+
+
+class TestFindFileWriteRedirectRules:
+    """find -fprint/-fls/-fprintf surface their file target as a redirect, so the
+    same allow-redirect/deny-redirect rules apply as for a `> file` redirect."""
+
+    def test_default_config_asks(self, check_single):
+        """No redirect rule -> ask (default for an unmatched file write)."""
+        decision, _ = check_single("find . -fprint /tmp/out.txt")
+        assert decision is None  # ask
+
+    def test_deny_redirect_denies(self, check_single):
+        """deny-redirect hard-blocks the -fprint target."""
+        cfg = parse_config('deny-redirect /etc/** "protected"')
+        decision, reason = check_single("find . -fprint /etc/hosts", config=cfg)
+        assert decision == "deny"
+        assert "protected" in reason
+
+    def test_allow_redirect_approves(self, check_single):
+        """allow-redirect pre-approves the -fprint target (no prompt)."""
+        cfg = parse_config("allow-redirect /tmp/**")
+        decision, _ = check_single("find . -fprint /tmp/out.txt", config=cfg)
+        assert decision == "approve"
+
+    def test_fls_and_fprintf_also_gated(self, check_single):
+        """-fls and -fprintf targets go through the same gating."""
+        cfg = parse_config('deny-redirect /etc/** "protected"')
+        for cmd in ["find . -fls /etc/x", "find . -fprintf /etc/x '%p'"]:
+            decision, _ = check_single(cmd, config=cfg)
+            assert decision == "deny", cmd
+
+    def test_matches_redirect_equivalent(self, check_single):
+        """`find . -fprint FILE` resolves the same as `find . > FILE`."""
+        cfg = parse_config("allow-redirect /tmp/**")
+        fprint, _ = check_single("find . -fprint /tmp/x", config=cfg)
+        redirect, _ = check_single("find . > /tmp/x", config=cfg)
+        assert fprint == redirect == "approve"

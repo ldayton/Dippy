@@ -48,6 +48,7 @@ TESTS = [
     ("kubectl get all -A", True),
     ("kubectl get configmaps", True),
     ("kubectl get secrets", True),
+    ("kubectl get secret my-secret", True),  # default table view, no values
     ("kubectl get ingress", True),
     ("kubectl get pv", True),
     ("kubectl get pvc", True),
@@ -204,6 +205,59 @@ TESTS = [
     # kubectl - unsafe (expose services)
     ("kubectl expose deployment nginx --port=80 --target-port=8080", False),
     ("kubectl expose pod nginx --port=80 --type=NodePort", False),
+    #
+    # kubectl get secret - sensitive data exposure
+    # Output formats that could expose secret values require confirmation
+    #
+    ("kubectl get secret my-secret -o yaml", False),
+    ("kubectl get secret my-secret -o json", False),
+    ("kubectl get secrets -o yaml", False),
+    ("kubectl get secrets -o json", False),
+    ("kubectl get secret my-secret -o jsonpath='{.data.password}'", False),
+    ("kubectl get secret my-secret -o go-template='{{.data}}'", False),
+    (
+        "kubectl get secret my-secret -o custom-columns=NAME:.metadata.name,DATA:.data",
+        False,
+    ),
+    ("kubectl get secret my-secret --output=yaml", False),
+    ("kubectl get secret my-secret --output json", False),
+    ("kubectl get secret/my-secret -o yaml", False),  # type/name syntax
+    ("kubectl get secret,configmap -o yaml", False),  # comma-separated includes secret
+    ("kubectl -n kube-system get secret my-secret -o yaml", False),  # flags before verb
+    ("kubectl get secret my-secret -o name", True),  # -o name is safe (no values)
+    ("kubectl get secret my-secret -o wide", True),  # -o wide is safe (no values)
+    ("kubectl describe secret my-secret", True),  # describe never shows values
+    ("kubectl get pods -o yaml", True),  # non-secret resource is fine
+    ("kubectl get configmap my-config -o yaml", True),  # non-secret resource is fine
+    #
+    # kubectl get secret - opaque tokens (cmdsubs, param expansions) in arguments
+    #
+    (
+        'kubectl get secret somesecret $(echo "-o yaml")',
+        False,
+    ),  # cmdsub could inject format
+    ("kubectl get secret somesecret `echo '-o yaml'`", False),  # backtick cmdsub
+    ("kubectl get $(echo secret) -o yaml", False),  # cmdsub resource, could be secrets
+    ("kubectl get $RESOURCE -o yaml", False),  # param expansion resource
+    ("kubectl get secret somesecret -o $FORMAT", False),  # param expansion format
+    ("kubectl get secret somesecret -o ${FORMAT}", False),  # braced param expansion
+    ("kubectl get pods $(echo '-o yaml')", True),  # pods aren't secrets, always safe
+    ("kubectl get pods -o $FORMAT", True),  # pods aren't secrets, always safe
+    #
+    # kubectl config view --raw - exposes unredacted kubeconfig credentials
+    #
+    ("kubectl config view --raw", False),
+    ("kubectl config view --raw --minify", False),
+    ('kubectl config view $(echo "--raw")', False),  # cmdsub could be --raw
+    ("kubectl config view $RAW_FLAG", False),  # param expansion could be --raw
+    #
+    # kubectl config/auth/rollout - opaque subcommands
+    #
+    ('kubectl config $(echo "set-context") production', False),  # opaque subcommand
+    ('kubectl describe $(echo "pod nginx")', True),  # describe is always safe
+    ("kubectl describe $RESOURCE", True),  # describe is always safe
+    ('kubectl logs $(echo "nginx")', True),  # logs is always safe
+    ("kubectl logs $POD", True),  # logs is always safe
     #
     # kubectl exec - delegation to inner command
     #
