@@ -309,8 +309,16 @@ def main():
         print("Run 'dippy --help' for usage.")
         raise SystemExit(0)
 
-    # Stderr fallback so early errors (bad JSON, unknown tool) are visible
-    logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, datefmt=_LOG_DATEFMT)
+    # Root passes INFO through to the file handler (added once the mode, and
+    # thus the log directory, is known). The stderr fallback only surfaces
+    # warnings/errors, so normal runs stay quiet there while early failures
+    # (bad JSON, unknown tool) are still visible before the file handler exists.
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    stderr_handler = logging.StreamHandler()
+    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT))
+    root.addHandler(stderr_handler)
 
     try:
         # Read hook input from stdin
