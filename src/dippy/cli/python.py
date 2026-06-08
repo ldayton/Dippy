@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from dippy.cli import Classification, HandlerContext
+from dippy.core.paths import resolve_arg_path
 
 COMMANDS = ["python", "python3"] + [f"python3.{v}" for v in range(8, 20)]
 
@@ -460,9 +461,20 @@ class SafetyAnalyzer(ast.NodeVisitor):
     are allowed. Anything unknown is flagged.
     """
 
-    def __init__(self, allow_print: bool = True):
+    def __init__(
+        self,
+        allow_print: bool = True,
+        extra_safe_modules: frozenset[str] = frozenset(),
+        extra_deny_modules: frozenset[str] = frozenset(),
+    ):
         self.violations: list[Violation] = []
         self.allow_print = allow_print
+        self.safe_modules = SAFE_MODULES | extra_safe_modules
+        # User-configured allow explicitly overrides hardcoded dangerous list.
+        # Only exact matches are removed — submodules must be allowed separately.
+        self.deny_modules = (
+            DANGEROUS_MODULES | extra_deny_modules
+        ) - extra_safe_modules
 
     def _add(self, node: ast.AST, kind: str, detail: str) -> None:
         self.violations.append(
@@ -476,9 +488,9 @@ class SafetyAnalyzer(ast.NodeVisitor):
             module = alias.name
             root = module.split(".")[0]
 
-            if module in DANGEROUS_MODULES or root in DANGEROUS_MODULES:
+            if module in self.deny_modules or root in self.deny_modules:
                 self._add(node, "import", f"dangerous module: {module}")
-            elif module not in SAFE_MODULES and root not in SAFE_MODULES:
+            elif module not in self.safe_modules and root not in self.safe_modules:
                 self._add(node, "import", f"unknown module: {module}")
 
         self.generic_visit(node)
@@ -491,9 +503,9 @@ class SafetyAnalyzer(ast.NodeVisitor):
         module = node.module
         root = module.split(".")[0]
 
-        if module in DANGEROUS_MODULES or root in DANGEROUS_MODULES:
+        if module in self.deny_modules or root in self.deny_modules:
             self._add(node, "import", f"dangerous module: {module}")
-        elif module not in SAFE_MODULES and root not in SAFE_MODULES:
+        elif module not in self.safe_modules and root not in self.safe_modules:
             self._add(node, "import", f"unknown module: {module}")
 
         self.generic_visit(node)
@@ -616,7 +628,12 @@ class SafetyAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def analyze_python_source(source: str, allow_print: bool = True) -> list[Violation]:
+def analyze_python_source(
+    source: str,
+    allow_print: bool = True,
+    extra_safe_modules: frozenset[str] = frozenset(),
+    extra_deny_modules: frozenset[str] = frozenset(),
+) -> list[Violation]:
     """
     Analyze Python source code for safety violations.
 
@@ -627,12 +644,20 @@ def analyze_python_source(source: str, allow_print: bool = True) -> list[Violati
     except SyntaxError as e:
         return [Violation(e.lineno or 0, e.offset or 0, "syntax", str(e))]
 
-    analyzer = SafetyAnalyzer(allow_print=allow_print)
+    analyzer = SafetyAnalyzer(
+        allow_print=allow_print,
+        extra_safe_modules=extra_safe_modules,
+        extra_deny_modules=extra_deny_modules,
+    )
     analyzer.visit(tree)
     return analyzer.violations
 
 
-def analyze_python_file(path: Path) -> tuple[bool, str]:
+def analyze_python_file(
+    path: Path,
+    extra_safe_modules: frozenset[str] = frozenset(),
+    extra_deny_modules: frozenset[str] = frozenset(),
+) -> tuple[bool, str]:
     """
     Analyze a Python file for safety.
 
@@ -662,7 +687,11 @@ def analyze_python_file(path: Path) -> tuple[bool, str]:
     except (OSError, UnicodeDecodeError) as e:
         return False, f"cannot read file: {e}"
 
-    violations = analyze_python_source(source)
+    violations = analyze_python_source(
+        source,
+        extra_safe_modules=extra_safe_modules,
+        extra_deny_modules=extra_deny_modules,
+    )
 
     if violations:
         # Return first violation as reason
@@ -731,11 +760,7 @@ def _find_script_path(tokens: list[str], cwd: Path) -> tuple[Path | None, int]:
             continue
 
         # Found the script path
-        script_path = Path(token)
-        if not script_path.is_absolute():
-            script_path = cwd / script_path
-
-        return script_path.resolve(), i
+        return resolve_arg_path(token, cwd), i
 
     return None, -1
 
@@ -767,16 +792,22 @@ def classify(ctx: HandlerContext) -> Classification:
 
     Auto-approves:
     - Version/help flags
+    - -c inline code that passes static analysis (no bash expansions)
     - Scripts that pass static analysis (no I/O, no dangerous imports)
 
     Requires confirmation:
-    - -c (inline code)
+    - -c inline code that fails analysis or contains bash expansions
     - -m (module execution)
     - Scripts that fail analysis or can't be read
     - Interactive mode
     """
     tokens = ctx.tokens
     cwd = Path.cwd()
+    config = ctx.config
+
+    # Build extra module sets from config
+    extra_safe = frozenset(config.python_allow_modules) if config else frozenset()
+    extra_deny = frozenset(config.python_deny_modules) if config else frozenset()
 
     desc = get_description(tokens)
 
@@ -789,9 +820,30 @@ def classify(ctx: HandlerContext) -> Classification:
         if token in SAFE_FLAGS:
             return Classification("allow", description=desc)
 
-    # Check for -c (inline code) - too hard to analyze reliably
+    # Check for -c (inline code) - analyze if possible
     if "-c" in tokens:
-        return Classification("ask", description=desc)
+        idx = tokens.index("-c")
+        if idx + 1 >= len(tokens):
+            return Classification("ask", description=desc)
+        # If the -c argument contains bash expansions ($VAR, $(cmd), etc.),
+        # we can't reliably analyze it since bash modifies the code at runtime.
+        code_token_idx = idx + 1
+        if (
+            ctx.word_has_expansions
+            and code_token_idx < len(ctx.word_has_expansions)
+            and ctx.word_has_expansions[code_token_idx]
+        ):
+            return Classification("ask", description=f"{desc} (bash expansion)")
+        code = tokens[code_token_idx]
+        if not code.strip():
+            return Classification("ask", description=desc)
+        violations = analyze_python_source(
+            code, extra_safe_modules=extra_safe, extra_deny_modules=extra_deny
+        )
+        if not violations:
+            return Classification("allow", description=f"{desc} (analyzed)")
+        v = violations[0]
+        return Classification("ask", description=f"{desc}: {v.kind}: {v.detail}")
 
     # Check for -m (module) - could run arbitrary code
     if "-m" in tokens:
@@ -818,7 +870,9 @@ def classify(ctx: HandlerContext) -> Classification:
         return Classification("ask", description=desc)
 
     # Try to analyze the script
-    is_safe, reason = analyze_python_file(script_path)
+    is_safe, reason = analyze_python_file(
+        script_path, extra_safe_modules=extra_safe, extra_deny_modules=extra_deny
+    )
 
     if is_safe:
         return Classification("allow", description=f"{desc} (analyzed)")
