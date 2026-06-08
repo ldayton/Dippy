@@ -231,18 +231,8 @@ def _analyze_command(
 
     # Get base command for injection check
     words = [_get_word_value(w) for w in node.words]
-    # Pre-compute which word positions have runtime-determined values (opaque).
-    # The parser identifies these as cmdsub ($(...), `...`), param ($VAR, ${VAR}),
-    # or param-indirect (${!var}) parts. A word consisting entirely of one such
-    # expansion is opaque — handlers can't statically analyze its value.
-    _OPAQUE_PART_KINDS = {"cmdsub", "param", "param-indirect"}
-    opaque_positions = frozenset(
-        i
-        for i, word in enumerate(node.words)
-        if len(getattr(word, "parts", [])) == 1
-        and getattr(getattr(word, "parts", [None])[0], "kind", None)
-        in _OPAQUE_PART_KINDS
-    )
+    # Track which words contain bash expansions (param, cmdsub, procsub)
+    word_has_expansions = tuple(bool(getattr(w, "parts", [])) for w in node.words)
     # Skip env var assignments to find base command
     base_idx = 0
     while (
@@ -299,13 +289,8 @@ def _analyze_command(
                     and position > base_idx
                 ):
                     handler = get_handler(base)
-                    adjusted_opaque = frozenset(
-                        p - base_idx for p in opaque_positions if p >= base_idx
-                    )
                     outer_result = handler.classify(
-                        HandlerContext(
-                            words[base_idx:], opaque_positions=adjusted_opaque
-                        )
+                        HandlerContext(words[base_idx:], config=config)
                     )
                     if outer_result.action != "allow":
                         inner_cmd = _get_word_value(word).strip("$()")
@@ -339,7 +324,7 @@ def _analyze_command(
         return _combine(decisions)
 
     cmd_decision = _analyze_simple_command(
-        words, config, cwd, remote=remote, opaque_positions=opaque_positions
+        words, config, cwd, remote=remote, word_has_expansions=word_has_expansions
     )
     decisions.append(cmd_decision)
 
@@ -408,7 +393,7 @@ def _analyze_simple_command(
     cwd: Path,
     *,
     remote: bool = False,
-    opaque_positions: frozenset[int] = frozenset(),
+    word_has_expansions: tuple[bool, ...] = (),
 ) -> Decision:
     """Analyze a simple command (list of words)."""
     if not words:
@@ -424,7 +409,9 @@ def _analyze_simple_command(
 
     base = words[i]
     tokens = words[i:]
-    adjusted_opaque = frozenset(p - i for p in opaque_positions if p >= i)
+    # Keep the per-token expansion flags aligned with `tokens` after slicing off
+    # leading env assignments, so handlers index them against the same list.
+    token_expansions = word_has_expansions[i:]
 
     # 1. Check config rules first (highest priority)
     from dippy.core.config import SimpleCommand, match_command
@@ -461,9 +448,12 @@ def _analyze_simple_command(
             break
 
         if j < len(tokens):
-            wrapper_opaque = frozenset(p - j for p in adjusted_opaque if p >= j)
             return _analyze_simple_command(
-                tokens[j:], config, cwd, remote=remote, opaque_positions=wrapper_opaque
+                tokens[j:],
+                config,
+                cwd,
+                remote=remote,
+                word_has_expansions=token_expansions[j:],
             )
         return Decision("ask", base)
 
@@ -479,7 +469,7 @@ def _analyze_simple_command(
     handler = get_handler(base)
     if handler:
         result = handler.classify(
-            HandlerContext(tokens, opaque_positions=adjusted_opaque)
+            HandlerContext(tokens, config=config, word_has_expansions=token_expansions)
         )
         desc = result.description or get_description(tokens, base)
         # Check handler-provided redirect targets against config (skip in remote mode)
