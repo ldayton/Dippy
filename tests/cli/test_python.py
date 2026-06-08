@@ -260,6 +260,39 @@ print("hello")
         assert needs_confirmation(result), "syntax error should be blocked"
 
 
+SAFE_SCRIPT = "import json\nprint(json.dumps({'ok': True}))\n"
+
+
+class TestPythonScriptPathExpansion:
+    """Tests for resolving script paths before analysis (issue #144)."""
+
+    def test_tilde_path_approved(self, check, tmp_path, monkeypatch):
+        """A safe script referenced via ~ should expand and be approved."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / "probe.py").write_text(SAFE_SCRIPT)
+        result = check("python3 ~/probe.py")
+        assert is_approved(result), "tilde path should expand and be approved"
+
+    def test_home_var_path_approved(self, check, tmp_path, monkeypatch):
+        """A safe script referenced via $HOME should expand and be approved."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / "probe.py").write_text(SAFE_SCRIPT)
+        result = check("python3 $HOME/probe.py")
+        assert is_approved(result), "$HOME path should expand and be approved"
+
+    def test_relative_path_anchored_to_cwd(self, check, tmp_path, monkeypatch):
+        """A relative script path should resolve against the working directory."""
+        (tmp_path / "probe.py").write_text(SAFE_SCRIPT)
+        monkeypatch.chdir(tmp_path)
+        result = check("python3 probe.py")
+        assert is_approved(result), "relative path should anchor to cwd"
+
+    def test_unknown_user_degrades_to_ask(self, check):
+        """An unknown ~user must not crash; it degrades to confirmation."""
+        result = check("python3 ~nosuchuser12345/probe.py")
+        assert needs_confirmation(result), "unknown ~user should degrade to ask"
+
+
 class TestPythonComplexScripts:
     """Tests for more complex Python scripts."""
 
