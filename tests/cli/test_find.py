@@ -138,10 +138,6 @@ TESTS = [
     ("find . -printf '%f\\n'", True),
     ("find . -printf '%p %s\\n'", True),
     ("find . -ls", True),
-    ("find . -fls /tmp/output.txt", True),
-    ("find . -fprint /tmp/output.txt", True),
-    ("find . -fprint0 /tmp/output.txt", True),
-    ("find . -fprintf /tmp/output.txt '%p\\n'", True),
     #
     # --- Boolean operators (safe) ---
     #
@@ -250,6 +246,14 @@ TESTS = [
     ("find . -name '*.bak' -type f -delete", False),
     ("find /tmp -name '*.cache' -delete", False),
     ("find . -mtime +30 -delete", False),
+    #
+    # --- -fprint/-fprintf/-fls (write output to a file, truncating it) ---
+    #
+    ("find . -fprint /tmp/output.txt", False),
+    ("find . -fprint0 /tmp/output.txt", False),
+    ("find . -fprintf /tmp/output.txt '%p\\n'", False),
+    ("find . -fls /tmp/output.txt", False),
+    ("find . -name '*.py' -fprint /etc/hosts", False),
     #
     # --- Combinations with safe exec ---
     #

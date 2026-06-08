@@ -14,6 +14,11 @@ from dippy.core.bash import bash_join
 
 COMMANDS = ["find"]
 
+# Actions that write find's output to a file (truncating it) — same effect as a
+# `> file` redirect, which Dippy already guards. The `f` prefix means "file"
+# (vs. -print/-printf/-ls which write to stdout and are safe).
+FILE_WRITE_ACTIONS = frozenset({"-fprint", "-fprint0", "-fprintf", "-fls"})
+
 # Context for flags that aren't self-explanatory
 FLAG_CONTEXT = {
     "-ok": "execute with prompt",
@@ -35,6 +40,10 @@ def classify(ctx: HandlerContext) -> Classification:
         # -delete always unsafe
         if token == "-delete":
             return Classification("ask", description=f"{base} -delete")
+
+        # -fprint/-fprintf/-fls write output to a file (truncating it)
+        if token in FILE_WRITE_ACTIONS:
+            return Classification("ask", description=f"{base} {token}")
 
         # -exec/-execdir - extract inner command and delegate
         if token in ("-exec", "-execdir"):
