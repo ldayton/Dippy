@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from dippy.cli import Classification, HandlerContext
+from dippy.core.paths import resolve_arg_path
 
 COMMANDS = ["python", "python3"] + [f"python3.{v}" for v in range(8, 20)]
 
@@ -731,11 +732,7 @@ def _find_script_path(tokens: list[str], cwd: Path) -> tuple[Path | None, int]:
             continue
 
         # Found the script path
-        script_path = Path(token)
-        if not script_path.is_absolute():
-            script_path = cwd / script_path
-
-        return script_path.resolve(), i
+        return resolve_arg_path(token, cwd), i
 
     return None, -1
 
