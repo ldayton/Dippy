@@ -47,6 +47,9 @@ def classify(ctx: HandlerContext) -> Classification:
 
         # -fprint/-fprintf/-fls write output to the following file; gate the
         # target through redirect rules, exactly like a `> file` redirect.
+        # A preceding -delete/-exec returns first, so when a write is combined
+        # with one of those the target isn't separately gated — the command
+        # degrades to that branch's ask, never to something weaker.
         if token in FILE_WRITE_ACTIONS:
             if i + 1 >= len(tokens):
                 return Classification("ask", description=f"{base} {token}")
