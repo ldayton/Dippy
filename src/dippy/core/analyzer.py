@@ -469,9 +469,7 @@ def _analyze_simple_command(
     handler = get_handler(base)
     if handler:
         result = handler.classify(
-            HandlerContext(
-                tokens, config=config, word_has_expansions=token_expansions
-            )
+            HandlerContext(tokens, config=config, word_has_expansions=token_expansions)
         )
         desc = result.description or get_description(tokens, base)
         # Check handler-provided redirect targets against config (skip in remote mode)
