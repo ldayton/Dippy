@@ -1551,3 +1551,30 @@ class TestPythonInlineExpansions:
         """Single-quoted -c code has no expansions (bash doesn't expand in single quotes)."""
         decision, reason = check_single("python -c 'print(1+1)'")
         assert decision == "approve"
+
+    def test_c_expansion_detected_with_env_prefix(self, check_single):
+        """The expansion guard must stay aligned past leading env assignments.
+
+        Regression: word_has_expansions was indexed against the un-stripped word
+        list, so FOO=bar shifted it and the guard read the wrong token. We assert
+        the *expansion* reason fires, not the incidental syntax-error backstop.
+        """
+        decision, reason = check_single('FOO=bar python -c "print($HOME)"')
+        assert decision != "approve"
+        assert "expansion" in reason
+
+    def test_c_safe_approved_with_env_prefix(self, check_single):
+        """A safe -c body still auto-approves when an env assignment precedes it."""
+        decision, reason = check_single("FOO=bar python -c 'print(1)'")
+        assert decision == "approve"
+
+    def test_c_expansion_detected_through_wrapper(self, check_single):
+        """The flags must be re-sliced through wrapper recursion (time/timeout/...)."""
+        decision, reason = check_single('time python -c "print($HOME)"')
+        assert decision != "approve"
+        assert "expansion" in reason
+
+    def test_c_safe_approved_through_wrapper(self, check_single):
+        """A safe -c body still auto-approves behind a wrapper command."""
+        decision, reason = check_single("timeout 5 python -c 'print(1)'")
+        assert decision == "approve"

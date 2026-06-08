@@ -409,6 +409,9 @@ def _analyze_simple_command(
 
     base = words[i]
     tokens = words[i:]
+    # Keep the per-token expansion flags aligned with `tokens` after slicing off
+    # leading env assignments, so handlers index them against the same list.
+    token_expansions = word_has_expansions[i:]
 
     # 1. Check config rules first (highest priority)
     from dippy.core.config import SimpleCommand, match_command
@@ -445,7 +448,13 @@ def _analyze_simple_command(
             break
 
         if j < len(tokens):
-            return _analyze_simple_command(tokens[j:], config, cwd, remote=remote)
+            return _analyze_simple_command(
+                tokens[j:],
+                config,
+                cwd,
+                remote=remote,
+                word_has_expansions=token_expansions[j:],
+            )
         return Decision("ask", base)
 
     # 3. Simple safe commands
@@ -461,7 +470,7 @@ def _analyze_simple_command(
     if handler:
         result = handler.classify(
             HandlerContext(
-                tokens, config=config, word_has_expansions=word_has_expansions
+                tokens, config=config, word_has_expansions=token_expansions
             )
         )
         desc = result.description or get_description(tokens, base)
