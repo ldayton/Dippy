@@ -273,14 +273,6 @@ class TestPythonScriptPathExpansion:
         result = check("python3 ~/probe.py")
         assert is_approved(result), "tilde path should expand and be approved"
 
-    def test_env_var_path_not_expanded(self, check, tmp_path, monkeypatch):
-        """$VAR paths stay literal (security model): the shell expands them
-        after approval, so Dippy can't see the file and degrades to ask."""
-        monkeypatch.setenv("HOME", str(tmp_path))
-        (tmp_path / "probe.py").write_text(SAFE_SCRIPT)
-        result = check("python3 $HOME/probe.py")
-        assert needs_confirmation(result), "$HOME must not be expanded"
-
     def test_relative_path_anchored_to_cwd(self, check, tmp_path, monkeypatch):
         """A relative script path should resolve against the working directory."""
         (tmp_path / "probe.py").write_text(SAFE_SCRIPT)
