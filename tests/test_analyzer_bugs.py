@@ -522,3 +522,76 @@ class TestCdPathResolution:
         config = parse_config(f"allow {home}/script *")
         result = analyze("cd ~ && ./script arg", config, Path("/somewhere/else"))
         assert result.action == "allow"
+
+
+class TestConfigGlobalFlagStripping:
+    """Config rules should match commands with global flags stripped.
+
+    Bug: 'allow git commit' doesn't match 'git -C /path commit -m test'
+    because _match_words() matches raw tokens and -C /path breaks prefix match.
+
+    Fix: After step 1 (raw match) finds no match, strip global flags using
+    handler constants and re-match (step 1.5).
+    """
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    def test_allow_git_commit_with_C_flag(self, cwd):
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow git commit")
+        result = analyze("git -C /path commit -m test", config, cwd)
+        assert result.action == "allow"
+
+    def test_allow_git_commit_with_work_tree(self, cwd):
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow git commit")
+        result = analyze("git --work-tree /path commit -m test", config, cwd)
+        assert result.action == "allow"
+
+    def test_allow_git_commit_plain_regression(self, cwd):
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow git commit")
+        result = analyze("git commit -m test", config, cwd)
+        assert result.action == "allow"
+
+    def test_explicit_deny_with_C_flag_takes_precedence(self, cwd):
+        """Step 1 matches deny on raw tokens, step 1.5 never runs."""
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow git commit\ndeny git -C * commit")
+        result = analyze("git -C /path commit", config, cwd)
+        assert result.action == "deny"
+
+    def test_allow_docker_ps_with_H_flag(self, cwd):
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow docker ps")
+        result = analyze("docker -H tcp://host ps", config, cwd)
+        assert result.action == "allow"
+
+    def test_allow_git_status_with_no_pager(self, cwd):
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow git status")
+        result = analyze("git --no-pager status", config, cwd)
+        assert result.action == "allow"
+
+    def test_no_handler_no_stripping(self, cwd):
+        from dippy.core.config import parse_config
+
+        config = parse_config("allow mycmd foo")
+        result = analyze("mycmd -x /path foo", config, cwd)
+        assert result.action == "ask"
+
+    def test_deny_git_push_with_C_flag(self, cwd):
+        """deny rules also work via step 1.5."""
+        from dippy.core.config import parse_config
+
+        config = parse_config("deny git push")
+        result = analyze("git -C /path push", config, cwd)
+        assert result.action == "deny"
