@@ -7,7 +7,57 @@ from pathlib import Path
 import pytest
 
 from dippy.core.analyzer import analyze
-from dippy.core.config import Config
+from dippy.core.config import Config, Rule
+
+
+class TestConfigEnvVarPrefixMatching:
+    """Config rules should match commands with leading env var assignments.
+
+    The config matcher checks raw tokens first, where "FOO=bar cmd" doesn't
+    match the pattern "cmd" because the assignment sits before the base
+    command. A second pass with env assignments stripped lets "allow cmd"
+    match "FOO=bar cmd" -- the same command the permission prompt displays.
+    """
+
+    @pytest.fixture
+    def cwd(self):
+        return Path.cwd()
+
+    def test_allow_matches_env_prefixed_command(self, cwd):
+        """allow symfony should match COMPOSE_PROJECT_NAME=x symfony ..."""
+        config = Config(rules=[Rule("allow", "symfony")])
+        result = analyze("COMPOSE_PROJECT_NAME=app symfony php foo.php", config, cwd)
+        assert result.action == "allow"
+
+    def test_allow_matches_without_env_prefix_unchanged(self, cwd):
+        """Baseline: the same rule matches without an env prefix."""
+        config = Config(rules=[Rule("allow", "symfony")])
+        result = analyze("symfony php foo.php", config, cwd)
+        assert result.action == "allow"
+
+    def test_allow_matches_multiple_env_prefixes(self, cwd):
+        """Multiple leading assignments are all stripped before re-matching."""
+        config = Config(rules=[Rule("allow", "symfony")])
+        result = analyze("FOO=1 BAR=2 symfony console cache:clear", config, cwd)
+        assert result.action == "allow"
+
+    def test_explicit_env_rule_still_wins_on_raw_pass(self, cwd):
+        """A rule written against the raw tokens still matches in step 1."""
+        config = Config(rules=[Rule("deny", "FOO=* symfony *", message="nope")])
+        result = analyze("FOO=bar symfony php foo.php", config, cwd)
+        assert result.action == "deny"
+
+    def test_no_spurious_match_when_no_rule(self, cwd):
+        """With no matching rule, an env-prefixed command still falls through."""
+        config = Config(rules=[Rule("allow", "rails")])
+        result = analyze("FOO=bar symfony php foo.php", config, cwd)
+        assert result.action == "ask"
+
+    def test_stripped_deny_rule_surfaces_via_retry(self, cwd):
+        """A deny rule on the bare command applies to its env-prefixed form too."""
+        config = Config(rules=[Rule("deny", "symfony", message="blocked")])
+        result = analyze("FOO=bar symfony php foo.php", config, cwd)
+        assert result.action == "deny"
 
 
 class TestEnvVarPrefixHandling:
