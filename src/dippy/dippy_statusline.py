@@ -349,9 +349,16 @@ def get_session_limit_remaining(data: dict) -> str | None:
             return None
         remaining = max(0, round(100 - used_pct))
         key = "session_low" if remaining <= 20 else "session"
+        label = f"sess: {remaining}% left"
+        resets_at = five_hour.get("resets_at")
+        if resets_at:
+            reset_local = datetime.fromtimestamp(resets_at)
+            hour = reset_local.hour % 12 or 12
+            meridiem = "am" if reset_local.hour < 12 else "pm"
+            label = f"{label} until {hour}:{reset_local.minute:02d}{meridiem}"
         log.debug("session_limit", used_pct=used_pct, remaining=remaining)
         fg_c, bg_c = STYLES[key]
-        return style(f"sess: {remaining}% left", fg_c, bg_c)
+        return style(label, fg_c, bg_c)
     except Exception:
         log.error("session_limit_failed")
         return None
