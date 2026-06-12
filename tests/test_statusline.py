@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import uuid
@@ -21,8 +22,13 @@ def unique_session_id() -> str:
 def run_statusline(
     input_data: dict | str | None = None,
     via_symlink: bool = False,
+    env: dict | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run dippy-statusline with given input."""
+    """Run dippy-statusline with given input.
+
+    `env` overlays the parent environment, e.g. ``{"COLUMNS": "40"}`` to drive
+    width-aware layout or ``{"HOME": ...}`` to point at a fixture config.
+    """
     if input_data is None:
         stdin_bytes = b""
     elif isinstance(input_data, dict):
@@ -43,7 +49,19 @@ def run_statusline(
         input=stdin_bytes,
         capture_output=True,
         timeout=10,
+        env={**os.environ, **env} if env else None,
     )
+
+
+def home_with_mcp_servers(server_names: list[str]) -> str:
+    """Create a temp HOME holding an mcp.local.json with the given servers."""
+    home = tempfile.mkdtemp()
+    claude_dir = Path(home) / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "mcp.local.json").write_text(
+        json.dumps({"mcpServers": {name: {} for name in server_names}})
+    )
+    return home
 
 
 class TestSmokeTest:
@@ -185,14 +203,46 @@ class TestOutputFormat:
         assert "|" in output or len(output.strip()) > 0
 
     def test_output_is_single_line(self):
-        """Output is a single line (no embedded newlines except trailing)."""
+        """Output stays on one line when the content fits the terminal width."""
         input_data = {
             "session_id": unique_session_id(),
             "model": {"display_name": "Claude"},
             "workspace": {"current_dir": "/tmp"},
         }
-        result = run_statusline(input_data)
+        # A wide terminal leaves room for everything, so nothing wraps.
+        result = run_statusline(input_data, env={"COLUMNS": "1000"})
         assert result.returncode == 0
         output = result.stdout.decode()
         # Strip trailing newline, then check no newlines remain
+        assert "\n" not in output.rstrip("\n")
+
+
+class TestMcpWrapping:
+    """Tests for width-aware MCP server layout."""
+
+    SERVERS = [f"server-{i:02d}-mcp" for i in range(12)]
+
+    def _input(self) -> dict:
+        return {
+            "session_id": unique_session_id(),
+            "model": {"display_name": "Claude"},
+            "workspace": {"current_dir": "/tmp"},
+        }
+
+    def test_wraps_when_narrow(self):
+        """A long MCP list spills onto continuation lines at a narrow width."""
+        home = home_with_mcp_servers(self.SERVERS)
+        result = run_statusline(self._input(), env={"HOME": home, "COLUMNS": "40"})
+        assert result.returncode == 0, f"stderr: {result.stderr.decode()}"
+        output = result.stdout.decode()
+        assert "MCP:" in output
+        assert "\n" in output.rstrip("\n"), "expected wrapped (multi-line) output"
+
+    def test_single_line_when_wide(self):
+        """The same MCP list stays on one line when the terminal is wide."""
+        home = home_with_mcp_servers(self.SERVERS)
+        result = run_statusline(self._input(), env={"HOME": home, "COLUMNS": "1000"})
+        assert result.returncode == 0, f"stderr: {result.stderr.decode()}"
+        output = result.stdout.decode()
+        assert "MCP:" in output
         assert "\n" not in output.rstrip("\n")
