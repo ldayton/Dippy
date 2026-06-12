@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -113,6 +114,8 @@ STYLES = {
     "changes_clean": ("white", None),
     "changes_dirty": ("yellow", None),
     "context": ("white", None),
+    "session": ("white", None),
+    "session_low": ("yellow", None),
     "mcp_title": ("white", None),
     "mcp_connected": ("green", None),
     "mcp_disconnected": ("red", None),
@@ -216,8 +219,21 @@ def get_local_mcp_servers() -> list[str]:
     return []
 
 
-def get_mcp_servers() -> str | None:
-    """Read MCP servers from local config and cached global list."""
+def _mcp_sort_key(token: str) -> tuple[bool, str]:
+    """Order connected servers before disconnected ('!'), each group alphabetical."""
+    name = ANSI_RE.sub("", token)
+    disconnected = name.startswith("!")
+    if disconnected:
+        name = name[1:]
+    return disconnected, name.lower()
+
+
+def get_mcp_servers() -> tuple[str, list[str]] | None:
+    """Read MCP servers from local config and cached global list.
+
+    Returns the styled "MCP:" title and the list of styled server tokens, so the
+    caller can lay them out with width awareness.
+    """
     local_servers = get_local_mcp_servers()
     conn_r, conn_g, conn_b = hex_to_rgb(MOLOKAI[STYLES["mcp_connected"][0]])
     local_styled = [
@@ -254,18 +270,21 @@ def get_mcp_servers() -> str | None:
             log.debug("mcp_cache_refresh_spawned", age=age, ttl=MCP_CACHE_TTL)
         except Exception:
             log.error("mcp_cache_refresh_failed")
-    all_servers = local_styled.copy()
+    server_tokens = local_styled.copy()
     if cached:
-        all_servers.append(cached)
-    if not all_servers:
+        server_tokens.extend(cached.split(", "))
+    server_tokens.sort(key=_mcp_sort_key)
+    if not server_tokens:
         log.debug("mcp_no_servers")
         return None
     log.debug(
-        "mcp_servers_result", local_count=len(local_servers), has_cached=bool(cached)
+        "mcp_servers_result",
+        local_count=len(local_servers),
+        server_count=len(server_tokens),
     )
     fg_c, bg_c = STYLES["mcp_title"]
     title = style("MCP:", fg_c, bg_c)
-    return f"{title} {', '.join(all_servers)}"
+    return title, server_tokens
 
 
 def is_dippy_configured() -> bool:
@@ -294,68 +313,47 @@ def is_dippy_configured() -> bool:
     return False
 
 
-def get_context_from_transcript(transcript_path: str) -> int | None:
-    """Read transcript JSONL and get actual context length from most recent message."""
-    if not transcript_path:
-        log.debug("transcript_no_path")
-        return None
-    try:
-        with open(transcript_path, "rb") as f:
-            f.seek(0, 2)
-            size = f.tell()
-            chunk_size = min(size, 64 * 1024)
-            f.seek(max(0, size - chunk_size))
-            lines = f.read().decode("utf-8", errors="ignore").strip().split("\n")
-        for line in reversed(lines):
-            try:
-                entry = json.loads(line)
-                usage = entry.get("message", {}).get("usage")
-                if usage:
-                    total = (
-                        usage.get("input_tokens", 0)
-                        + usage.get("output_tokens", 0)
-                        + usage.get("cache_read_input_tokens", 0)
-                        + usage.get("cache_creation_input_tokens", 0)
-                    )
-                    log.debug(
-                        "transcript_tokens_found", tokens=total, path=transcript_path
-                    )
-                    return total
-            except json.JSONDecodeError:
-                continue
-        log.debug("transcript_no_usage", path=transcript_path, lines_checked=len(lines))
-    except FileNotFoundError:
-        log.debug("transcript_not_found", path=transcript_path)
-    except Exception:
-        log.error("transcript_read_failed", path=transcript_path)
-    return None
-
-
 def get_context_remaining(data: dict) -> str | None:
+    """Percent of context left until auto-compact (at 80% used).
+
+    Uses Claude Code's pre-calculated context_window.used_percentage, which is
+    input-only (input + cache_creation + cache_read, excluding output_tokens) to
+    match /context.
+    """
     try:
         ctx = data.get("context_window", {})
-        size = ctx.get("context_window_size", 0)
-        if not size:
-            log.debug("context_no_window_size")
-            return None
-        used = get_context_from_transcript(data.get("transcript_path", ""))
-        if used is None:
-            log.debug("context_no_usage_data", size=size)
-            fg_c, bg_c = STYLES["context"]
-            return style("ctx: 80% left", fg_c, bg_c)
-        used_pct = used * 100 // size
-        until_compact = max(0, 80 - used_pct)
-        log.debug(
-            "context_calculated",
-            size=size,
-            used=used,
-            used_pct=used_pct,
-            remaining_pct=until_compact,
-        )
+        used_pct = ctx.get("used_percentage")
         fg_c, bg_c = STYLES["context"]
+        if used_pct is None:
+            log.debug("context_no_usage_data")
+            return style("ctx: 80% left", fg_c, bg_c)
+        until_compact = max(0, 80 - int(used_pct))
+        log.debug("context_calculated", used_pct=used_pct, remaining_pct=until_compact)
         return style(f"ctx: {until_compact}% left", fg_c, bg_c)
     except Exception:
         log.error("context_remaining_failed")
+        return None
+
+
+def get_session_limit_remaining(data: dict) -> str | None:
+    """Percent of the 5-hour session rate-limit window remaining.
+
+    Sourced from Claude Code's pre-calculated rate_limits.five_hour. Absent for
+    API billing and until the first API response of the session.
+    """
+    try:
+        five_hour = data.get("rate_limits", {}).get("five_hour", {})
+        used_pct = five_hour.get("used_percentage")
+        if used_pct is None:
+            log.debug("session_limit_absent")
+            return None
+        remaining = max(0, round(100 - used_pct))
+        key = "session_low" if remaining <= 20 else "session"
+        log.debug("session_limit", used_pct=used_pct, remaining=remaining)
+        fg_c, bg_c = STYLES[key]
+        return style(f"sess: {remaining}% left", fg_c, bg_c)
+    except Exception:
+        log.error("session_limit_failed")
         return None
 
 
@@ -423,6 +421,47 @@ def get_git_branch(cwd: str) -> str | None:
     return None
 
 
+ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def visible_len(text: str) -> int:
+    """Length of text as rendered, ignoring ANSI color escapes."""
+    return len(ANSI_RE.sub("", text))
+
+
+def lay_out_statusline(
+    head: str, mcp_title: str, servers: list[str], width: int | None
+) -> str:
+    """Join the head and MCP segment, wrapping servers to new lines past `width`.
+
+    Keeps everything on one line when it fits. Otherwise packs servers after the
+    inline "MCP:" title and spills the overflow onto continuation lines, dropping
+    the whole MCP block to its own line when even the first server won't fit.
+    """
+    sep = " | "
+    one_line = f"{head}{sep}{mcp_title} {', '.join(servers)}"
+    if width is None or visible_len(one_line) <= width:
+        return one_line
+    lines: list[str] = []
+    inline_start = f"{head}{sep}{mcp_title}"
+    if visible_len(f"{inline_start} {servers[0]}") <= width:
+        cur = inline_start
+    else:
+        lines.append(head)
+        cur = mcp_title
+    has_server = False
+    for srv in servers:
+        glue = " " if not has_server else ", "
+        if not has_server or visible_len(f"{cur}{glue}{srv}") <= width:
+            cur = f"{cur}{glue}{srv}"
+            has_server = True
+        else:
+            lines.append(f"{cur},")
+            cur = srv
+    lines.append(cur)
+    return "\n".join(lines)
+
+
 def build_statusline(data: dict) -> str:
     model = "?"
     cwd = ""
@@ -453,11 +492,28 @@ def build_statusline(data: dict) -> str:
     ctx_remaining = get_context_remaining(data)
     if ctx_remaining:
         parts.append(ctx_remaining)
+    session_remaining = get_session_limit_remaining(data)
+    if session_remaining:
+        parts.append(session_remaining)
+    head = " | ".join(parts)
     mcp = get_mcp_servers()
-    if mcp:
-        parts.append(mcp)
-    log.debug("build_statusline_done", parts_count=len(parts))
-    return " | ".join(parts)
+    if not mcp:
+        log.debug("build_statusline_done", parts_count=len(parts), has_mcp=False)
+        return head
+    mcp_title, servers = mcp
+    try:
+        width = int(os.environ["COLUMNS"]) - 2
+        if width <= 0:
+            width = None
+    except (KeyError, ValueError):
+        width = None
+    log.debug(
+        "build_statusline_done",
+        parts_count=len(parts),
+        width=width,
+        server_count=len(servers),
+    )
+    return lay_out_statusline(head, mcp_title, servers, width)
 
 
 def main():
